@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task 01 · Pharos Contract State</title>
+<meta name="description" content="Live read of the Circle USDC Contract on Pharos Mainnet through Pharos Chain MCP.">
+<style>
+  :root { color-scheme: light dark; --bg: #f6f7f9; --card: #fff; --text: #16181d; --muted: #5d6472; --line: #e3e6eb; --accent: #2b59c3; --warn: #8a5300; --bad: #b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --card: #171a21; --text: #e8eaef; --muted: #9aa3b2; --line: #2a2f3a; --accent: #8aa9ff; --warn: #f0b35a; --bad: #ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 36rem; margin: 0 auto; padding: 24px 16px 40px; }
+  .eyebrow { margin: 0; color: var(--muted); font-size: .85rem; }
+  h1 { margin: .25rem 0 1rem; font-size: 1.6rem; line-height: 1.2; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
+  .row { display: grid; grid-template-columns: 8.5rem 1fr; gap: 2px 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  dl { margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92rem; }
+  .supply { font-size: 1.3rem; font-weight: 650; }
+  .sub { display: block; color: var(--muted); font-size: .85rem; }
+  .note { margin: 16px 0 0; padding: 12px 14px; background: var(--card); border-left: 3px solid var(--accent); border-radius: 8px; font-size: .92rem; }
+  .note code { overflow-wrap: anywhere; }
+  .summary { margin: 16px 0 0; }
+  .status { margin: 16px 0 0; color: var(--muted); font-size: .9rem; }
+  .status.error { color: var(--bad); }
+  .warnings { margin: 12px 0 0; padding-left: 1.2rem; color: var(--warn); font-size: .9rem; }
+  button { font: inherit; margin-top: 12px; padding: 8px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
+  button:disabled { opacity: .6; }
+  footer { margin-top: 28px; color: var(--muted); font-size: .9rem; }
+  footer a { display: inline-block; margin-right: 16px; }
+  a { color: var(--accent); }
+  @media (max-width: 420px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">Pharos Agent Arena · Task 01 · Read Contract State</p>
+  <h1 id="label">Reading contract state…</h1>
+
+  <div class="card">
+    <dl>
+      <div class="row"><dt>Contract address</dt><dd id="address" class="mono">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</dd></div>
+      <div class="row"><dt>Network</dt><dd id="network">…</dd></div>
+      <div class="row"><dt>Read at block</dt><dd id="block" class="mono">…</dd></div>
+      <div class="row"><dt>Token name</dt><dd id="name">…</dd></div>
+      <div class="row"><dt>Symbol</dt><dd id="symbol">…</dd></div>
+      <div class="row"><dt>Decimals</dt><dd id="decimals">…</dd></div>
+      <div class="row"><dt>Total supply</dt><dd><span id="supply" class="supply">…</span><span id="raw" class="sub mono"></span></dd></div>
+      <div class="row"><dt>Data source</dt><dd id="source">Pharos Chain MCP</dd></div>
+    </dl>
+  </div>
+
+  <p class="note">
+    Read live and server-side through <strong>Pharos Chain MCP</strong> at <code>https://mcp.pharos.xyz/mcp</code>:
+    <code>get_chain_info</code>, <code>get_block_number</code>, then four <code>eth_call</code> reads
+    (<code>name</code>, <code>symbol</code>, <code>decimals</code>, <code>totalSupply</code>) pinned to block <span id="pinned">…</span>.
+    No wallet, no private key, no direct JSON-RPC.
+  </p>
+
+  <p id="summary" class="summary"></p>
+  <ul id="warnings" class="warnings" hidden></ul>
+  <p id="status" class="status" role="status" aria-live="polite">Reading through Pharos Chain MCP…</p>
+  <noscript><p class="status">This page needs JavaScript. The raw data is at <a href="/api/state">/api/state</a>.</p></noscript>
+  <button id="refresh" type="button">Refresh</button>
+
+  <footer>
+    <a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/01-read-contract-state">Task 01 on GitHub</a>
+    <a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json">Live proof transcript</a>
+    <a href="/api/state">Raw JSON</a>
+  </footer>
+</main>
+<script>
+  // Every value comes from /api/state (the Task 01 CLI run server-side) and is set with textContent.
+  const $ = (id) => document.getElementById(id);
+  const show = (id, text) => { $(id).textContent = text; };
+
+  function setStatus(text, isError = false) {
+    show("status", text);
+    $("status").classList.toggle("error", isError);
+  }
+
+  async function load() {
+    $("refresh").disabled = true;
+    setStatus("Reading through Pharos Chain MCP…");
+    try {
+      const response = await fetch("/api/state", { headers: { accept: "application/json" } });
+      const data = await response.json();
+      if (!data.ok) throw new Error([data.error?.message, data.error?.hint].filter(Boolean).join(" ") || `HTTP ${response.status}`);
+      const { contract, network, values, source } = data;
+      show("label", contract.label);
+      show("address", contract.address);
+      show("network", network ? `${network.name ?? "Unknown network"} · chain ID ${network.chainId}` : "Not confirmed by get_chain_info");
+      show("block", data.blockNumber);
+      show("pinned", data.blockNumber);
+      show("name", values.name);
+      show("symbol", values.symbol);
+      show("decimals", String(values.decimals));
+      show("supply", data.display.totalSupply);
+      show("raw", `raw value ${values.totalSupply.raw}, divided by 10^${values.decimals}`);
+      show("source", source.server ? `Pharos Chain MCP · ${source.server}` : "Pharos Chain MCP");
+      show("summary", data.summary);
+      $("warnings").replaceChildren(...data.warnings.map((warning) => Object.assign(document.createElement("li"), { textContent: warning })));
+      $("warnings").hidden = data.warnings.length === 0;
+      const took = data.elapsedMs < 1000 ? `${data.elapsedMs} ms` : `${(data.elapsedMs / 1000).toFixed(1)} s`;
+      setStatus(`Fetched ${new Date(data.fetchedAt).toLocaleTimeString()} · ${source.toolCalls} MCP tool calls in ${took} · may be cached up to 15 s`);
+    } catch (error) {
+      setStatus(`Could not read the contract: ${error.message}`, true);
+    } finally {
+      $("refresh").disabled = false;
+    }
+  }
+
+  $("refresh").addEventListener("click", load);
+  load();
+</script>
+</body>
+</html>
