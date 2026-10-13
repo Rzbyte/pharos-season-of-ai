@@ -31,6 +31,8 @@ export interface FakeChain {
   toolsList?: "hang" | "unsupported";
   /** Reject an unknown tool name with a JSON-RPC error (older MCP SDK servers) instead of isError. */
   unknownToolAsRpcError?: boolean;
+  /** Once a standalone GET event stream is open for a session, its later POSTs are never answered (as the hosted endpoint behaved live). */
+  getStreamStallsSession?: boolean;
 }
 
 export interface FakeServer {
@@ -38,6 +40,8 @@ export interface FakeServer {
   calls: Array<{ tool: string; args: Record<string, unknown> }>;
   /** JSON-RPC method of every POSTed message, notifications included, in arrival order. */
   methods: string[];
+  /** HTTP method of every request to /mcp, in arrival order; a GET carrying Last-Event-ID is "GET (resume)". */
+  requests: string[];
   /** Authorization header of every POST ("" when absent). */
   authorizations: string[];
   openSessions(): number;
@@ -113,8 +117,10 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> {
   const calls: FakeServer["calls"] = [];
   const methods: string[] = [];
+  const requests: string[] = [];
   const authorizations: string[] = [];
   const sessions = new Map<string, StreamableHTTPServerTransport>();
+  const streamingSessions = new Set<string>();
   const handle = createToolHandler(chain);
   let toolCallRequests = 0;
 
@@ -126,6 +132,8 @@ export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> 
       }
       const header = req.headers["mcp-session-id"];
       const existing = typeof header === "string" ? sessions.get(header) : undefined;
+      const resuming = req.method === "GET" && req.headers["last-event-id"] !== undefined;
+      requests.push(`${req.method}${resuming ? " (resume)" : ""}`);
 
       if (req.method === "POST") {
         authorizations.push(String(req.headers.authorization ?? ""));
@@ -140,6 +148,8 @@ export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> 
             sessions.delete(header);
           }
         }
+        // Hold the request without ever answering, like the hosted endpoint once its GET stream was open.
+        if (chain.getStreamStallsSession && typeof header === "string" && streamingSessions.has(header)) return;
         const live = typeof header === "string" ? sessions.get(header) : undefined;
         if (live) return void (await live.handleRequest(req, res, body));
         if (header) return void res.writeHead(404, { "content-type": "application/json" }).end('{"error":"Unknown MCP session"}');
@@ -151,6 +161,10 @@ export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> 
         await createMcpServer(chain, calls, handle).connect(transport);
         await transport.handleRequest(req, res, body);
         return;
+      }
+      if (existing && req.method === "GET" && !resuming && typeof header === "string") {
+        streamingSessions.add(header);
+        res.on("close", () => streamingSessions.delete(header));
       }
       if (existing && (req.method === "GET" || req.method === "DELETE")) return void (await existing.handleRequest(req, res));
       res.writeHead(existing ? 405 : 404, { "content-type": "application/json" }).end(existing ? "" : '{"error":"Unknown MCP session"}');
@@ -166,6 +180,7 @@ export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> 
     url: `http://127.0.0.1:${port}/mcp`,
     calls,
     methods,
+    requests,
     authorizations,
     openSessions: () => sessions.size,
     close: async () => {

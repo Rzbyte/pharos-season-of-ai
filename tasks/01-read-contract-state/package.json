@@ -1,6 +1,6 @@
 {
   "name": "read-contract-state",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Pharos Agent Arena Task 01: read ERC-20 contract state through the Pharos Chain MCP server",
   "type": "module",

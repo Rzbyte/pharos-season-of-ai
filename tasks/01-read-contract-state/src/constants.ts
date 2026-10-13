@@ -1,5 +1,5 @@
 export const TOOL_NAME = "read-contract-state";
-export const VERSION = "1.0.1";
+export const VERSION = "1.0.2";
 
 /** Official hosted Pharos Chain MCP server (Streamable HTTP transport). */
 export const HOSTED_ENDPOINT = "https://mcp.pharos.xyz/mcp";

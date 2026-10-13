@@ -15,7 +15,7 @@ import {
 } from "../src/erc20.js";
 import { CliError, isUnknownToolMessage, missingToolError, toTransportError, ToolCallError } from "../src/errors.js";
 import { formatTokenAmount, groupDigits, sanitizeForTerminal, wrapText } from "../src/format.js";
-import { McpRecorder, parseToolPayload, type ToolCaller } from "../src/mcp-client.js";
+import { fetchWithoutStandaloneSse, McpRecorder, parseToolPayload, type ToolCaller } from "../src/mcp-client.js";
 import { applyLiveRun, evidenceFromRun, MARKERS } from "../src/readme-proof.js";
 import { bearerTokenFor } from "../src/run.js";
 import { buildTranscript } from "../src/transcript.js";
@@ -110,6 +110,29 @@ describe("MCP payloads and errors", () => {
     assert.equal(missing.kind, "MCP_TOOLS_MISSING");
     assert.equal(missing.exitCode, 4);
     assert.match(missing.message, /does not expose: eth_call/);
+  });
+
+  test("the MCP transport's fetch skips only the standalone GET stream; POST, DELETE and other GETs go out unchanged", async () => {
+    const sent: Array<{ url: string | URL; init?: RequestInit }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      sent.push({ url: url as string | URL, init });
+      return new Response(null, { status: 202 });
+    };
+    try {
+      const standalone = await fetchWithoutStandaloneSse(ENDPOINT, { method: "GET", headers: new Headers({ accept: "text/event-stream" }) });
+      assert.equal(standalone.status, 405);
+      assert.equal(sent.length, 0, "the standalone GET never reaches the network");
+
+      const post = { method: "POST", headers: { "content-type": "application/json" }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/call"}' };
+      const resume = { method: "GET", headers: new Headers({ accept: "text/event-stream", "last-event-id": "stream-1:7" }) };
+      const plainGet = { method: "GET", headers: { accept: "application/json" } };
+      const close = { method: "DELETE" };
+      for (const init of [post, resume, plainGet, close]) assert.equal((await fetchWithoutStandaloneSse(ENDPOINT, init)).status, 202);
+      assert.deepEqual(sent, [post, resume, plainGet, close].map((init) => ({ url: ENDPOINT, init })));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   test("tells a lost session apart from a wrong URL", () => {

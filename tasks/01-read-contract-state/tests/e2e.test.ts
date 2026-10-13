@@ -98,6 +98,43 @@ describe("against a fake Pharos MCP server", () => {
     assert.equal(server.openSessions(), 0, "the CLI should terminate its MCP session");
   });
 
+  test("opens no standalone GET event stream: every request is an MCP POST to the endpoint, plus the closing DELETE", async () => {
+    server.calls.length = 0;
+    server.requests.length = 0;
+    const seen: Array<{ url: string; method: string; rpc: string; status: number; contentType: string | null }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const response = await realFetch(input, init);
+      const body = typeof init?.body === "string" ? (JSON.parse(init.body) as { method?: string; params?: { name?: string } }) : undefined;
+      seen.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        rpc: [body?.method, body?.params?.name].filter(Boolean).join(" "),
+        status: response.status,
+        contentType: response.headers.get("content-type"),
+      });
+      return response;
+    };
+    let code: number;
+    try {
+      code = await run([USDC, "-e", server.url], capture().io);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    assert.equal(code, 0);
+    assert.ok(!server.requests.some((method) => method.startsWith("GET")), "the server must see no GET");
+    assert.deepEqual([...new Set(seen.map((entry) => entry.url))], [server.url], "all traffic goes to the MCP endpoint");
+    assert.deepEqual([...new Set(seen.map((entry) => entry.method))].sort(), ["DELETE", "POST"]);
+    // Tool results still arrive on each POST's own SSE stream, all through MCP tools/call.
+    const toolCalls = seen.filter((entry) => entry.rpc.startsWith("tools/call"));
+    assert.deepEqual(toolCalls.map((entry) => entry.rpc).sort(), ["tools/call eth_call", "tools/call eth_call", "tools/call eth_call", "tools/call eth_call", "tools/call get_block_number", "tools/call get_chain_info"]);
+    for (const entry of toolCalls) {
+      assert.equal(entry.status, 200);
+      assert.match(entry.contentType ?? "", /^text\/event-stream/);
+    }
+    assert.deepEqual(server.calls.filter((call) => call.tool === "eth_call").map((call) => call.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
+  });
+
   test("never calls owner() or get_code", async () => {
     server.calls.length = 0;
     assert.equal(await run([USDC, "-e", server.url], capture().io), 0);
@@ -353,6 +390,24 @@ describe("degraded servers", () => {
       assert.ok(!server.methods.includes("tools/list"));
       assert.equal(report.contract.label, "Circle USDC Contract");
       assert.equal(report.values.decimals, 6);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("a server that stops answering once a GET event stream is open, as seen live, still gives a full read", async () => {
+    const server = await startFakePharosMcp({ ...chain, getStreamStallsSession: true });
+    try {
+      // A short timeout, so a regression that opens the GET stream fails in 2 s instead of hanging.
+      const { code, report, stderr } = await runJson([USDC, "-e", server.url, "--timeout", "2000"]);
+      assert.equal(code, 0, stderr);
+      assert.ok(!server.requests.some((method) => method.startsWith("GET")));
+      assert.deepEqual(report.contract, { address: USDC, label: "Circle USDC Contract", labelSource: "known-address" });
+      assert.deepEqual(report.network, { chainId: 1672, name: "Pharos Mainnet" });
+      assert.deepEqual(report.values.totalSupply, { raw: "987654321000000", formatted: "987654321" });
+      const ethCalls = server.calls.filter((call) => call.tool === "eth_call");
+      assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), Object.values(SEL).slice().sort());
+      assert.deepEqual(ethCalls.map((call) => call.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
     } finally {
       await server.close();
     }

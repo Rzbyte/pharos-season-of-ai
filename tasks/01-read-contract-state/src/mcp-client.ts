@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { FetchLike, Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ErrorCode, McpError, type JSONRPCMessage, type MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
 import { TOOL_NAME, VERSION } from "./constants.js";
 import { errorMessage, isUnknownToolMessage, missingToolError, shorten, toTransportError, ToolCallError } from "./errors.js";
@@ -82,6 +82,27 @@ class RecordingTransport implements Transport {
   }
 }
 
+/**
+ * fetch for the MCP transport that never opens the optional standalone GET event stream.
+ *
+ * Right after initialization, the SDK's StreamableHTTPClientTransport opens a GET SSE stream for
+ * server messages that are not tied to a request. MCP makes that stream optional for clients
+ * ("The client MAY issue an HTTP GET"), and this CLI needs nothing from it: the server may not
+ * send a response on it, so every tool result arrives on its own POST's SSE stream. Against the
+ * hosted Pharos endpoint, every request sent while that GET was open went unanswered, and the same
+ * calls completed once it was not opened. SDK 1.32.1 has no option to skip the stream, so this is
+ * done through its supported `fetch` option: the standalone GET is answered here with 405, which
+ * the spec and the SDK treat as "this server offers no GET stream", and never reaches the network.
+ * A GET with Last-Event-ID (resuming an interrupted stream), any other GET, every POST and the DELETE
+ * go out unchanged.
+ */
+export const fetchWithoutStandaloneSse: FetchLike = (url, init) => {
+  const headers = new Headers(init?.headers);
+  const standaloneSse =
+    (init?.method ?? "GET").toUpperCase() === "GET" && (headers.get("accept") ?? "").includes("text/event-stream") && !headers.has("last-event-id");
+  return standaloneSse ? Promise.resolve(new Response(null, { status: 405 })) : fetch(url, init);
+};
+
 export interface PharosMcpOptions {
   timeoutMs: number;
   recorder: McpRecorder;
@@ -111,7 +132,7 @@ export class PharosMcp implements ToolCaller {
     const headers: Record<string, string> = {};
     if (options.bearerToken) headers.Authorization = `Bearer ${options.bearerToken}`;
     this.recorder = options.recorder;
-    this.http = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers } });
+    this.http = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers }, fetch: fetchWithoutStandaloneSse });
     this.client = new Client({ name: TOOL_NAME, version: VERSION });
     // Background stream hiccups (the optional GET event stream) are not fatal; surface them only when tracing.
     this.client.onerror = (error) => options.trace?.(`transport notice: ${shorten(errorMessage(error), 160)}`);
