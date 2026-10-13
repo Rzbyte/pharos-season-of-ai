@@ -1,0 +1,322 @@
+{
+  "format": "pharos-mcp-transcript/1",
+  "about": "Every JSON-RPC message exchanged with the MCP server during one run of this CLI, recorded verbatim and in order (direction, milliseconds since start, message). HTTP headers are not recorded, so no bearer token can appear here.",
+  "tool": {
+    "name": "read-contract-state",
+    "version": "1.0.2"
+  },
+  "runtime": {
+    "node": "v26.4.0",
+    "platform": "android",
+    "arch": "arm64"
+  },
+  "endpoint": "https://mcp.pharos.xyz/mcp",
+  "startedAt": "2026-10-13T23:01:31.712Z",
+  "finishedAt": "2026-10-13T23:01:35.015Z",
+  "server": {
+    "name": "pharos-mcp-server",
+    "version": "0.1.0"
+  },
+  "protocolVersion": "2025-11-25",
+  "session": {
+    "idPrefix": "c717dbd9",
+    "terminated": true
+  },
+  "outcome": {
+    "ok": true,
+    "report": {
+      "ok": true,
+      "contract": {
+        "address": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
+        "label": "Circle USDC Contract",
+        "labelSource": "known-address"
+      },
+      "blockNumber": "20175330",
+      "network": {
+        "chainId": 1672,
+        "name": "Pharos Mainnet"
+      },
+      "source": {
+        "via": "Pharos Chain MCP",
+        "endpoint": "https://mcp.pharos.xyz/mcp",
+        "server": "pharos-mcp-server 0.1.0",
+        "toolCalls": 6
+      },
+      "values": {
+        "name": "USDC",
+        "symbol": "USDC",
+        "decimals": 6,
+        "totalSupply": {
+          "raw": "18158765247433",
+          "formatted": "18158765.247433"
+        }
+      },
+      "summary": "At Pharos Mainnet block 20175330, the Circle USDC Contract reports a total supply of 18,158,765.247433 USDC. The contract stores amounts as whole numbers with 6 decimals, so its raw value 18158765247433 is divided by 10^6 to get that figure.",
+      "retriedAtSameBlock": [],
+      "warnings": [],
+      "elapsedMs": 3178
+    }
+  },
+  "messageCount": 15,
+  "messages": [
+    {
+      "seq": 1,
+      "direction": "client->server",
+      "atMs": 55,
+      "message": {
+        "method": "initialize",
+        "params": {
+          "protocolVersion": "2025-11-25",
+          "capabilities": {},
+          "clientInfo": {
+            "name": "read-contract-state",
+            "version": "1.0.2"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 0
+      }
+    },
+    {
+      "seq": 2,
+      "direction": "server->client",
+      "atMs": 1181,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "result": {
+          "protocolVersion": "2025-11-25",
+          "capabilities": {
+            "tools": {
+              "listChanged": true
+            }
+          },
+          "serverInfo": {
+            "name": "pharos-mcp-server",
+            "version": "0.1.0"
+          },
+          "instructions": "Pharos EVM JSON-RPC tools. Read operations are safe. send_raw_transaction only accepts a transaction already signed outside this server."
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "direction": "client->server",
+      "atMs": 1205,
+      "message": {
+        "method": "notifications/initialized",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "seq": 4,
+      "direction": "client->server",
+      "atMs": 1358,
+      "message": {
+        "method": "tools/call",
+        "params": {
+          "name": "get_chain_info",
+          "arguments": {}
+        },
+        "jsonrpc": "2.0",
+        "id": 1
+      }
+    },
+    {
+      "seq": 5,
+      "direction": "client->server",
+      "atMs": 1359,
+      "message": {
+        "method": "tools/call",
+        "params": {
+          "name": "get_block_number",
+          "arguments": {}
+        },
+        "jsonrpc": "2.0",
+        "id": 2
+      }
+    },
+    {
+      "seq": 6,
+      "direction": "server->client",
+      "atMs": 1520,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"name\": \"Pharos\",\n  \"chainId\": 1672,\n  \"chainIdHex\": \"0x688\",\n  \"expectedChainId\": 1672,\n  \"chainIdMatches\": true,\n  \"latestBlock\": \"20175330\",\n  \"latestBlockHex\": \"0x133d9e2\",\n  \"nativeSymbol\": \"PROS\",\n  \"clientVersion\": \"portal/1.0.0\",\n  \"rpcUrl\": \"https://rpc.pharos.xyz\"\n}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 7,
+      "direction": "server->client",
+      "atMs": 1592,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"blockNumber\": \"20175330\",\n  \"blockNumberHex\": \"0x133d9e2\"\n}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "direction": "client->server",
+      "atMs": 1599,
+      "message": {
+        "method": "tools/call",
+        "params": {
+          "name": "eth_call",
+          "arguments": {
+            "transaction": {
+              "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
+              "data": "0x06fdde03"
+            },
+            "block": "0x133d9e2"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 3
+      }
+    },
+    {
+      "seq": 9,
+      "direction": "client->server",
+      "atMs": 1600,
+      "message": {
+        "method": "tools/call",
+        "params": {
+          "name": "eth_call",
+          "arguments": {
+            "transaction": {
+              "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
+              "data": "0x95d89b41"
+            },
+            "block": "0x133d9e2"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 4
+      }
+    },
+    {
+      "seq": 10,
+      "direction": "client->server",
+      "atMs": 1601,
+      "message": {
+        "method": "tools/call",
+        "params": {
+          "name": "eth_call",
+          "arguments": {
+            "transaction": {
+              "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
+              "data": "0x313ce567"
+            },
+            "block": "0x133d9e2"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 5
+      }
+    },
+    {
+      "seq": 11,
+      "direction": "client->server",
+      "atMs": 1602,
+      "message": {
+        "method": "tools/call",
+        "params": {
+          "name": "eth_call",
+          "arguments": {
+            "transaction": {
+              "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
+              "data": "0x18160ddd"
+            },
+            "block": "0x133d9e2"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 6
+      }
+    },
+    {
+      "seq": 12,
+      "direction": "server->client",
+      "atMs": 1956,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"result\": \"0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000045553444300000000000000000000000000000000000000000000000000000000\"\n}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 13,
+      "direction": "server->client",
+      "atMs": 2340,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"result\": \"0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000045553444300000000000000000000000000000000000000000000000000000000\"\n}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 14,
+      "direction": "server->client",
+      "atMs": 2760,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"result\": \"0x0000000000000000000000000000000000000000000000000000000000000006\"\n}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 15,
+      "direction": "server->client",
+      "atMs": 3172,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"result\": \"0x00000000000000000000000000000000000000000000000000001083eac08bc9\"\n}"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
