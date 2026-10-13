@@ -13,7 +13,7 @@ import {
   MalformedReturnError,
   readTokenState,
 } from "../src/erc20.js";
-import { CliError, toTransportError, ToolCallError } from "../src/errors.js";
+import { CliError, isUnknownToolMessage, missingToolError, toTransportError, ToolCallError } from "../src/errors.js";
 import { formatTokenAmount, groupDigits, sanitizeForTerminal, wrapText } from "../src/format.js";
 import { McpRecorder, parseToolPayload, type ToolCaller } from "../src/mcp-client.js";
 import { applyLiveRun, evidenceFromRun, MARKERS } from "../src/readme-proof.js";
@@ -91,6 +91,25 @@ describe("MCP payloads and errors", () => {
     const lag = ToolCallError.fromPayload("eth_call", { error: { message: "header not found", code: -32000 } });
     assert.equal(lag.isRevert || lag.isInvalidParams, false);
     assert.equal(lag.exitCode, 5);
+  });
+
+  test("recognizes a no-such-tool reply in each MCP SDK's wording, and nothing else", () => {
+    for (const message of ["MCP error -32602: Tool eth_call not found", "Tool eth_call not found", 'Tool "eth_call" not found', "Unknown tool: eth_call"]) {
+      assert.equal(isUnknownToolMessage("eth_call", message), true, message);
+    }
+    for (const message of [
+      "header not found",
+      "execution reverted",
+      "MCP error -32602: Input validation error: Invalid arguments for tool eth_call",
+      "Tool get_code not found",
+      "Tool eth_call_v2 not found",
+    ]) {
+      assert.equal(isUnknownToolMessage("eth_call", message), false, message);
+    }
+    const missing = missingToolError("eth_call", ENDPOINT);
+    assert.equal(missing.kind, "MCP_TOOLS_MISSING");
+    assert.equal(missing.exitCode, 4);
+    assert.match(missing.message, /does not expose: eth_call/);
   });
 
   test("tells a lost session apart from a wrong URL", () => {

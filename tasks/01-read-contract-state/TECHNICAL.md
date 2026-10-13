@@ -8,7 +8,9 @@ Details behind the [README](README.md). Nothing here is needed to run or review 
 CLI --MCP over Streamable HTTP--> mcp.pharos.xyz/mcp --> Pharos RPC (server side)
 ```
 
-One run is 11 HTTP requests: `initialize` and its `initialized` notification, the optional event stream `GET`, `tools/list` (checks that `eth_call` and `get_block_number` exist), `get_block_number` and `get_chain_info` in parallel, four `eth_call`s in parallel pinned to that block, and a final `DELETE` that closes the MCP session.
+One run is 10 HTTP requests: `initialize` and its `initialized` notification, the optional event stream `GET`, `get_block_number` and `get_chain_info` in parallel, four `eth_call`s in parallel pinned to that block, and a final `DELETE` that closes the MCP session.
+
+The tools are called directly by their known names; the CLI does not call `tools/list`. MCP does not require listing tools before calling one, and a live run against the hosted server got no answer to `tools/list` (the request was cancelled after the timeout). A tool the server lacks is reported from that call's own `Tool <name> not found` error, with exit code 4.
 
 If a read fails for a transient reason (for example an RPC node one block behind), only that read is retried once, at the same block. The CLI never falls back to `latest`, because the output has to name the exact block the data came from.
 
@@ -58,7 +60,7 @@ Every failure prints a specific message and a hint. With `--json`, errors are JS
 | Invalid address, bad EIP-55 checksum, unknown option | Usage error | 2 |
 | Endpoint unreachable, DNS, TLS, proxy block, HTTP 401/403/404/429/503, timeout | Named cause and next step | 3 |
 | Server forgot the session (`Unknown MCP session`, e.g. a restart mid-run) | Reported as such, not as a wrong URL | 3 |
-| Server lacks `eth_call` or `get_block_number` | Lists the missing tools | 4 |
+| Server lacks `eth_call` or `get_block_number` | Names the missing tool, from that call's own error | 4 |
 | Any of the four reads reverts, returns nothing or returns invalid data | `NOT_ERC20`, naming each failed read | 5 |
 | The RPC cannot serve the pinned block, even after one retry | Error naming the block; no switch to `latest` | 5 |
 | `get_chain_info` fails or is not offered | Warning; network unknown; on-chain label instead of `Circle USDC Contract` | 0 |
@@ -80,9 +82,9 @@ npm start -- 0x52C48d4213107b20bC583832b0d951FB9CA8F0B0    # any other ERC-20 (t
 npm test
 ```
 
-44 offline tests: ABI decoding, exact decimals formatting, the contract label and its three conditions (including `get_chain_info` missing or failing), the hosted-endpoint token rule, error mapping, the README proof checks, and end-to-end CLI runs against an in-process fake MCP server that mirrors pharos-mcp's tool names and payloads (block pinning, same-block retry, all four reads required, lost sessions, transcripts, hostile token names).
+50 offline tests: ABI decoding, exact decimals formatting, the contract label and its three conditions (including `get_chain_info` missing or failing), the hosted-endpoint token rule, error mapping, the README proof checks, and end-to-end CLI runs against an in-process fake MCP server that mirrors pharos-mcp's tool names and payloads (block pinning, same-block retry, all four reads required, lost sessions, transcripts, hostile token names, and full runs against servers that leave `tools/list` unanswered or do not implement it).
 
-The CLI was also run against the official pharos-mcp server code (commit `9a3750c`) on a local machine with a stub RPC, including two server instances without session affinity. Those runs check behavior only and are not live chain data.
+The CLI was also run against the official pharos-mcp server code (commit `9a3750c`) on a local machine with a stub RPC: version 1.0.0 including two server instances without session affinity, version 1.0.1 (no `tools/list`) including an unknown tool name. Those runs check behavior only and are not live chain data.
 
 ## Environment notes
 

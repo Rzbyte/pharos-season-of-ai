@@ -81,6 +81,27 @@ export class ToolCallError extends CliError {
   }
 }
 
+/**
+ * Whether a tools/call error says the server has no tool by this name. The wording comes from the
+ * server's MCP SDK: "MCP error -32602: Tool eth_call not found" (TypeScript, as pharos-mcp sends it),
+ * "Tool eth_call not found", or "Unknown tool: eth_call" (Python).
+ */
+export function isUnknownToolMessage(tool: string, message: string): boolean {
+  const name = tool.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const quote = "[\"'`]?";
+  return new RegExp(`\\btool\\s+${quote}${name}${quote}\\s+not found|\\bunknown tool:?\\s+${quote}${name}(?![\\w-])`, "i").test(message);
+}
+
+/** The server does not offer a tool this CLI calls by name. */
+export function missingToolError(tool: string, endpoint: URL, cause?: unknown): CliError {
+  return new CliError(
+    "MCP_TOOLS_MISSING",
+    `The MCP server at ${endpoint.href} does not expose: ${tool}.`,
+    `Point --endpoint at the Pharos Chain MCP server (${HOSTED_ENDPOINT}).`,
+    cause,
+  );
+}
+
 /** Turn anything thrown by the MCP SDK or fetch into a CliError a human can act on. */
 export function toTransportError(
   error: unknown,

@@ -1,5 +1,5 @@
 export const TOOL_NAME = "read-contract-state";
-export const VERSION = "1.0.0";
+export const VERSION = "1.0.1";
 
 /** Official hosted Pharos Chain MCP server (Streamable HTTP transport). */
 export const HOSTED_ENDPOINT = "https://mcp.pharos.xyz/mcp";
@@ -26,9 +26,6 @@ export const DEFAULT_TIMEOUT_MS = 20_000;
 
 /** Wait before re-reading a value whose read failed for a transient reason (e.g. a lagging RPC node). */
 export const RETRY_DELAY_MS = 1_000;
-
-/** Tools this CLI cannot work without. Checked with tools/list before any call. */
-export const REQUIRED_TOOLS = ["eth_call", "get_block_number"] as const;
 
 export const CHAIN_NAMES: Readonly<Record<number, string>> = {
   1672: "Pharos Mainnet",

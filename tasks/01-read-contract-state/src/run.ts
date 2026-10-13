@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { formatUnits, getAddress, isAddress, type Address } from "viem";
-import { CHAIN_NAMES, DEFAULT_TIMEOUT_MS, DEFAULT_TOKEN, HOSTED_ENDPOINT, KNOWN_CONTRACTS, REQUIRED_TOOLS, TOOL_NAME, VERSION } from "./constants.js";
+import { CHAIN_NAMES, DEFAULT_TIMEOUT_MS, DEFAULT_TOKEN, HOSTED_ENDPOINT, KNOWN_CONTRACTS, TOOL_NAME, VERSION } from "./constants.js";
 import { FIELDS, readTokenState, type TokenState } from "./erc20.js";
 import { CliError, errorMessage, shorten, toCliError, ToolCallError } from "./errors.js";
 import { createStyle, formatTokenAmount, renderRows, sanitizeForTerminal, wrapText, type Style } from "./format.js";
@@ -137,26 +137,18 @@ async function collect(options: Options, io: Io, style: Style, recorder: McpReco
   try {
     await mcp.connect();
 
-    const tools = await mcp.listToolNames();
-    const missing = REQUIRED_TOOLS.filter((tool) => !tools.has(tool));
-    if (missing.length > 0) {
-      throw new CliError(
-        "MCP_TOOLS_MISSING",
-        `The MCP server at ${options.endpoint.href} does not expose: ${missing.join(", ")}.`,
-        `Point --endpoint at the Pharos Chain MCP server (${HOSTED_ENDPOINT}).`,
-      );
-    }
-
+    // No tools/list preflight: each tool is called by its known name, and a tool the server
+    // lacks fails its own call with MCP_TOOLS_MISSING (exit 4).
     const warnings: string[] = [];
     // Chain info is context for the output, not a requirement: a failure becomes a warning.
-    const chainInfo = tools.has("get_chain_info")
-      ? mcp.call<unknown>("get_chain_info", {}).catch((error: unknown) => {
-          if (error instanceof CliError && error.kind === "MCP_CONNECTION") throw error;
-          const detail = error instanceof ToolCallError ? error.detail : errorMessage(error);
-          warnings.push(`get_chain_info failed (${detail}), so the network is shown as unknown.`);
-          return undefined;
-        })
-      : Promise.resolve(undefined);
+    const chainInfo = mcp.call<unknown>("get_chain_info", {}).catch((error: unknown) => {
+      if (error instanceof CliError && error.kind === "MCP_CONNECTION") throw error;
+      // Not offered at all: labelContract() already warns that the chain ID went unconfirmed.
+      if (error instanceof CliError && error.kind === "MCP_TOOLS_MISSING") return undefined;
+      const detail = error instanceof ToolCallError ? error.detail : errorMessage(error);
+      warnings.push(`get_chain_info failed (${detail}), so the network is shown as unknown.`);
+      return undefined;
+    });
     const [blockPayload, chainPayload] = await Promise.all([mcp.call<unknown>("get_block_number", {}), chainInfo]);
 
     const blockNumber = parseBlockNumber(blockPayload);

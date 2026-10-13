@@ -1,13 +1,14 @@
 // In-process stand-in for the Pharos Chain MCP server, used by the e2e tests.
 // Tool names, argument shapes and payloads mirror PharosNetwork/pharos-mcp v0.5.1:
 // success = text content holding JSON, failure = isError + {"error":{"message","code"}},
+// an unknown tool name gets isError + "MCP error -32602: Tool <name> not found" (McpServer in SDK 1.29),
 // and a request with a session ID the server does not hold gets 404 {"error":"Unknown MCP session"}.
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from "@modelcontextprotocol/sdk/types.js";
 
 export type CallBehavior = `0x${string}` | { revert: string } | { rpcError: string };
 
@@ -26,11 +27,17 @@ export interface FakeChain {
   dropSessionAfterToolCalls?: number;
   /** get_chain_info answers with an error, as when its upstream RPC calls fail. */
   chainInfoFails?: boolean;
+  /** "hang": tools/list is accepted but never answered, as seen live. "unsupported": no tools/list handler (-32601). */
+  toolsList?: "hang" | "unsupported";
+  /** Reject an unknown tool name with a JSON-RPC error (older MCP SDK servers) instead of isError. */
+  unknownToolAsRpcError?: boolean;
 }
 
 export interface FakeServer {
   url: string;
   calls: Array<{ tool: string; args: Record<string, unknown> }>;
+  /** JSON-RPC method of every POSTed message, notifications included, in arrival order. */
+  methods: string[];
   /** Authorization header of every POST ("" when absent). */
   authorizations: string[];
   openSessions(): number;
@@ -44,6 +51,7 @@ const fail = (message: string, code?: number): ToolResult => ({
   content: [{ type: "text", text: JSON.stringify({ error: code === undefined ? { message } : { message, code } }, null, 2) }],
   isError: true,
 });
+const unknownTool = (name: string): ToolResult => ({ content: [{ type: "text", text: `MCP error -32602: Tool ${name} not found` }], isError: true });
 
 function createToolHandler(chain: FakeChain) {
   let ethCalls = 0;
@@ -72,7 +80,7 @@ function createToolHandler(chain: FakeChain) {
         return "revert" in behavior ? fail(behavior.revert, 3) : fail(behavior.rpcError, -32000);
       }
       default:
-        return fail(`Tool ${name} not found`);
+        return unknownTool(name);
     }
   };
 }
@@ -80,13 +88,18 @@ function createToolHandler(chain: FakeChain) {
 function createMcpServer(chain: FakeChain, calls: FakeServer["calls"], handle: ReturnType<typeof createToolHandler>): Server {
   const tools = chain.tools ?? ["get_chain_info", "get_block_number", "get_code", "eth_call"];
   const server = new Server({ name: "fake-pharos-mcp", version: "0.0.0" }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map((name) => ({ name, inputSchema: { type: "object" as const } })),
-  }));
+  if (chain.toolsList === "hang") {
+    server.setRequestHandler(ListToolsRequestSchema, () => new Promise<never>(() => undefined));
+  } else if (chain.toolsList !== "unsupported") {
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: tools.map((name) => ({ name, inputSchema: { type: "object" as const } })),
+    }));
+  }
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
     calls.push({ tool: name, args });
-    return tools.includes(name) ? handle(name, args) : fail(`Tool ${name} not found`);
+    if (!tools.includes(name) && chain.unknownToolAsRpcError) throw new McpError(ErrorCode.InvalidParams, `Tool ${name} not found`);
+    return tools.includes(name) ? handle(name, args) : unknownTool(name);
   });
   return server;
 }
@@ -99,6 +112,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 
 export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> {
   const calls: FakeServer["calls"] = [];
+  const methods: string[] = [];
   const authorizations: string[] = [];
   const sessions = new Map<string, StreamableHTTPServerTransport>();
   const handle = createToolHandler(chain);
@@ -116,6 +130,10 @@ export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> 
       if (req.method === "POST") {
         authorizations.push(String(req.headers.authorization ?? ""));
         const body = await readJson(req);
+        for (const message of Array.isArray(body) ? body : [body]) {
+          const method = (message as { method?: unknown } | undefined)?.method;
+          if (typeof method === "string") methods.push(method);
+        }
         if ((body as { method?: unknown } | undefined)?.method === "tools/call") {
           toolCallRequests += 1;
           if (chain.dropSessionAfterToolCalls !== undefined && toolCallRequests > chain.dropSessionAfterToolCalls && typeof header === "string") {
@@ -147,6 +165,7 @@ export async function startFakePharosMcp(chain: FakeChain): Promise<FakeServer> 
   return {
     url: `http://127.0.0.1:${port}/mcp`,
     calls,
+    methods,
     authorizations,
     openSessions: () => sessions.size,
     close: async () => {

@@ -1,9 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError, type JSONRPCMessage, type MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
 import { TOOL_NAME, VERSION } from "./constants.js";
-import { errorMessage, shorten, toTransportError, ToolCallError } from "./errors.js";
+import { errorMessage, isUnknownToolMessage, missingToolError, shorten, toTransportError, ToolCallError } from "./errors.js";
 
 /** The one capability the contract reader needs: call an MCP tool, get its JSON payload back. */
 export interface ToolCaller {
@@ -93,7 +93,9 @@ export interface PharosMcpOptions {
 
 /**
  * Thin wrapper around the MCP SDK client, pointed at the Pharos Chain MCP server over
- * Streamable HTTP. Every chain read in this CLI goes through call().
+ * Streamable HTTP. Every chain read in this CLI goes through call(). Tools are called by their
+ * known names without a tools/list round trip: MCP does not require listing before calling, and
+ * a live run against the hosted server got no answer to tools/list.
  */
 export class PharosMcp implements ToolCaller {
   private readonly client: Client;
@@ -143,23 +145,6 @@ export class PharosMcp implements ToolCaller {
     this.options.trace?.(`connected to ${this.serverLabel ?? "MCP server"}${session} (${elapsed(started)})`);
   }
 
-  async listToolNames(): Promise<Set<string>> {
-    const names = new Set<string>();
-    let cursor: string | undefined;
-    try {
-      for (let page = 0; page < 20; page += 1) {
-        const result = await this.client.listTools(cursor ? { cursor } : undefined, { timeout: this.options.timeoutMs });
-        for (const tool of result.tools) names.add(tool.name);
-        cursor = result.nextCursor;
-        if (!cursor) break;
-      }
-    } catch (error) {
-      throw toTransportError(error, this.endpoint, this.options.timeoutMs, "call");
-    }
-    this.options.trace?.(`tools/list returned ${names.size} tools: ${[...names].join(", ")}`);
-    return names;
-  }
-
   async call<T = unknown>(name: string, args: Record<string, unknown>): Promise<T> {
     this.calls += 1;
     const started = performance.now();
@@ -171,13 +156,22 @@ export class PharosMcp implements ToolCaller {
         timeout: this.options.timeoutMs,
       })) as typeof result;
     } catch (error) {
+      // Some servers reject an unknown tool with a JSON-RPC error rather than isError, and a server
+      // without any tools answers tools/call itself with -32601.
+      if (error instanceof McpError && (error.code === ErrorCode.MethodNotFound || isUnknownToolMessage(name, error.message))) {
+        throw missingToolError(name, this.endpoint, error);
+      }
       throw toTransportError(error, this.endpoint, this.options.timeoutMs, "call");
     }
 
     const payload = parseToolPayload(result);
     const failed = result.isError === true;
     this.options.trace?.(`<- ${name}${failed ? " ERROR" : ""} ${shorten(JSON.stringify(payload) ?? "undefined", 200)} (${elapsed(started)})`);
-    if (failed) throw ToolCallError.fromPayload(name, payload);
+    if (failed) {
+      const error = ToolCallError.fromPayload(name, payload);
+      if (isUnknownToolMessage(name, error.detail)) throw missingToolError(name, this.endpoint, error);
+      throw error;
+    }
     return payload as T;
   }
 

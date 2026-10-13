@@ -182,7 +182,8 @@ describe("against a fake Pharos MCP server", () => {
       assert.equal(transcript.session.terminated, true);
       const methods = transcript.messages.map((entry: { message: { method?: string } }) => entry.message.method).filter(Boolean);
       assert.equal(methods[0], "initialize");
-      assert.ok(methods.includes("tools/list"));
+      assert.ok(!methods.includes("tools/list"), "the run must not depend on tools/list");
+      assert.deepEqual([...new Set(methods)], ["initialize", "notifications/initialized", "tools/call"]);
       const ethCalls = transcript.messages.filter(
         (entry: { direction: string; message: { params?: { name?: string } } }) => entry.direction === "client->server" && entry.message.params?.name === "eth_call",
       );
@@ -320,6 +321,74 @@ describe("degraded servers", () => {
       assert.equal(await run([USDC, "-e", server.url], c.io), 3);
       assert.match(c.stderr(), /no longer recognizes this session \(HTTP 404: Unknown MCP session\)/);
       assert.doesNotMatch(c.stderr(), /No MCP endpoint/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("tools/list left unanswered, as seen live: the run never waits on it and reads all four values at one block", async () => {
+    const server = await startFakePharosMcp({ ...chain, toolsList: "hang" });
+    try {
+      // A short timeout, so a regression that waits on tools/list fails in 2 s instead of hanging.
+      const { code, report, stderr } = await runJson([USDC, "-e", server.url, "--timeout", "2000"]);
+      assert.equal(code, 0, stderr);
+      assert.ok(!server.methods.includes("tools/list"));
+      assert.deepEqual(report.contract, { address: USDC, label: "Circle USDC Contract", labelSource: "known-address" });
+      assert.deepEqual(report.network, { chainId: 1672, name: "Pharos Mainnet" });
+      assert.deepEqual(report.values.totalSupply, { raw: "987654321000000", formatted: "987654321" });
+      assert.equal(report.source.toolCalls, 6);
+      const ethCalls = server.calls.filter((call) => call.tool === "eth_call");
+      assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), Object.values(SEL).slice().sort());
+      assert.deepEqual(ethCalls.map((call) => call.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("a server that does not implement tools/list at all still gives a full read", async () => {
+    const server = await startFakePharosMcp({ ...chain, toolsList: "unsupported" });
+    try {
+      const { code, report, stderr } = await runJson([USDC, "-e", server.url]);
+      assert.equal(code, 0, stderr);
+      assert.ok(!server.methods.includes("tools/list"));
+      assert.equal(report.contract.label, "Circle USDC Contract");
+      assert.equal(report.values.decimals, 6);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("a server without get_block_number exits 4 from that call's own error, before any eth_call", async () => {
+    const server = await startFakePharosMcp({ ...chain, tools: ["get_chain_info", "eth_call"] });
+    try {
+      const c = capture();
+      assert.equal(await run([USDC, "-e", server.url], c.io), 4);
+      assert.match(c.stderr(), /does not expose: get_block_number/);
+      assert.ok(!server.calls.some((call) => call.tool === "eth_call"));
+      assert.ok(!server.methods.includes("tools/list"));
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("an unknown-tool reply is not retried as if the RPC node were lagging", async () => {
+    const server = await startFakePharosMcp({ ...chain, tools: ["get_chain_info", "get_block_number"] });
+    try {
+      const { code, report } = await runJson([USDC, "-e", server.url]);
+      assert.equal(code, 4);
+      assert.equal(report.error.kind, "MCP_TOOLS_MISSING");
+      assert.equal(server.calls.filter((call) => call.tool === "eth_call").length, 4);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("an unknown tool rejected with a JSON-RPC error (older MCP SDKs) also exits 4", async () => {
+    const server = await startFakePharosMcp({ ...chain, tools: ["get_chain_info", "get_block_number"], unknownToolAsRpcError: true });
+    try {
+      const c = capture();
+      assert.equal(await run([USDC, "-e", server.url], c.io), 4);
+      assert.match(c.stderr(), /does not expose: eth_call/);
     } finally {
       await server.close();
     }
