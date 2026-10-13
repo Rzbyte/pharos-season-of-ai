@@ -1,0 +1,231 @@
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport, TransportSendOptions } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
+import { TOOL_NAME, VERSION } from "./constants.js";
+import { errorMessage, shorten, toTransportError, ToolCallError } from "./errors.js";
+
+/** The one capability the contract reader needs: call an MCP tool, get its JSON payload back. */
+export interface ToolCaller {
+  call<T = unknown>(name: string, args: Record<string, unknown>): Promise<T>;
+}
+
+export interface RecordedMessage {
+  seq: number;
+  direction: "client->server" | "server->client";
+  /** Milliseconds since the recorder was created. */
+  atMs: number;
+  message: JSONRPCMessage;
+}
+
+/** Verbatim, ordered copy of every JSON-RPC message in one run. Feeds proof/mcp-transcript.json. */
+export class McpRecorder {
+  readonly startedAt = new Date();
+  readonly messages: RecordedMessage[] = [];
+  server?: { name: string; version: string };
+  protocolVersion?: string;
+  /** Only a prefix is kept: enough to show the server issued a session, useless to anyone else. */
+  sessionIdPrefix?: string;
+  sessionTerminated = false;
+  private readonly t0 = performance.now();
+
+  record(direction: RecordedMessage["direction"], message: JSONRPCMessage): void {
+    this.messages.push({
+      seq: this.messages.length + 1,
+      direction,
+      atMs: Math.round(performance.now() - this.t0),
+      message: JSON.parse(JSON.stringify(message)) as JSONRPCMessage,
+    });
+  }
+}
+
+/**
+ * Transport decorator: forwards everything to the real Streamable HTTP transport and records each
+ * JSON-RPC message on the way through. Only message bodies are recorded, never HTTP headers, so a
+ * bearer token can never end up in a transcript.
+ */
+class RecordingTransport implements Transport {
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: <T extends JSONRPCMessage>(message: T, extra?: MessageExtraInfo) => void;
+
+  constructor(
+    private readonly inner: StreamableHTTPClientTransport,
+    private readonly recorder: McpRecorder,
+  ) {}
+
+  get sessionId(): string | undefined {
+    return this.inner.sessionId;
+  }
+
+  setProtocolVersion(version: string): void {
+    this.inner.setProtocolVersion(version);
+  }
+
+  async start(): Promise<void> {
+    this.inner.onmessage = <T extends JSONRPCMessage>(message: T, extra?: MessageExtraInfo) => {
+      this.recorder.record("server->client", message);
+      this.onmessage?.(message, extra);
+    };
+    this.inner.onerror = (error) => this.onerror?.(error);
+    this.inner.onclose = () => this.onclose?.();
+    await this.inner.start();
+  }
+
+  async send(message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> {
+    this.recorder.record("client->server", message);
+    await this.inner.send(message, options);
+  }
+
+  async close(): Promise<void> {
+    await this.inner.close();
+  }
+}
+
+export interface PharosMcpOptions {
+  timeoutMs: number;
+  recorder: McpRecorder;
+  /** Only needed for self-hosted servers started with MCP_AUTH_TOKEN. */
+  bearerToken?: string;
+  /** Receives one line per MCP request/response when --verbose is on. */
+  trace?: (line: string) => void;
+}
+
+/**
+ * Thin wrapper around the MCP SDK client, pointed at the Pharos Chain MCP server over
+ * Streamable HTTP. Every chain read in this CLI goes through call().
+ */
+export class PharosMcp implements ToolCaller {
+  private readonly client: Client;
+  private readonly http: StreamableHTTPClientTransport;
+  private readonly recorder: McpRecorder;
+  private connected = false;
+  private calls = 0;
+
+  constructor(
+    readonly endpoint: URL,
+    private readonly options: PharosMcpOptions,
+  ) {
+    const headers: Record<string, string> = {};
+    if (options.bearerToken) headers.Authorization = `Bearer ${options.bearerToken}`;
+    this.recorder = options.recorder;
+    this.http = new StreamableHTTPClientTransport(endpoint, { requestInit: { headers } });
+    this.client = new Client({ name: TOOL_NAME, version: VERSION });
+    // Background stream hiccups (the optional GET event stream) are not fatal; surface them only when tracing.
+    this.client.onerror = (error) => options.trace?.(`transport notice: ${shorten(errorMessage(error), 160)}`);
+  }
+
+  get toolCalls(): number {
+    return this.calls;
+  }
+
+  /** "name version" as reported by the server during initialize. */
+  get serverLabel(): string | undefined {
+    const info = this.client.getServerVersion();
+    return info ? `${info.name} ${info.version}`.trim() : undefined;
+  }
+
+  async connect(): Promise<void> {
+    const started = performance.now();
+    try {
+      await this.client.connect(new RecordingTransport(this.http, this.recorder), { timeout: this.options.timeoutMs });
+    } catch (error) {
+      throw toTransportError(error, this.endpoint, this.options.timeoutMs, "connect");
+    }
+    this.connected = true;
+
+    const info = this.client.getServerVersion();
+    if (info) this.recorder.server = { name: info.name, version: info.version };
+    this.recorder.protocolVersion = this.http.protocolVersion;
+    this.recorder.sessionIdPrefix = this.http.sessionId?.slice(0, 8);
+
+    const session = this.recorder.sessionIdPrefix ? ` session ${this.recorder.sessionIdPrefix}...` : "";
+    this.options.trace?.(`connected to ${this.serverLabel ?? "MCP server"}${session} (${elapsed(started)})`);
+  }
+
+  async listToolNames(): Promise<Set<string>> {
+    const names = new Set<string>();
+    let cursor: string | undefined;
+    try {
+      for (let page = 0; page < 20; page += 1) {
+        const result = await this.client.listTools(cursor ? { cursor } : undefined, { timeout: this.options.timeoutMs });
+        for (const tool of result.tools) names.add(tool.name);
+        cursor = result.nextCursor;
+        if (!cursor) break;
+      }
+    } catch (error) {
+      throw toTransportError(error, this.endpoint, this.options.timeoutMs, "call");
+    }
+    this.options.trace?.(`tools/list returned ${names.size} tools: ${[...names].join(", ")}`);
+    return names;
+  }
+
+  async call<T = unknown>(name: string, args: Record<string, unknown>): Promise<T> {
+    this.calls += 1;
+    const started = performance.now();
+    this.options.trace?.(`-> ${name} ${JSON.stringify(args)}`);
+
+    let result: { content?: unknown; structuredContent?: unknown; isError?: unknown };
+    try {
+      result = (await this.client.callTool({ name, arguments: args }, undefined, {
+        timeout: this.options.timeoutMs,
+      })) as typeof result;
+    } catch (error) {
+      throw toTransportError(error, this.endpoint, this.options.timeoutMs, "call");
+    }
+
+    const payload = parseToolPayload(result);
+    const failed = result.isError === true;
+    this.options.trace?.(`<- ${name}${failed ? " ERROR" : ""} ${shorten(JSON.stringify(payload) ?? "undefined", 200)} (${elapsed(started)})`);
+    if (failed) throw ToolCallError.fromPayload(name, payload);
+    return payload as T;
+  }
+
+  /** Best effort: end the server-side session (frees its slot), then drop the transport. */
+  async close(): Promise<void> {
+    if (this.connected) {
+      try {
+        await withTimeout(this.http.terminateSession(), 3_000);
+        this.recorder.sessionTerminated = true;
+        this.options.trace?.("session terminated");
+      } catch {
+        // The server evicts idle sessions on its own; nothing useful to report here.
+      }
+    }
+    await this.client.close().catch(() => undefined);
+  }
+}
+
+/**
+ * Pharos MCP tools return their data as a JSON string in the first text content
+ * item. structuredContent is preferred if a future server version sends it.
+ * Non-JSON text (SDK validation messages, for example) is returned as-is.
+ */
+export function parseToolPayload(result: { content?: unknown; structuredContent?: unknown }): unknown {
+  if (result.structuredContent !== undefined && result.structuredContent !== null && typeof result.structuredContent === "object") {
+    return result.structuredContent;
+  }
+  const content = Array.isArray(result.content) ? result.content : [];
+  const text = content.find(
+    (item): item is { type: "text"; text: string } =>
+      typeof item === "object" && item !== null && (item as { type?: unknown }).type === "text" && typeof (item as { text?: unknown }).text === "string",
+  )?.text;
+  if (text === undefined) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function elapsed(started: number): string {
+  return `${Math.round(performance.now() - started)} ms`;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}

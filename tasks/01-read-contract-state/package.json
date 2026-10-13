@@ -1,0 +1,26 @@
+{
+  "name": "read-contract-state",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pharos Agent Arena Task 01: read ERC-20 contract state through the Pharos Chain MCP server",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "start": "node dist/src/cli.js",
+    "proof": "tsc && node dist/src/cli.js --transcript proof/mcp-transcript.json --save-output sample-output/live-run.txt && node dist/src/update-readme.js",
+    "test": "tsc && node --test dist/tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "viem": "2.57.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}
