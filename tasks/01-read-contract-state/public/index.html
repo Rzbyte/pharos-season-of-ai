@@ -2,122 +2,184 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Task 01 · Pharos Contract State</title>
-<meta name="description" content="Live read of the Circle USDC Contract on Pharos Mainnet through Pharos Chain MCP.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>01 · Read Contract State · Agent Arena Lab</title>
+<meta name="description" content="Agent Arena Lab, task 01: the live state of the Circle USDC Contract on Pharos Mainnet, read at one explicit block through Pharos Chain MCP.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0A0B12">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230A0B12'/%3E%3Crect x='2' y='7' width='12' height='2' fill='%23F2B33D'/%3E%3C/svg%3E">
+<link rel="preload" href="/assets/fonts/DepartureMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/lab.css">
 <style>
-  :root { color-scheme: light dark; --bg: #f6f7f9; --card: #fff; --text: #16181d; --muted: #5d6472; --line: #e3e6eb; --accent: #2b59c3; --warn: #8a5300; --bad: #b42318; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #0f1115; --card: #171a21; --text: #e8eaef; --muted: #9aa3b2; --line: #2a2f3a; --accent: #8aa9ff; --warn: #f0b35a; --bad: #ff8a80; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 36rem; margin: 0 auto; padding: 24px 16px 40px; }
-  .eyebrow { margin: 0; color: var(--muted); font-size: .85rem; }
-  h1 { margin: .25rem 0 1rem; font-size: 1.6rem; line-height: 1.2; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
-  .row { display: grid; grid-template-columns: 8.5rem 1fr; gap: 2px 12px; padding: 12px 0; border-top: 1px solid var(--line); }
-  .row:first-child { border-top: 0; }
-  dl { margin: 0; }
-  dt { color: var(--muted); }
-  dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92rem; }
-  .supply { font-size: 1.3rem; font-weight: 650; }
-  .sub { display: block; color: var(--muted); font-size: .85rem; }
-  .note { margin: 16px 0 0; padding: 12px 14px; background: var(--card); border-left: 3px solid var(--accent); border-radius: 8px; font-size: .92rem; }
-  .note code { overflow-wrap: anywhere; }
-  .summary { margin: 16px 0 0; }
-  .status { margin: 16px 0 0; color: var(--muted); font-size: .9rem; }
-  .status.error { color: var(--bad); }
-  .warnings { margin: 12px 0 0; padding-left: 1.2rem; color: var(--warn); font-size: .9rem; }
-  button { font: inherit; margin-top: 12px; padding: 8px 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--text); }
-  button:disabled { opacity: .6; }
-  footer { margin-top: 28px; color: var(--muted); font-size: .9rem; }
-  footer a { display: inline-block; margin-right: 16px; }
-  a { color: var(--accent); }
-  @media (max-width: 420px) { .row { grid-template-columns: 1fr; } }
-</style>
-</head>
-<body>
-<main>
-  <p class="eyebrow">Pharos Agent Arena · Task 01 · Read Contract State</p>
-  <h1 id="label">Reading contract state…</h1>
-
-  <div class="card">
-    <dl>
-      <div class="row"><dt>Contract address</dt><dd id="address" class="mono">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</dd></div>
-      <div class="row"><dt>Network</dt><dd id="network">…</dd></div>
-      <div class="row"><dt>Read at block</dt><dd id="block" class="mono">…</dd></div>
-      <div class="row"><dt>Token name</dt><dd id="name">…</dd></div>
-      <div class="row"><dt>Symbol</dt><dd id="symbol">…</dd></div>
-      <div class="row"><dt>Decimals</dt><dd id="decimals">…</dd></div>
-      <div class="row"><dt>Total supply</dt><dd><span id="supply" class="supply">…</span><span id="raw" class="sub mono"></span></dd></div>
-      <div class="row"><dt>Data source</dt><dd id="source">Pharos Chain MCP</dd></div>
-    </dl>
-  </div>
-
-  <p class="note">
-    Read live and server-side through <strong>Pharos Chain MCP</strong> at <code>https://mcp.pharos.xyz/mcp</code>:
-    <code>get_chain_info</code>, <code>get_block_number</code>, then four <code>eth_call</code> reads
-    (<code>name</code>, <code>symbol</code>, <code>decimals</code>, <code>totalSupply</code>) pinned to block <span id="pinned">…</span>.
-    No wallet, no private key, no direct JSON-RPC.
-  </p>
-
-  <p id="summary" class="summary"></p>
-  <ul id="warnings" class="warnings" hidden></ul>
-  <p id="status" class="status" role="status" aria-live="polite">Reading through Pharos Chain MCP…</p>
-  <noscript><p class="status">This page needs JavaScript. The raw data is at <a href="/api/state">/api/state</a>.</p></noscript>
-  <button id="refresh" type="button">Refresh</button>
-
-  <footer>
-    <a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/01-read-contract-state">Task 01 on GitHub</a>
-    <a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json">Live proof transcript</a>
-    <a href="/api/state">Raw JSON</a>
-  </footer>
-</main>
-<script>
-  // Every value comes from /api/state (the Task 01 CLI run server-side) and is set with textContent.
-  const $ = (id) => document.getElementById(id);
-  const show = (id, text) => { $(id).textContent = text; };
-
-  function setStatus(text, isError = false) {
-    show("status", text);
-    $("status").classList.toggle("error", isError);
-  }
-
-  async function load() {
-    $("refresh").disabled = true;
-    setStatus("Reading through Pharos Chain MCP…");
-    try {
-      const response = await fetch("/api/state", { headers: { accept: "application/json" } });
-      const data = await response.json();
-      if (!data.ok) throw new Error([data.error?.message, data.error?.hint].filter(Boolean).join(" ") || `HTTP ${response.status}`);
-      const { contract, network, values, source } = data;
-      show("label", contract.label);
-      show("address", contract.address);
-      show("network", network ? `${network.name ?? "Unknown network"} · chain ID ${network.chainId}` : "Not confirmed by get_chain_info");
-      show("block", data.blockNumber);
-      show("pinned", data.blockNumber);
-      show("name", values.name);
-      show("symbol", values.symbol);
-      show("decimals", String(values.decimals));
-      show("supply", data.display.totalSupply);
-      show("raw", `raw value ${values.totalSupply.raw}, divided by 10^${values.decimals}`);
-      show("source", source.server ? `Pharos Chain MCP · ${source.server}` : "Pharos Chain MCP");
-      show("summary", data.summary);
-      $("warnings").replaceChildren(...data.warnings.map((warning) => Object.assign(document.createElement("li"), { textContent: warning })));
-      $("warnings").hidden = data.warnings.length === 0;
-      const took = data.elapsedMs < 1000 ? `${data.elapsedMs} ms` : `${(data.elapsedMs / 1000).toFixed(1)} s`;
-      setStatus(`Fetched ${new Date(data.fetchedAt).toLocaleTimeString()} · ${source.toolCalls} MCP tool calls in ${took} · may be cached up to 15 s`);
-    } catch (error) {
-      setStatus(`Could not read the contract: ${error.message}`, true);
-    } finally {
-      $("refresh").disabled = false;
+  /* Task 01 composition only. Everything reusable lives in /assets/lab.css. */
+  @layer task {
+    .hero { display: grid; gap: var(--gap-5); padding-top: clamp(20px, 5vw, 64px); }
+    .hero-id { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap-3); min-width: 0; }
+    .hero-read { position: relative; display: flex; flex-direction: column; gap: var(--gap-5); min-width: 0; padding-top: var(--gap-4); border-top: 1px solid var(--rule); }
+    .hero-read .snapshot { padding-top: var(--gap-4); border-top: 1px solid var(--rule); }
+    @media (max-width: 759px) { .hero-refresh { display: none; } }
+    @media (min-width: 980px) {
+      .hero { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--gap-7); align-items: end; }
+      .hero-read { padding-top: var(--gap-5); border-top: 0; }
+      .hero-read > * { position: relative; z-index: 1; }
+      /* A faint calibration grid behind the instrument, fading out from the reading. */
+      .hero-read::after {
+        content: ""; position: absolute; inset: -24px -24px -24px -40px; z-index: 0; pointer-events: none;
+        background:
+          radial-gradient(60% 70% at 32% 42%, color-mix(in srgb, var(--beam) 9%, transparent), transparent 70%),
+          linear-gradient(to right, var(--rule) 1px, transparent 1px) 0 0 / 44px 44px,
+          linear-gradient(to bottom, var(--rule) 1px, transparent 1px) 0 0 / 44px 44px;
+        -webkit-mask-image: radial-gradient(80% 90% at 35% 45%, #000 0%, transparent 70%);
+        mask-image: radial-gradient(80% 90% at 35% 45%, #000 0%, transparent 70%);
+      }
     }
   }
+</style>
+<script type="module" src="/assets/task-01.js"></script>
+</head>
+<body data-state="reading">
+<a class="skip" href="#main">Skip to the measurement</a>
 
-  $("refresh").addEventListener("click", load);
-  load();
-</script>
+<header class="shell">
+  <div class="shell-in rail">
+    <p class="shell-brand"><span class="lab">Pharos / Season of AI</span><span class="shell-name">Agent Arena Lab</span></p>
+    <p class="shell-count"><span class="lab">Task</span><span class="num" id="task-count"><b>01</b> / 28</span></p>
+  </div>
+</header>
+
+<main id="main" class="rail" data-api="/api/state" data-task="01">
+  <section class="band hero" aria-labelledby="subject">
+    <div class="hero-id entrance">
+      <p class="task-id"><span class="task-n">01</span><span class="task-sep" aria-hidden="true">/</span><span>Read Contract State</span><span class="tool-label">Chain MCP</span></p>
+      <h1 class="task-subject" id="subject">Circle USDC Contract</h1>
+      <p class="lead">Live on-chain state decoded through <strong class="nowrap">Pharos Chain MCP</strong>.</p>
+      <div class="status-row">
+        <span class="status-chip"><span class="dot" aria-hidden="true"></span><span data-status-word>Reading</span></span>
+        <span class="status-text" id="status-text" role="status">Calling Pharos Chain MCP</span>
+      </div>
+      <p class="note" id="warnings" hidden></p>
+      <noscript><p class="note">This page reads live data with JavaScript. The same data is at /api/state as JSON.</p></noscript>
+      <button class="btn btn-measure hero-refresh" type="button" data-refresh>Refresh state</button>
+    </div>
+    <div class="hero-read">
+      <div class="scanline" aria-hidden="true"></div>
+      <div class="metric measured">
+        <p class="lab">Total supply</p>
+        <p class="metric-value"><span class="metric-major" id="supply-major">—</span><span class="metric-tail"><span class="metric-minor" id="supply-minor"></span><span class="metric-unit" id="supply-unit"></span></span></p>
+      </div>
+      <dl class="snapshot measured">
+        <div class="snap-main"><dt class="lab">Block</dt><dd class="readout" id="block">—</dd></div>
+        <div><dt class="lab">Network</dt><dd id="network">—</dd></div>
+        <div><dt class="lab">Chain ID</dt><dd data-chain>—</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="band band-grid" aria-labelledby="state-h">
+    <div class="band-head">
+      <h2 class="lab" id="state-h">Contract state</h2>
+      <p class="band-note">Four contract reads with <code>eth_call</code>, all at the same explicit block.</p>
+    </div>
+    <dl class="data-rows measured">
+      <div class="data-row"><dt><span class="row-n">01</span><span class="row-k">Name</span><span class="row-call">name()</span></dt><dd id="v-name">—</dd></div>
+      <div class="data-row"><dt><span class="row-n">02</span><span class="row-k">Symbol</span><span class="row-call">symbol()</span></dt><dd id="v-symbol">—</dd></div>
+      <div class="data-row"><dt><span class="row-n">03</span><span class="row-k">Decimals</span><span class="row-call">decimals()</span></dt><dd id="v-decimals">—</dd></div>
+      <div class="data-row stack"><dt><span class="row-n">04</span><span class="row-k">Total supply</span><span class="row-call">totalSupply()</span></dt><dd><span id="v-supply">—</span><span class="row-sub" id="v-raw"></span></dd></div>
+    </dl>
+  </section>
+
+  <section class="band band-grid" aria-labelledby="contract-h">
+    <div class="band-head">
+      <h2 class="lab" id="contract-h">Contract address</h2>
+      <p class="band-note">Circle's USDC on Pharos Mainnet, in groups of four for checking by eye.</p>
+    </div>
+    <div>
+      <p class="address" id="address" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
+      <p class="sr" id="address-sr">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
+      <div class="address-actions"><button class="btn" type="button" id="copy">Copy address</button><span class="sr" id="copy-state" aria-live="polite"></span></div>
+    </div>
+  </section>
+
+  <section class="band band-grid" aria-labelledby="path-h">
+    <div class="band-head">
+      <h2 class="lab" id="path-h">Read path</h2>
+      <p class="band-note">Two context calls, then the four contract reads: six Chain MCP tool calls.</p>
+    </div>
+    <ol class="exec-path" id="path">
+      <li class="exec-step"><span class="step-n">01</span><span class="step-k">get_chain_info</span><span class="step-d">Context: confirms chain ID <span data-chain>—</span></span></li>
+      <li class="exec-step"><span class="step-n">02</span><span class="step-k">get_block_number</span><span class="step-d">Context: fixes block <span data-block>—</span></span></li>
+      <li class="exec-step"><span class="step-n">03</span><span class="step-k">eth_call ×4</span><span class="step-d">Contract reads: name, symbol, decimals, totalSupply</span></li>
+      <li class="exec-step key"><span class="step-n">04</span><span class="step-k">One explicit block</span><span class="step-d">All four reads at <span data-block>—</span></span></li>
+    </ol>
+  </section>
+
+  <section class="band band-grid" aria-labelledby="proof-h">
+    <div class="band-head">
+      <h2 class="lab" id="proof-h">Proof</h2>
+      <p class="band-note">MCP-only client path: this demo's server reaches Pharos through Chain MCP tools and opens no JSON-RPC connection of its own. Pharos MCP talks to the chain on its side.</p>
+    </div>
+    <dl class="proof-strip">
+      <div class="proof-cell"><dt class="lab">Contract reads</dt><dd class="proof-v">4</dd><dd class="proof-s">name · symbol · decimals · totalSupply</dd></div>
+      <div class="proof-cell"><dt class="lab">Explicit block</dt><dd class="proof-v">1</dd><dd class="proof-s" data-block>—</dd></div>
+      <div class="proof-cell"><dt class="lab">Chain MCP tool calls</dt><dd class="proof-v" id="proof-calls">—</dd><dd class="proof-s" id="proof-calls-sub">2 context + 4 contract reads</dd></div>
+      <div class="proof-cell"><dt class="lab">Direct RPC calls from this client</dt><dd class="proof-v">0</dd><dd class="proof-s">MCP-only client path</dd></div>
+    </dl>
+  </section>
+
+  <section class="band" aria-label="Technical details">
+    <details class="tech-details">
+      <summary><span class="lab">Technical details</span><span class="summary-hint">How this measurement is made</span></summary>
+      <div class="screen">
+        <dl class="kv">
+          <div><dt>MCP endpoint</dt><dd id="t-endpoint">https://mcp.pharos.xyz/mcp</dd></div>
+          <div><dt>MCP server</dt><dd id="t-server">—</dd></div>
+          <div><dt>Transport</dt><dd>MCP over Streamable HTTP, from this site's server. Each tool result arrives on its own request's stream; the optional standalone GET stream is not opened (client fix 1.0.2).</dd></div>
+          <div><dt>Tool calls</dt><dd id="t-calls">—</dd></div>
+          <div><dt>Block</dt><dd id="t-block">—</dd></div>
+          <div><dt>Selectors</dt><dd>name() 0x06fdde03 · symbol() 0x95d89b41 · decimals() 0x313ce567 · totalSupply() 0x18160ddd</dd></div>
+          <div><dt>Raw supply</dt><dd id="t-raw">—</dd></div>
+          <div><dt>Label</dt><dd id="t-label">—</dd></div>
+          <div><dt>Retries</dt><dd id="t-retries">—</dd></div>
+          <div><dt>Warnings</dt><dd id="t-warnings">—</dd></div>
+          <div><dt>Elapsed</dt><dd id="t-elapsed">—</dd></div>
+          <div><dt>Fetched at</dt><dd id="t-fetched">—</dd></div>
+          <div><dt>Caching</dt><dd>A good read is sent with Cache-Control "public, s-maxage=15, stale-while-revalidate=45", so the edge can serve it for up to a minute and Refresh can return the same read; the read time shows when it was taken. Errors are sent with no-store.</dd></div>
+          <div><dt>Client</dt><dd id="t-client">—</dd></div>
+          <div><dt>Summary</dt><dd id="t-summary">—</dd></div>
+        </dl>
+      </div>
+    </details>
+  </section>
+
+  <section class="band band-grid" aria-labelledby="src-h">
+    <div class="band-head">
+      <h2 class="lab" id="src-h">Sources</h2>
+      <p class="band-note">The code, and a committed transcript of a live run, are public.</p>
+    </div>
+    <ul class="source-links">
+      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/01-read-contract-state"><span>Task 01 source code<span class="src-meta">github.com/Rzbyte/<wbr><span class="nowrap">pharos-season-of-ai</span></span></span><span class="arw" aria-hidden="true">→</span></a></li>
+      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json"><span>Live proof: raw MCP transcript<span class="src-meta">proof/mcp-transcript.json</span></span><span class="arw" aria-hidden="true">→</span></a></li>
+      <li><a href="/api/state"><span>This page's data, as JSON<span class="src-meta">/api/state</span></span><span class="arw" aria-hidden="true">→</span></a></li>
+    </ul>
+  </section>
+
+  <nav class="band task-nav" aria-label="Agent Arena tasks">
+    <p class="task-nav-step" id="nav-previous" hidden></p>
+    <p class="lab">Agent Arena Lab · 28 tasks</p>
+    <p class="task-nav-step" id="nav-next" hidden></p>
+  </nav>
+</main>
+
+<footer class="foot rail">
+  <p class="foot-brand"><span class="lab">Pharos / Season of AI</span><span class="shell-name">Agent Arena Lab</span></p>
+  <p class="foot-tag">28 on-chain and AI agent experiments built with Chain MCP, Developer Docs MCP and SkillEngine. Task 01 is live; the others are planned.</p>
+  <p><a href="https://github.com/Rzbyte/pharos-season-of-ai">Repository on GitHub →</a></p>
+</footer>
+
+<div class="measure-bar">
+  <span class="status-chip"><span class="dot" aria-hidden="true"></span><span data-status-word>Reading</span></span>
+  <span class="bar-time num" id="bar-time"></span>
+  <button class="btn btn-measure" type="button" data-refresh>Refresh</button>
+</div>
 </body>
 </html>

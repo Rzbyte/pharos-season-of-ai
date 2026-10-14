@@ -1,0 +1,355 @@
+/* Agent Arena Lab: the shared design system for the Pharos Season of AI task pages.
+ *
+ * One stylesheet for every task page. Cascade layers keep the order explicit: tokens, base
+ * elements, the site shell, reusable primitives, and last a page's own `task` layer.
+ * The visual language comes from SafeHands: calibration rails, section ticks, silkscreened
+ * mono labels, instrument readouts and hairline structure. The amber accent, the wordmark and
+ * the copy are this project's own.
+ *
+ * Colour carries meaning, never decoration: amber is structure, focus and READING; green
+ * only ever means LIVE; red only ever means ERROR. */
+@layer tokens, base, shell, primitives, task;
+
+/* Self-hosted, SIL Open Font License 1.1 (licences next to the files). Four faces, ~160 KB. */
+@font-face { font-family: "Geist"; font-weight: 400; font-display: swap; src: url("/assets/fonts/Geist-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Geist"; font-weight: 600; font-display: swap; src: url("/assets/fonts/Geist-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "Geist Mono"; font-weight: 400; font-display: swap; src: url("/assets/fonts/GeistMono-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Departure Mono"; font-weight: 400; font-display: swap; src: url("/assets/fonts/DepartureMono-Regular.woff2") format("woff2"); }
+
+/* ── tokens ─────────────────────────────────────────────────────────── */
+@layer tokens {
+  :root {
+    color-scheme: dark;
+    --ground: #0A0B12;
+    --panel: #12141E;
+    --panel-2: #181B27;
+    --ink: #EAECF5;
+    --ink-2: #9CA1B4;
+    --ink-3: #7C8196;          /* SafeHands' #616579, lifted so 11px labels pass WCAG AA (~5.1:1) */
+    --rule: #1C1F2C;
+    --rule-2: #2A2E3E;
+    --beam: #F2B33D;           /* the one accent: structure, indices, focus, READING */
+    --beam-glow: rgb(242 179 61 / .28);
+    --live: #4ADE80;           /* LIVE and success only */
+    --live-glow: rgb(74 222 128 / .3);
+    --fault: #FF5A5A;          /* ERROR only */
+    --fault-glow: rgb(255 90 90 / .28);
+
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --display: "Departure Mono", "Geist Mono", ui-monospace, monospace;
+
+    --fs-label: .68rem;
+    --fs-small: .875rem;
+    --fs-body: 1rem;
+    --fs-lead: clamp(1rem, .95rem + .3vw, 1.12rem);
+    --fs-h1: clamp(1.75rem, 1.1rem + 3.2vw, 3.1rem);
+    --fs-display: clamp(3rem, 18vw, 7.25rem);    /* the page's one primary measurement */
+    --fs-display-2: clamp(1.75rem, 8vw, 2.6rem); /* secondary readouts: block, counts, fine digits */
+    --track-label: .16em;
+    --track-tight: -.035em;
+
+    --maxw: 1120px;
+    --pad-x: clamp(20px, 4vw, 32px);
+    --sec-y: clamp(36px, 7vw, 88px);
+    --gap-1: 4px; --gap-2: 8px; --gap-3: 12px; --gap-4: 16px; --gap-5: 24px; --gap-6: 32px; --gap-7: 48px;
+    --radius: 6px;             /* only on things a hand touches; measuring surfaces stay square */
+    --bar-h: 64px;
+
+    --ease-out: cubic-bezier(.22, .61, .36, 1);
+  }
+  /* The measurement state, set on <body data-state> by the page script. */
+  body[data-state="live"] { --state: var(--live); --state-glow: var(--live-glow); }
+  body[data-state="reading"] { --state: var(--beam); --state-glow: var(--beam-glow); }
+  body[data-state="error"] { --state: var(--fault); --state-glow: var(--fault-glow); }
+}
+
+/* ── base ───────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--ground); color: var(--ink);
+    font: 400 var(--fs-body)/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  h1, h2, h3, p, dl, dd, ol, ul, figure { margin: 0; }
+  ol, ul { padding: 0; list-style: none; }
+  h1, h2, h3 { font-weight: 600; text-wrap: balance; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; }
+  code { font-family: var(--mono); font-size: .92em; }
+  strong { font-weight: 600; color: var(--ink); }
+  ::selection { background: var(--beam); color: var(--ground); }
+  :focus-visible { outline: 2px solid var(--beam); outline-offset: 3px; }
+
+  /* Device labels are uppercase because that is what is silkscreened on an instrument. */
+  .lab {
+    font-family: var(--mono); font-size: var(--fs-label); font-weight: 400; line-height: 1.45;
+    text-transform: uppercase; letter-spacing: var(--track-label); color: var(--ink-3);
+  }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .nowrap { white-space: nowrap; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .skip {
+    position: absolute; left: var(--gap-4); top: -100px; z-index: 50; padding: var(--gap-2) var(--gap-3);
+    background: var(--beam); color: var(--ground); border-radius: var(--radius);
+  }
+  .skip:focus { top: var(--gap-2); }
+}
+
+/* ── shell: the frame every task page shares ───────────────────────── */
+@layer shell {
+  /* The calibration rail: one measured column with hairline edges. */
+  .rail { width: 100%; max-width: var(--maxw); margin-inline: auto; border-inline: 1px solid var(--rule); }
+
+  .shell { background: var(--ground); border-bottom: 1px solid var(--rule); }
+  .shell-in { display: flex; align-items: center; gap: var(--gap-4); min-height: 56px; padding: 9px var(--pad-x); }
+  .shell-brand { display: flex; flex-direction: column; min-width: 0; }
+  .shell-name { font-size: .9rem; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2); }
+  .shell-count { margin-left: auto; display: flex; align-items: baseline; gap: var(--gap-2); white-space: nowrap; }
+  .shell-count .num { font-size: .8rem; color: var(--ink-3); }
+  .shell-count b { font-weight: 400; color: var(--beam); }
+  @media (max-width: 759px) {
+    /* A compact frame on phones, so the measurement owns the first screen. */
+    .shell-in { min-height: 48px; padding-block: 7px; }
+    .shell-name { line-height: 1.3; }
+  }
+  @media (max-width: 359px) {
+    /* 320px: the counter's "Task" caption is read out but not shown, so the brand keeps one line. */
+    .shell-count .lab { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
+  @media (min-width: 760px) {
+    /* Sticky only where there is room: on a phone the task, not the frame, owns the screen. */
+    .shell { position: sticky; top: 0; z-index: 20; }
+    .shell-brand { flex-direction: row; align-items: baseline; gap: var(--gap-3); }
+  }
+
+  /* A band is one ruled section, hung off the rail by a 9px tick. */
+  .band { position: relative; padding: var(--sec-y) var(--pad-x); border-bottom: 1px solid var(--rule); }
+  .band::before { content: ""; position: absolute; left: 0; top: 0; width: 9px; height: 1px; background: var(--rule-2); }
+  .band-head { display: flex; flex-direction: column; gap: var(--gap-2); margin-bottom: var(--gap-5); }
+  .band-note { max-width: 40ch; color: var(--ink-2); font-size: var(--fs-small); }
+  @media (min-width: 760px) {
+    /* Editorial asymmetry: a narrow label column, the evidence beside it. */
+    .band-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.6fr); gap: var(--gap-6); align-items: start; }
+    .band-grid > .band-head { margin-bottom: 0; }
+  }
+
+  /* Where this page sits among the 28 tasks. Context only: planned tasks are never links. */
+  .task-nav { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gap-3) var(--gap-5); }
+  .task-nav-step { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-3); color: var(--ink-2); }
+  .task-nav-step .t { color: var(--ink); font-weight: 600; letter-spacing: -.01em; }
+  .task-nav-step a.t:hover { color: var(--beam); }
+  .tag {
+    display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--rule-2); border-radius: 4px;
+    font-family: var(--mono); font-size: .6rem; letter-spacing: .15em; text-transform: uppercase; color: var(--ink-3);
+  }
+  .tag-live { color: var(--live); border-color: color-mix(in srgb, var(--live) 42%, var(--rule-2)); }
+
+  .foot { display: grid; gap: var(--gap-3); padding: var(--gap-7) var(--pad-x); }
+  .foot-brand { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-3); }
+  .foot-tag { max-width: 60ch; color: var(--ink-2); font-size: var(--fs-small); }
+  .foot a { color: var(--ink-2); font-size: var(--fs-small); }
+  .foot a:hover { color: var(--ink); }
+}
+
+/* ── primitives: reusable across all 28 task pages ─────────────────── */
+@layer primitives {
+  /* TaskNumber + title: "01 / READ CONTRACT STATE". */
+  .task-id {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2) var(--gap-3);
+    font-family: var(--mono); font-size: .8rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2);
+  }
+  .task-n { color: var(--beam); }
+  .task-sep { color: var(--ink-3); }
+  .task-subject { font-size: var(--fs-h1); line-height: 1.06; letter-spacing: var(--track-tight); max-width: 20ch; }
+  .lead { max-width: 46ch; color: var(--ink-2); font-size: var(--fs-lead); }
+
+  /* ToolLabel: which Pharos tool a task is built on. */
+  .tool-label {
+    display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+    border: 1px solid color-mix(in srgb, var(--beam) 45%, var(--rule-2));
+    font-family: var(--mono); font-size: .62rem; letter-spacing: .16em; text-transform: uppercase; color: var(--beam);
+  }
+  /* 320px: the badge would take a line of its own. A task's lead always names its tool, so it can go. */
+  @media (max-width: 359px) { .task-id .tool-label { display: none; } }
+
+  /* LiveStatus: one chip that reads the page state. */
+  .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2) var(--gap-3); }
+  .status-chip {
+    display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; white-space: nowrap;
+    border: 1px solid color-mix(in srgb, var(--state, var(--ink-3)) 40%, var(--rule-2)); border-radius: var(--radius);
+    background: color-mix(in srgb, var(--state, var(--ink-3)) 9%, transparent);
+    font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--state, var(--ink-2));
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--state, var(--ink-3)); box-shadow: 0 0 8px 1px var(--state-glow, transparent); }
+  .status-text { color: var(--ink-2); font-size: var(--fs-small); }
+  body[data-state="error"] .status-text { color: var(--fault); }
+  .note { padding: 8px 12px; border-left: 2px solid var(--beam); background: color-mix(in srgb, var(--beam) 6%, transparent); color: var(--ink-2); font-size: var(--fs-small); }
+
+  /* PrimaryMetric: the page's measurement, sized to dominate and fitted so it never overflows. */
+  .metric { display: flex; flex-direction: column; gap: var(--gap-2); }
+  .metric-major {
+    display: block; white-space: nowrap; font-family: var(--display); font-size: var(--fs-display);
+    font-variant-numeric: tabular-nums; line-height: .95; color: var(--ink);
+  }
+  .metric-tail { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-3); min-height: 1em; }
+  .metric-minor { font-family: var(--display); font-size: var(--fs-display-2); line-height: 1; color: var(--ink-2); }
+  .metric-unit { font-family: var(--mono); font-size: .82rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
+  /* In a monospaced display face a separator fills a whole digit cell; on a meter it does not. */
+  .sep { margin-inline: -.16em; }
+  .sep-lead { margin-left: 0; }
+
+  /* Snapshot: the point in time a measurement belongs to. */
+  .snapshot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--gap-2) var(--gap-5); align-items: start; }
+  .snapshot > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .snapshot dd { color: var(--ink-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+  .snapshot .snap-main { grid-row: span 2; }
+  .readout { font-family: var(--display); font-size: var(--fs-display-2); line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .snapshot dd.readout { color: var(--ink); font-size: var(--fs-display-2); }
+  @media (min-width: 760px) {
+    .snapshot { grid-template-columns: repeat(3, max-content); gap: var(--gap-2) var(--gap-7); }
+    .snapshot .snap-main { grid-row: auto; }
+  }
+
+  /* Scan line: during READING an amber light crosses the instrument's top edge. */
+  .scanline { position: absolute; left: 0; right: 0; top: -1px; height: 1px; overflow: hidden; pointer-events: none; }
+  .scanline::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; opacity: 0; background: linear-gradient(90deg, transparent, var(--beam), transparent); }
+  body[data-state="reading"] .scanline { background: color-mix(in srgb, var(--beam) 35%, transparent); }
+  body[data-state="reading"] .scanline::after { opacity: 1; }
+  /* The previous good measurement stays on screen, quieter, while a new one is taken, and a
+     little quieter after a failed one: full brightness always means a fresh read. */
+  body[data-state="reading"] main[data-measured] .measured { opacity: .55; }
+  body[data-state="error"] main[data-measured] .measured { opacity: .7; }
+
+  /* DataRow: ruled key/value rows, numbered when they are a real sequence. */
+  .data-rows { border-top: 1px solid var(--rule); }
+  .data-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--gap-4); align-items: baseline; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+  .data-row dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--gap-3); }
+  .data-row dd { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .row-n { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: .1em; color: var(--beam); }
+  .row-k { font-weight: 600; letter-spacing: -.012em; }
+  .row-call { font-family: var(--mono); font-size: .76rem; color: var(--ink-3); }
+  .row-sub { display: block; margin-top: 2px; font-size: .74rem; color: var(--ink-3); }
+  @media (max-width: 479px) {
+    .data-row.stack { grid-template-columns: minmax(0, 1fr); }
+    .data-row.stack dd { text-align: left; }
+  }
+
+  /* Address: exact characters, shown in groups of four so it can be read and compared. The
+     groups are inline with no spaces, so a manual copy still yields the exact string. */
+  .address { font-family: var(--mono); font-size: clamp(.95rem, 3.4vw, 1.15rem); line-height: 1.7; color: var(--ink); overflow-wrap: anywhere; }
+  .address span { margin-right: .55ch; }
+  .address-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-3); margin-top: var(--gap-3); }
+
+  /* ExecutionPath: the only numbered strip, because it is the only real sequence. */
+  .exec-path { position: relative; display: grid; border: 1px solid var(--rule); }
+  .exec-path::before { content: ""; position: absolute; z-index: 2; top: -1px; left: 0; height: 2px; width: 0; background: var(--beam); box-shadow: 0 0 11px 1px var(--beam-glow); }
+  .exec-path.flow::before { width: 100%; }
+  body[data-state="reading"] .exec-path::before { width: 0; }
+  .exec-step { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px var(--gap-3); padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+  .exec-step:last-child { border-bottom: 0; }
+  .exec-step:not(:last-child)::after {
+    content: "\2193"; position: absolute; z-index: 1; left: 15px; bottom: -.8em; padding: 0 3px;
+    font-family: var(--mono); font-size: .75rem; line-height: 1.5; color: var(--ink-3); background: var(--ground);
+  }
+  .step-n { grid-row: span 2; padding-top: 3px; font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; color: var(--ink-3); }
+  .step-k { font-family: var(--mono); font-size: .95rem; color: var(--ink); overflow-wrap: anywhere; }
+  .step-d { color: var(--ink-2); font-size: .82rem; }
+  .exec-step.key { background: var(--panel); }
+  .exec-step.key .step-n { color: var(--beam); }
+  .exec-step.key:not(:last-child)::after { background: var(--panel); }
+  @media (min-width: 900px) {
+    .exec-path { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .exec-step { grid-template-columns: minmax(0, 1fr); align-content: start; padding: 18px 16px; border-bottom: 0; border-right: 1px solid var(--rule); }
+    .exec-step:last-child { border-right: 0; }
+    .step-n { grid-row: auto; padding-top: 0; }
+    .exec-step:not(:last-child)::after { content: "\2192"; left: auto; right: -.75em; bottom: auto; top: 16px; }
+  }
+
+  /* ProofStrip: evidence as figures, in a 1px cell grid rather than cards. */
+  .proof-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  .proof-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 16px 14px 18px; background: var(--ground); }
+  .proof-v { font-family: var(--display); font-size: var(--fs-display-2); line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .proof-s { color: var(--ink-2); font-size: .78rem; overflow-wrap: anywhere; }
+  @media (min-width: 760px) { .proof-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+  /* TechnicalDetails: collapsed by default; the "how", on a recessed readout screen. */
+  .tech-details { border: 1px solid var(--rule); }
+  .tech-details > summary {
+    display: flex; align-items: center; gap: var(--gap-3); min-height: 52px; padding: 12px 16px; cursor: pointer; list-style: none;
+  }
+  .tech-details > summary::-webkit-details-marker { display: none; }
+  .tech-details > summary::after { content: "+"; margin-left: auto; font-family: var(--mono); font-size: 1.1rem; line-height: 1; color: var(--beam); }
+  @media (max-width: 479px) {
+    /* Label over hint on phones, the +/- sign centred beside both. */
+    .tech-details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--gap-3); }
+    .tech-details > summary::after { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  }
+  .tech-details[open] > summary { border-bottom: 1px solid var(--rule); }
+  .tech-details[open] > summary::after { content: "\2212"; }
+  .summary-hint { color: var(--ink-2); font-size: var(--fs-small); }
+  .screen {
+    position: relative; padding: 6px 16px 10px; background: var(--panel);
+    box-shadow: inset 0 0 34px -14px rgb(0 0 0 / .7); font-family: var(--mono); font-size: .8rem; line-height: 1.65;
+  }
+  .screen::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .4;
+    background: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--ink) 4%, transparent) 0 1px, transparent 1px 3px);
+  }
+  .kv > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 2px var(--gap-3); padding: 8px 0; border-bottom: 1px solid var(--rule-2); }
+  .kv > div:last-child { border-bottom: 0; }
+  .kv dt { padding-top: 2px; font-size: .66rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .kv dd { color: var(--ink); overflow-wrap: anywhere; }
+  @media (max-width: 479px) { .kv > div { grid-template-columns: minmax(0, 1fr); } }
+
+  /* SourceLinks: full-width ruled rows, an amber arrow that nudges on hover. */
+  .source-links { border-top: 1px solid var(--rule); }
+  .source-links a { display: flex; align-items: center; gap: var(--gap-3); min-height: 56px; padding: 12px 0; border-bottom: 1px solid var(--rule); color: var(--ink); }
+  .source-links a:hover { color: var(--beam); }
+  .src-meta { display: block; color: var(--ink-3); font-family: var(--mono); font-size: .74rem; overflow-wrap: anywhere; }
+  .arw { margin-left: auto; font-family: var(--mono); color: var(--beam); }
+
+  /* Buttons: the one place with a radius, because a hand touches it. */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--gap-2); min-height: 44px; padding: 10px 18px;
+    border: 1px solid var(--rule-2); border-radius: var(--radius); background: transparent; cursor: pointer;
+    font-family: var(--mono); font-size: .76rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink);
+  }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn:disabled { cursor: progress; opacity: .55; }
+  .btn-measure { border-color: color-mix(in srgb, var(--beam) 60%, var(--rule-2)); color: var(--beam); }
+  .btn-measure:hover { border-color: var(--beam); background: color-mix(in srgb, var(--beam) 10%, transparent); }
+
+  /* MeasurementBar: on phones, status and Refresh stay under the thumb. */
+  .measure-bar {
+    position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: var(--gap-3);
+    min-height: var(--bar-h); padding: 9px var(--pad-x) calc(10px + env(safe-area-inset-bottom));
+    background: var(--ground); border-top: 1px solid var(--rule-2);
+  }
+  .measure-bar .btn-measure { margin-left: auto; min-width: 124px; }
+  .bar-time { font-size: .8rem; color: var(--ink-2); }
+  @media (max-width: 759px) { body { padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom)); } }
+  @media (min-width: 760px) { .measure-bar { display: none; } }
+
+  /* ── motion: purposeful, and only when the reader allows it ── */
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+  @keyframes scan { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  @keyframes settle { from { opacity: .2; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: no-preference) {
+    body[data-state="live"] .dot { animation: breathe 2.4s ease-in-out infinite; }
+    body[data-state="reading"] .scanline::after { animation: scan 1.15s var(--ease-out) infinite; }
+    .measured { transition: opacity .25s ease; }
+    .settle { animation: settle .45s var(--ease-out) both; }
+    .exec-path::before { transition: width .9s var(--ease-out); }
+    .source-links .arw { transition: transform .18s ease; }
+    .source-links a:hover .arw { transform: translateX(3px); }
+    .entrance > * { animation: rise .6s var(--ease-out) both; }
+    .entrance > :nth-child(2) { animation-delay: .06s; }
+    .entrance > :nth-child(3) { animation-delay: .12s; }
+    .entrance > :nth-child(4) { animation-delay: .18s; }
+    .entrance > :nth-child(n + 5) { animation-delay: .24s; }
+  }
+}
