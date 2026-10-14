@@ -11,7 +11,7 @@ export const SAMPLE_ANSWER = [
   "",
   "Its total supply is stored as a whole number in the token's smallest unit. With 6 decimals, the last six digits are the fraction, so one token is 1,000,000 of those units.",
   "",
-  "The name and symbol are text the contract returns. Anyone can deploy a contract with any name or symbol, so they prove nothing about who made it.",
+  "The name and symbol are labels returned by the contract and do not prove who created or controls it.",
   "",
   "Details",
   "- The total supply is the number of tokens that existed at that block; it can differ in later blocks.",
