@@ -51,6 +51,7 @@ const CHAIN = {
 const WIDTHS = [[320, 568], [360, 640], [390, 844], [412, 915], [430, 932], [1280, 860]];
 const BACKGROUND = { dark: "rgb(11, 11, 11)", light: "rgb(239, 241, 242)" };
 const PHAROS_BLUE = "rgb(1, 19, 183)";
+const EXPLORER = "https://pharos.socialscan.io";
 const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2" };
 
 describe("the Task 01 page in a browser", { skip }, () => {
@@ -147,18 +148,23 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await page.waitForFunction((state) => document.getElementById("inspector").dataset.inspectState === state, expected, { timeout: 15_000 });
   }
   const rows = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#inspect-result dl > div")].map((row) => [row.querySelector("dt").textContent, row.querySelector("dd").textContent])));
-  /** Group counts per line of every hex value on the page: [[5, 5], [8, 8], ...]. */
+  /** The words a control shows (innerText skips the words swapped out), and its box. */
+  const words = (page, selector) => page.evaluate((s) => document.querySelector(s).innerText.trim(), selector);
+  const box = (page, selector) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(" "); }, selector);
+  /** Every hex value on screen: its text, and its characters per line ([22, 20], [34, 32], ...). */
   const hexLines = (page) =>
     page.evaluate(() =>
       [...document.querySelectorAll(".hex")].filter((hex) => hex.offsetParent).map((hex) => {
         const lines = new Map();
-        for (const group of hex.querySelectorAll(":scope > span")) {
-          const top = Math.round(group.getBoundingClientRect().top);
-          lines.set(top, (lines.get(top) ?? 0) + 1);
+        for (const part of hex.querySelectorAll(":scope > span")) {
+          const top = Math.round(part.getBoundingClientRect().top);
+          lines.set(top, (lines.get(top) ?? 0) + part.textContent.length);
         }
-        return [...lines.values()];
+        return { text: hex.textContent, lines: [...lines.values()] };
       }),
     );
+  /** The only ways a value may sit: one line, or equal halves (address) or quarters (hash). */
+  const BALANCED = { 42: ["42", "22/20"], 66: ["66", "34/32", "18/16/16/16"] };
   /** Overflow that a clipped body would hide: any box past the viewport's right edge. */
   const overflow = (page) =>
     page.evaluate(() => {
@@ -194,9 +200,9 @@ describe("the Task 01 page in a browser", { skip }, () => {
         assert.equal(figure.text, "20,271,995.983588USDC", where);
         assert.ok(figure.fits && figure.oneLine, `${where}: ${JSON.stringify(figure)}`);
         assert.ok(figure.px > figure.h1, `${where}: the supply (${figure.px}px) is the largest type, above the title (${figure.h1}px)`);
-        for (const lines of await hexLines(page)) {
-          assert.ok(lines.every((count) => count === lines[0]), `${where}: hex lines ${lines.join("/")}`);
-          assert.ok([4, 5, 8, 10, 16].includes(lines[0]), `${where}: ${lines[0]} groups per line`);
+        for (const { text, lines } of await hexLines(page)) {
+          assert.doesNotMatch(text, /\s/, `${where}: no spaces in ${text}`);
+          assert.ok(BALANCED[text.length]?.includes(lines.join("/")), `${where}: ${text} sits as ${lines.join("/")}`);
         }
         assert.deepEqual(errors, [], where);
         await context.close();
@@ -205,7 +211,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
   });
 
   test("the first screen holds the task, contract, tool, snapshot state, block, read time, supply and state rows", async () => {
-    for (const [width, height, extra] of [[320, 568, []], [390, 844, ["#address", "[data-refresh]", "#copy"]], [1280, 860, ["#address", "[data-refresh]", "#copy"]]]) {
+    for (const [width, height, extra] of [[320, 568, []], [390, 844, ["#address", "[data-refresh]", "#copy", "#contract-explorer"]], [1280, 860, ["#address", "[data-refresh]", "#copy", "#contract-explorer"]]]) {
       for (const theme of ["dark", "light"]) {
         const { context, page } = await open({ width, height, theme });
         const below = await page.evaluate((selectors) => selectors.filter((selector) => {
@@ -367,8 +373,11 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await page.waitForFunction(() => document.querySelector("[data-status-detail]").textContent === "same read as before");
     assert.equal((await snapshot(page)).word, "Cached snapshot");
 
-    // READING: the last snapshot stays, dimmed; Refresh waits and keeps focus.
+    // READING: the last snapshot stays, dimmed; Refresh waits, keeps focus and reads Reading… in
+    // place, at the same size.
     mode.state = "slow";
+    const rest = [await words(page, "[data-refresh]"), await box(page, "[data-refresh]")];
+    assert.equal(rest[0], "Refresh");
     await page.focus("[data-refresh]");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.body.dataset.state === "reading");
@@ -377,7 +386,9 @@ describe("the Task 01 page in a browser", { skip }, () => {
     const reading = await snapshot(page);
     assert.deepEqual([reading.tone, reading.word, reading.detail, reading.busy, reading.supply, reading.opacity], ["active", "Reading", "taking a new snapshot", "true", fresh.supply, "0.55"]);
     assert.deepEqual(await page.evaluate(() => [document.activeElement.matches("[data-refresh]"), document.querySelector("[data-refresh]").getAttribute("aria-disabled")]), [true, "true"]);
+    assert.deepEqual([await words(page, "[data-refresh]"), await box(page, "[data-refresh]")], ["Reading…", rest[1]]);
     await settled(page, ["fresh"]);
+    assert.deepEqual([await words(page, "[data-refresh]"), await box(page, "[data-refresh]")], rest);
 
     // READ FAILED: the last good snapshot stays, with the reason.
     mode.state = "error";
@@ -386,7 +397,8 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await page.waitForTimeout(300);
     const failed = await snapshot(page);
     assert.deepEqual([failed.tone, failed.word, failed.detail, failed.supply, failed.opacity], ["error", "Read failed", "showing the last good snapshot", fresh.supply, "0.75"]);
-    assert.match(failed.note, /Could not reach/);
+    // What happened, then what to do next.
+    assert.match(failed.note, /^Could not reach[\s\S]* Refresh to try again\.$/);
 
     mode.state = "malformed";
     await page.click("[data-refresh]");
@@ -476,14 +488,19 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await inspect(page, UNKNOWN, "not-found");
     assert.equal((await rows(page)).Result, "Not found through Pharos Chain MCP");
     assert.equal(await page.evaluate(() => document.getElementById("inspect-status").dataset.tone), "neutral");
+    // Not found is an answer with a next step, not a dead end.
+    assert.match(await page.textContent("#inspect-result .inspect-message"), /^Check that the hash is complete and from Pharos Mainnet, not a testnet\./);
 
     await inspect(page, PENDING, "partial");
     assert.equal((await rows(page)).Status, "Pending");
 
-    // INSPECTING keeps the last result, dimmed; the button keeps focus and sends nothing twice.
+    // INSPECTING keeps the last result, dimmed; the button keeps focus, sends nothing twice and
+    // reads Inspecting… in place, at the same size.
     mode.inspect = "slow";
     const before = inspectQueries.length;
     const previous = await page.textContent("#inspect-result");
+    const idle = [await words(page, "#inspect-submit"), await box(page, "#inspect-submit")];
+    assert.equal(idle[0], "Inspect");
     await page.fill("#inspect-input", USDC);
     await page.focus("#inspect-submit");
     await page.keyboard.press("Enter");
@@ -497,11 +514,13 @@ describe("the Task 01 page in a browser", { skip }, () => {
       disabled: document.getElementById("inspect-submit").getAttribute("aria-disabled"),
     }));
     assert.deepEqual(busy, { result: previous, opacity: "0.55", focus: "inspect-submit", disabled: "true" });
+    assert.deepEqual([await words(page, "#inspect-submit"), await box(page, "#inspect-submit")], ["Inspecting…", idle[1]]);
     // force: Playwright itself would wait for an aria-disabled button; a visitor's click does not.
     await page.click("#inspect-example", { force: true });
     assert.equal(await page.inputValue("#inspect-input"), USDC, "the example waits too");
     await page.waitForFunction(() => document.getElementById("inspector").dataset.inspectState === "success", null, { timeout: 15_000 });
     assert.equal(inspectQueries.length, before + 1);
+    assert.deepEqual([await words(page, "#inspect-submit"), await box(page, "#inspect-submit")], idle);
 
     // ERROR keeps the last good result, with the reason.
     mode.inspect = "error";
@@ -527,6 +546,143 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await context.close();
   });
 
+  test("the contract address: one exact value, one line where it fits, two halves on phones, its actions in a row under it", async () => {
+    for (const [width, expected] of [[320, "22/20"], [360, "22/20"], [390, "42"], [412, "42"], [430, "42"], [768, "42"], [1024, "42"], [1280, "42"]]) {
+      const { context, page } = await open({ width, height: 900 });
+      const [address] = await hexLines(page);
+      assert.deepEqual([address.text, address.lines.join("/")], [USDC, expected], `${width}`);
+      const layout = await page.evaluate(() => {
+        const r = (id) => document.getElementById(id).getBoundingClientRect();
+        const [value, copy, link] = [r("address"), r("copy"), r("contract-explorer")];
+        return { gap: Math.round(copy.top - value.bottom), left: Math.round(copy.left - value.left), row: Math.round(link.top - copy.top), after: Math.round(link.left - copy.right), heights: [Math.round(copy.height), Math.round(link.height)] };
+      });
+      assert.deepEqual(layout, { gap: 10, left: 0, row: 0, after: 8, heights: [32, 32] }, `${width}: Copy, then View on SocialScan, in one row under the value`);
+      await context.close();
+    }
+  });
+
+  test("Copy: copies the exact value and says so in place; a refused clipboard selects the value instead", async () => {
+    const { context, page } = await open({ width: 390 });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+    const box = () => page.evaluate(() => { const r = document.getElementById("copy").getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(" "); });
+    const before = await box();
+    await page.click("#copy");
+    const copied = await page.evaluate(async () => ({
+      clipboard: await navigator.clipboard.readText(),
+      word: [...document.querySelectorAll("#copy .copy-words > span")].find((span) => getComputedStyle(span).visibility === "visible").textContent,
+      live: document.getElementById("copy-state").textContent,
+    }));
+    assert.deepEqual(copied, { clipboard: USDC, word: "Copied", live: "Contract address copied" });
+    assert.equal(await box(), before, "the button does not move or resize");
+    await page.waitForFunction(() => document.getElementById("copy").dataset.copy === "idle", null, { timeout: 5_000 });
+
+    // The inspector's Copy, from the same template, copies the exact hash.
+    await inspect(page, MINED, "success");
+    await page.click("#inspect-result .copy");
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), MINED);
+    assert.equal(await page.evaluate(() => document.getElementById("inspect-copy-state").textContent), "Transaction hash copied");
+    await context.close();
+
+    // Clipboard refused: the value is selected, ready to copy by hand, and that is announced.
+    const refused = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    await refused.addInitScript(() => {
+      navigator.clipboard.writeText = () => Promise.reject(new Error("refused"));
+    });
+    const page2 = await refused.newPage();
+    await page2.goto(base);
+    await settled(page2);
+    await page2.click("#copy");
+    const fallback = await page2.evaluate(() => ({ selection: getSelection().toString(), live: document.getElementById("copy-state").textContent, state: document.getElementById("copy").dataset.copy }));
+    assert.deepEqual(fallback, { selection: USDC, live: "Contract address selected, ready to copy", state: "selected" });
+    await refused.close();
+  });
+
+  test("View on SocialScan: made only from a checked value, for the contract, its block, and an inspected address or transaction", async () => {
+    const { context, page, errors } = await open({ width: 390 });
+    const link = (selector) => page.evaluate((s) => {
+      const a = document.querySelector(s);
+      return { href: a.getAttribute("href"), name: a.getAttribute("aria-label"), target: a.target, rel: a.rel, words: a.innerText.trim() };
+    }, selector);
+    const shape = { target: "_blank", rel: "noopener noreferrer", words: "View on SocialScan" };
+    assert.deepEqual(await link("#contract-explorer"), { href: `${EXPLORER}/address/${USDC}`, name: "View on SocialScan: contract address, opens in a new tab", ...shape });
+    assert.deepEqual({ ...(await link("#block-explorer")), words: "View on SocialScan" }, { href: `${EXPLORER}/block/20384112`, name: "View on SocialScan: block 20,384,112, opens in a new tab", ...shape });
+
+    await inspect(page, USDC, "success");
+    assert.deepEqual(await link("#inspect-result a"), { href: `${EXPLORER}/address/${USDC}`, name: "View on SocialScan: address, opens in a new tab", ...shape });
+    await inspect(page, PARTIAL, "partial");
+    assert.equal((await link("#inspect-result a")).href.toLowerCase(), `${EXPLORER}/address/${PARTIAL}`);
+    await inspect(page, MINED, "success");
+    assert.deepEqual(await link("#inspect-result a"), { href: `${EXPLORER}/tx/${MINED}`, name: "View on SocialScan: transaction hash, opens in a new tab", ...shape });
+    // One per result, on the hash itself: never on Block, From or To.
+    assert.equal(await page.locator("#inspect-result a").count(), 1);
+    // Not found: nothing to show on the explorer, so no link; Copy stays.
+    await inspect(page, UNKNOWN, "not-found");
+    assert.deepEqual([await page.locator("#inspect-result a").count(), await page.locator("#inspect-result .copy").count()], [0, 1]);
+
+    // An explorer base that is not a bare https origin makes no link at all.
+    await page.evaluate(() => document.querySelector('meta[name="explorer"]').setAttribute("content", "javascript:alert(1)"));
+    await inspect(page, USDC, "success");
+    assert.equal(await page.locator("#inspect-result a").count(), 0);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  test("Sources: one set at every width, equal heights, titles and arrows aligned, paths unbroken", async () => {
+    for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [1024, 768], [1280, 860]]) {
+      const { context, page } = await open({ width, height });
+      const items = await page.evaluate(() =>
+        [...document.querySelectorAll(".links a")].map((link) => {
+          const box = link.getBoundingClientRect();
+          const of = (selector) => link.querySelector(selector).getBoundingClientRect();
+          const title = of(".link-title");
+          const arrow = of(".link-arrow");
+          const meta = of(".link-meta");
+          return { top: Math.round(box.top), height: Math.round(box.height), title: Math.round(title.top - box.top), arrow: Math.round(arrow.top + arrow.height / 2 - (title.top + title.height / 2)), metaLines: Math.round(meta.height / parseFloat(getComputedStyle(link.querySelector(".link-meta")).lineHeight)) };
+        }),
+      );
+      const rows = Object.values(Object.groupBy(items, (item) => item.top));
+      for (const row of rows) assert.equal(new Set(row.map((item) => item.height)).size, 1, `${width}: equal heights in a row ${JSON.stringify(row)}`);
+      assert.equal(new Set(items.map((item) => item.title)).size, 1, `${width}: titles aligned`);
+      for (const item of items) assert.ok(Math.abs(item.arrow) <= 1, `${width}: arrow centred on its title line (${item.arrow}px)`);
+      for (const item of items) assert.equal(item.metaLines, 1, `${width}: path on one line`);
+      assert.equal(rows.length, width >= 960 ? 1 : 3, `${width}: ${rows.length} row(s)`);
+      await context.close();
+    }
+  });
+
+  test("footer icon links: named, 20px icons in 44px targets, neutral at rest, Pharos blue on hover and focus", async () => {
+    for (const theme of ["dark", "light"]) {
+      const { context, page } = await open({ width: 390, theme });
+      const icons = await page.evaluate(() =>
+        [...document.querySelectorAll(".foot-links a")].map((link) => {
+          const box = link.getBoundingClientRect();
+          const svg = link.querySelector("svg").getBoundingClientRect();
+          return { name: link.getAttribute("aria-label"), title: link.title, href: link.href, target: [Math.round(box.width), Math.round(box.height)], icon: [Math.round(svg.width), Math.round(svg.height)], color: getComputedStyle(link).color };
+        }),
+      );
+      assert.deepEqual(icons.map((icon) => [icon.name, icon.title, icon.href]), [
+        ["Source code on GitHub, opens in a new tab", "GitHub", "https://github.com/Rzbyte/pharos-season-of-ai"],
+        ["Pharos documentation, opens in a new tab", "Pharos Docs", "https://docs.pharos.xyz/"],
+        ["rzbyte_ on X, opens in a new tab", "X", "https://x.com/rzbyte_"],
+      ]);
+      for (const icon of icons) assert.deepEqual([icon.target, icon.icon], [[44, 44], [20, 20]], icon.name);
+      const rest = theme === "dark" ? "rgb(155, 158, 159)" : "rgb(52, 52, 52)";
+      const blue = theme === "dark" ? "rgb(79, 132, 255)" : PHAROS_BLUE;
+      assert.deepEqual([...new Set(icons.map((icon) => icon.color))], [rest], `${theme} at rest`);
+      await page.hover(".foot-links li:nth-child(3) a");
+      await page.waitForTimeout(250);
+      assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".foot-links li:nth-child(3) a")).color), blue, `${theme} hover`);
+      await page.mouse.move(0, 0);
+      await page.focus(".foot-links a");
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+      await page.waitForTimeout(250);
+      const focus = await page.evaluate(() => { const style = getComputedStyle(document.activeElement); return [document.activeElement.getAttribute("aria-label"), style.color, style.outlineStyle, style.outlineColor]; });
+      assert.deepEqual(focus, ["Source code on GitHub, opens in a new tab", blue, "solid", blue], `${theme} focus`);
+      await context.close();
+    }
+  });
+
   test("keyboard: every control is reachable in order, with a visible focus ring", async () => {
     const { context, page } = await open({ width: 1280, height: 860 });
     const stops = [];
@@ -546,7 +702,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     }
     assert.ok(stops.length >= 14, `${stops.length} focus stops`);
     const names = stops.map((stop) => stop.name);
-    const expected = ["#snapshot", "theme-toggle", "Refresh snapshot", "copy", "#inspector", "#proof", "inspect-input", "inspect-submit", "inspect-example", "Proof & technical"];
+    const expected = ["#snapshot", "theme-toggle", "Refresh snapshot", "copy", "contract-explorer", "#inspector", "#proof", "inspect-input", "inspect-submit", "inspect-example", "Proof & technical"];
     let at = -1;
     for (const name of expected) {
       const index = names.findIndex((stop, position) => position > at && stop.startsWith(name));
@@ -569,9 +725,9 @@ describe("the Task 01 page in a browser", { skip }, () => {
       running: document.getAnimations().length,
       beacon: getComputedStyle(document.querySelector("#snapshot .beacon"), "::after").animationName,
       dot: getComputedStyle(document.querySelector("#status .status-dot")).animationName,
-      transitions: [".measured", ".btn", ".inspect-result"].map((selector) => getComputedStyle(document.querySelector(selector)).transitionDuration),
+      transitions: [".measured", ".btn", ".action", ".inspect-result"].map((selector) => getComputedStyle(document.querySelector(selector)).transitionDuration),
     }));
-    assert.deepEqual(motion, { running: 0, beacon: "none", dot: "none", transitions: ["0s", "0s", "0s"] });
+    assert.deepEqual(motion, { running: 0, beacon: "none", dot: "none", transitions: ["0s", "0s", "0s", "0s"] });
     await settled(page, ["fresh"]);
     mode.state = "fresh";
     mode.inspect = "ok";
@@ -580,6 +736,54 @@ describe("the Task 01 page in a browser", { skip }, () => {
     assert.equal(await page.evaluate(() => document.getElementById("proof").open), true);
     assert.equal(await page.evaluate(() => document.getElementById("supply").classList.contains("settle")), false);
     await context.close();
+  });
+
+  test("touch: every control offers at least 44 x 44px, a 32px action through its hit area", async () => {
+    const { context, page } = await open({ width: 390 });
+    await inspect(page, MINED, "success");
+    await page.click("#proof > summary");
+    await page.waitForTimeout(450);
+    const sweep = await page.evaluate(() => {
+      // Links inside running text are exempt (WCAG 2.5.8), as is the skip link, which sits off screen.
+      const controls = [...document.querySelectorAll("a[href], button, summary, input")].filter((element) => element.checkVisibility() && !element.closest(".proof-text, .skip"));
+      const small = [];
+      for (const element of controls) {
+        element.scrollIntoView({ block: "center" });
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const hits = (y) => { const at = document.elementFromPoint(x, y); return at === element || element.contains(at); };
+        let up = 0;
+        while (up < 12 && hits(rect.top - up - 0.5)) up += 1;
+        let down = 0;
+        while (down < 12 && hits(rect.bottom + down + 0.5)) down += 1;
+        const height = rect.height + up + down;
+        if (height < 43.5 || rect.width < 43.5) small.push(`${element.id || element.className || element.tagName}: ${Math.round(rect.width)} x ${Math.round(height)}`);
+      }
+      return { count: controls.length, small };
+    });
+    assert.ok(sweep.count >= 18, `${sweep.count} controls`);
+    assert.deepEqual(sweep.small, []);
+    await context.close();
+  });
+
+  test("no text on screen is set smaller than 12px", async () => {
+    for (const width of [320, 1280]) {
+      const { context, page } = await open({ width, height: 900 });
+      await inspect(page, MINED, "success");
+      const tiny = await page.evaluate(() => {
+        const found = new Set();
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const element = node.parentElement;
+          if (!node.textContent.trim() || !element.checkVisibility() || element.closest(".sr")) continue;
+          const size = parseFloat(getComputedStyle(element).fontSize);
+          if (size < 12) found.add(`${element.className || element.tagName} ${size}px: ${node.textContent.trim().slice(0, 24)}`);
+        }
+        return [...found];
+      });
+      assert.deepEqual(tiny, [], `${width}`);
+      await context.close();
+    }
   });
 
   test("the page made no request outside this site", () => {

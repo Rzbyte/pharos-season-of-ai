@@ -67,7 +67,7 @@
     --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     --caption: "Departure Mono", "Geist Mono", ui-monospace, monospace;
 
-    --fs-label: .6875rem;
+    --fs-label: .75rem;
     --fs-meta: .8125rem;
     --fs-small: .875rem;
     --fs-body: 1rem;
@@ -152,6 +152,7 @@
     font: 400 var(--fs-body)/1.55 var(--sans); -webkit-font-smoothing: antialiased;
   }
   h1, h2, h3, p, dl, dd, ol, ul { margin: 0; }
+  p { text-wrap: pretty; }
   ol, ul { padding: 0; list-style: none; }
   h1, h2, h3 { font-weight: 600; text-wrap: balance; }
   a { color: inherit; text-decoration-color: var(--line-strong); text-underline-offset: 4px; }
@@ -193,12 +194,12 @@
   /* ThemeToggle: offers the other theme. Both words and both icons share one cell, so switching
      never moves anything; only the pair for the current theme is visible. Shown once theme.js runs. */
   .theme-toggle {
-    display: none; align-items: center; justify-content: center; gap: 6px; min-width: 40px; min-height: 40px; padding: 0 12px;
+    display: none; align-items: center; justify-content: center; gap: 6px; min-width: 44px; min-height: 44px; padding: 0 12px;
     border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer;
     color: var(--text-2); font-size: var(--fs-meta); font-weight: 600;
   }
   .js .theme-toggle { display: inline-flex; }
-  .theme-toggle:hover { color: var(--text); border-color: var(--line-strong); }
+  .theme-toggle:hover, .theme-toggle:active { color: var(--text); border-color: var(--line-strong); }
   .theme-icons, .theme-words { display: grid; }
   .theme-icons > *, .theme-words > * { grid-area: 1 / 1; }
   .theme-icons svg { width: 16px; height: 16px; }
@@ -211,6 +212,7 @@
 
   /* A section: one hairline and generous space. */
   .section { padding-block: var(--section-y); border-top: 1px solid var(--line); }
+  .section-compact { padding-block: clamp(28px, 4vw, 48px); }
   .section-head { display: grid; gap: 8px; align-content: start; min-width: 0; margin-bottom: 24px; max-width: 62ch; }
   .section-title { font-size: var(--fs-h2); line-height: 1.3; letter-spacing: -.01em; }
   .section-lede { color: var(--text-2); font-size: .9375rem; }
@@ -248,10 +250,22 @@
   @media (min-width: 760px) { .task-nav { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; } }
 
   .foot { border-top: 1px solid var(--line); }
-  .foot-inner { display: grid; gap: 10px; padding-block: 40px 56px; }
-  .foot-tag { max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); }
-  .foot a { color: var(--text-2); font-size: var(--fs-small); }
-  .foot a:hover { color: var(--text); }
+  .foot-inner { display: grid; gap: 14px 40px; padding-block: 36px 48px; }
+  .foot-id { display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .foot-tag { max-width: 60ch; color: var(--text-2); font-size: var(--fs-small); }
+  /* The 44px targets are wider than their 20px icons; the negative margin lines the first icon
+     up with the text above it. */
+  .foot-links { display: flex; gap: 4px; margin-left: -12px; }
+  @media (min-width: 760px) {
+    .foot-inner { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+    .foot-links { margin: 0 -12px 0 0; }
+  }
+
+  /* IconLink: an external utility link shown as its icon alone, opening a new tab. Its name is its
+     aria-label and its tooltip its title. Neutral at rest, the readable Pharos blue on hover and focus. */
+  .icon-link { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; color: var(--text-2); }
+  .icon-link svg { width: 20px; height: 20px; }
+  .icon-link:hover, .icon-link:focus-visible, .icon-link:active { color: var(--accent); }
 }
 
 /* ── primitives: reusable across all 28 task pages ─────────────────── */
@@ -264,9 +278,10 @@
   .task-via { color: var(--text-2); line-height: 1.5; }
   .hero-about { display: grid; gap: 14px; align-content: start; min-width: 0; }
   .task-about { max-width: 46ch; color: var(--text-2); font-size: .9375rem; }
-  .jump { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: var(--fs-small); font-weight: 600; }
-  .jump a { display: inline-flex; align-items: center; min-height: 32px; color: var(--text-2); }
-  .jump a:hover { color: var(--text); }
+  /* Each jump link is a 44px target; stacked, the targets meet, so the links keep a text rhythm. */
+  .jump { display: flex; flex-wrap: wrap; gap: 0 20px; font-size: var(--fs-small); font-weight: 600; }
+  .jump a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-2); }
+  .jump a:hover, .jump a:active { color: var(--text); }
 
   /* Panel: the instrument. One surface, a hairline border, and the beacon: a short accent mark on
      its top edge, the light of Pharos. While a read is in flight (aria-busy) the edge lights up
@@ -287,7 +302,7 @@
   }
   .panel[aria-busy="true"] .beacon { background: color-mix(in srgb, var(--accent) 28%, transparent); }
   .panel[aria-busy="true"] .beacon::after { background: var(--accent); }
-  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
 
   /* Status: a dot and a word, then detail. The tone is set by the page: success, warning, error,
      active (a read in flight) or neutral (a ring: nothing new, nothing wrong). */
@@ -341,38 +356,69 @@
     .rows > .hex-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   }
 
-  /* Hex: an address or hash in its exact characters, in groups of four with break points between
-     them and nothing added, so a manual copy still yields the exact string. Lines always hold
-     whole, equal runs of groups, never one stranded group: a hash in lines of 4, 8 or 16 groups,
-     an address in lines of 5 or 10, chosen by the width available (in ch of this font). */
+  /* Hex: an address or hash as one continuous value in its exact characters, never spaced out,
+     cut off or scrolled. It may break only at its middle (an address) or quarters (a hash), the
+     <wbr> points renderHex adds, so a value that must wrap splits into equal lines: an address on
+     one line or two halves, a hash on one, two or four equal lines, by the width available (in ch
+     of this font). overflow-wrap is only a last resort, for a width too small for even a half. */
   .hex-cell { container: hex / inline-size; min-width: 0; font-family: var(--mono); font-size: .875rem; }
-  .hex { display: block; font-family: var(--mono); line-height: 1.65; color: var(--text); overflow-wrap: normal; word-break: normal; }
-  .hex > span { margin-right: .5ch; }
-  .hex-hash { max-width: 21ch; }
-  .hex-address { max-width: 25.5ch; }
-  @container hex (min-width: 39ch) { .hex-hash { max-width: 39ch; } }
-  @container hex (min-width: 74ch) { .hex-hash { max-width: none; } }
-  @container hex (min-width: 47.5ch) { .hex-address { max-width: none; } }
-  .contract { display: grid; gap: 4px; margin-top: 18px; }
-  .contract-row { display: flex; flex-wrap: wrap; align-items: last baseline; gap: 0 16px; }
-  .contract-row > .hex-cell { flex: 1 1 22ch; }
+  .hex { display: block; line-height: 1.6; color: var(--text); text-wrap: wrap; overflow-wrap: anywhere; }
+  .hex-hash { max-width: 26ch; }
+  @container hex (min-width: 36ch) { .hex-hash { max-width: 40ch; } }
+  @container hex (min-width: 67ch) { .hex-hash { max-width: none; } }
+  .contract { margin-top: 18px; }
+  .contract > .label { margin-bottom: 4px; }
+  /* A hex value has no baseline of its own (it is a size container), so the key beside it lines up
+     with its top, which is its first line. */
+  .rows > .hex-row { align-items: start; }
+
+  /* Actions: the utility actions of one value (Copy, View on the explorer), grouped in one row under
+     it. Each reads as a control, quieter than a button: a hairline edge, an icon and a word, 32px to
+     see and 44px to hit (an invisible margin). One that leaves the site ends in the out arrow and
+     opens a new tab. A row with nothing to show takes no space. */
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .actions:not(:has(> :not([hidden]))) { display: none; }
+  .action {
+    position: relative; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px;
+    border: 1px solid var(--line-strong); border-radius: 6px; background: none; cursor: pointer;
+    color: var(--text-2); font: 600 var(--fs-meta)/1 var(--sans); white-space: nowrap; text-decoration: none;
+  }
+  .action::after { content: ""; position: absolute; inset: -7px -1px; }
+  .action:hover { border-color: var(--text-3); background: var(--surface-2); color: var(--text); }
+  .action:active { background: var(--line); }
+  .action svg { width: 14px; height: 14px; margin: 0; flex: none; }
+  .copy[data-copy="copied"] { color: var(--text); }
+
+  /* Swap: words or icons that replace each other in place share one grid cell, so a control keeps
+     its size whatever it says. Copy shows its first pair until it has copied; a busy button shows
+     its second words (Reading…, Inspecting…) while it waits. */
+  .swap { display: inline-grid; }
+  .swap > * { grid-area: 1 / 1; }
+  .copy:not([data-copy="copied"]) .swap > :last-child, .copy[data-copy="copied"] .swap > :first-child,
+  .btn:not([aria-disabled="true"]) > .swap > :last-child, .btn[aria-disabled="true"] > .swap > :first-child { visibility: hidden; }
+  .btn-primary > .swap { justify-items: center; }
+
+  /* The out arrow: a link that leaves this site and opens a new tab. */
+  .ext { display: inline-block; width: .875em; height: .875em; margin-left: .2em; vertical-align: -.08em; }
 
   /* Buttons: one primary action per panel, everything else quiet. */
   .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 14px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 14px;
     border: 1px solid var(--line-strong); border-radius: 8px; background: none; cursor: pointer;
     color: var(--text); font-size: var(--fs-small); font-weight: 600; line-height: 1.2; white-space: nowrap; text-decoration: none;
   }
   .btn:hover { border-color: var(--text-3); background: var(--surface-2); }
+  .btn:not(.btn-primary):active { background: var(--line); }
   .btn svg { width: 16px; height: 16px; flex: none; }
   .btn-primary { min-height: 48px; padding: 0 22px; border-color: var(--brand-edge); background: var(--brand); color: var(--on-brand); }
-  .btn-primary:hover { border-color: var(--brand-edge-hover); background: var(--brand-hover); }
+  /* Pressed shows the hover look, so a finger, which never hovers, sees the press too. */
+  .btn-primary:hover, .btn-primary:active { border-color: var(--brand-edge-hover); background: var(--brand-hover); }
   .btn-quiet {
-    display: inline-flex; align-items: center; min-height: 40px; padding: 0; border: 0; background: none; cursor: pointer;
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: none; cursor: pointer;
     color: var(--text-2); font-size: var(--fs-small); font-weight: 600;
     text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 4px;
   }
-  .btn-quiet:hover { color: var(--text); text-decoration-color: var(--text-3); }
+  .btn-quiet:hover, .btn-quiet:active { color: var(--text); text-decoration-color: var(--text-3); }
   /* Busy controls keep focus (aria-disabled, not disabled) and say so by looking inactive. */
   .btn[aria-disabled="true"], .btn-quiet[aria-disabled="true"] { cursor: progress; color: var(--text-3); }
   .btn-primary[aria-disabled="true"] { border-color: var(--line-strong); background: var(--surface-2); }
@@ -380,7 +426,7 @@
   @container panel (min-width: 420px) { .wide-only { display: inline; } }
 
   /* Field: one labelled input and its action, with a live hint below. */
-  .field-label { display: block; margin: 6px 0 8px; font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .field-label { display: block; margin: 6px 0 8px; font-size: var(--fs-small); font-weight: 600; color: var(--text); text-wrap: balance; }
   .field { display: grid; gap: 10px; }
   @container panel (min-width: 460px) { .field { grid-template-columns: minmax(0, 1fr) auto; } }
   .input {
@@ -409,7 +455,6 @@
   #inspector[data-inspect-state="error"] .inspect-result { opacity: .75; }
   .inspect-result .unavailable > span:first-child { color: var(--text-3); }
   .inspect-result .hex-sub { margin-top: 2px; }
-  .copy { min-height: 32px; font-family: var(--sans); font-size: var(--fs-meta); }
   .inspect-message { margin-top: 12px; max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); }
 
   /* Disclosure: the proof, collapsed by default. The summary row is the section heading. */
@@ -427,7 +472,7 @@
   }
   .disclosure-icon svg { width: 16px; height: 16px; }
   .disclosure[open] .disclosure-icon svg { transform: rotate(180deg); }
-  .disclosure > summary:hover .disclosure-icon { color: var(--text); border-color: var(--text-3); }
+  .disclosure > summary:hover .disclosure-icon, .disclosure > summary:active .disclosure-icon { color: var(--text); border-color: var(--text-3); }
   .disclosure-body { display: grid; gap: 28px; padding-top: 28px; }
 
   /* Counts: the evidence, one number per claim, in a ruled grid. */
@@ -465,17 +510,20 @@
   .kv dd.kv-text { font-family: var(--sans); font-size: var(--fs-small); line-height: 1.55; color: var(--text-2); }
   @media (max-width: 479px) { .kv > div { grid-template-columns: minmax(0, 1fr); } }
 
-  /* SourceLinks: where the code, the transcript and the data live. */
+  /* SourceLinks: where the code, the transcript and the data live. One set: every item is a title
+     with its arrow on the same line and a path below, the items in a row share one height, and a
+     path breaks only between its segments (<wbr>), so a wrap never makes one item look broken. */
   .links { display: grid; border-top: 1px solid var(--line); }
+  .links li { display: grid; }
   .links a {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 16px; min-height: 60px;
-    padding-block: 12px; border-bottom: 1px solid var(--line); text-decoration: none;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; gap: 2px 16px;
+    padding-block: 14px; border-bottom: 1px solid var(--line); text-decoration: none;
   }
-  .link-title { font-weight: 600; color: var(--text); }
-  .link-meta { grid-column: 1; font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); overflow-wrap: anywhere; }
-  .link-arrow { grid-column: 2; grid-row: 1 / span 2; width: 16px; height: 16px; color: var(--text-3); }
-  .links a:hover .link-title, .links a:hover .link-arrow { color: var(--accent); }
-  @media (min-width: 760px) {
+  .link-title { grid-column: 1; grid-row: 1; font-weight: 600; color: var(--text); }
+  .link-arrow { grid-column: 2; grid-row: 1; align-self: center; width: 16px; height: 16px; color: var(--text-3); }
+  .link-meta { grid-column: 1 / -1; grid-row: 2; font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); }
+  .links a:hover .link-title, .links a:hover .link-arrow, .links a:active .link-title, .links a:active .link-arrow { color: var(--accent); }
+  @media (min-width: 960px) {
     .links { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 32px; border-top: 0; }
     .links a { border-top: 1px solid var(--line); }
   }
@@ -493,7 +541,7 @@
     .measured, .inspect-result { transition: opacity .2s ease; }
     /* backwards, not both: a filled end state would override the READING and ERROR dimming. */
     .settle { animation: settle .35s var(--ease) backwards; }
-    .btn, .btn-quiet, .input, .theme-toggle, .disclosure-icon { transition: color .15s ease, background-color .15s ease, border-color .15s ease; }
+    .btn, .btn-quiet, .action, .icon-link, .input, .theme-toggle, .disclosure-icon { transition: color .15s ease, background-color .15s ease, border-color .15s ease; }
     .link-arrow { transition: transform .15s ease, color .15s ease; }
     .links a:hover .link-arrow { transform: translate(2px, -2px); }
     .disclosure-icon svg { transition: transform .25s var(--ease); }

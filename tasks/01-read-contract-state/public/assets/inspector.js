@@ -6,7 +6,7 @@
 // rule. Everything from the API is written as text. A failed inspection keeps the last good result
 // on screen with an error note; a new result replaces it only once it has arrived.
 import { classifyInput } from "./inspect-input.js";
-import { clockTime, groupDigits, reducedMotion, setText } from "./lab.js";
+import { clockTime, groupDigits, linkExplorer, renderHex, setText, wireCopy } from "./lab.js";
 
 const $ = (id) => document.getElementById(id);
 const root = $("inspector");
@@ -24,11 +24,13 @@ const WORD = { inspecting: "Inspecting", success: "Success", partial: "Partial",
 // Green only for a full result, amber for a partial one, red for an error; not found is neutral.
 const TONE = { inspecting: "active", success: "success", partial: "warning", "not-found": "neutral", error: "error" };
 const KIND = { contract: "Contract", transaction: "Transaction" };
+const DETECTED = { contract: "contract address", transaction: "transaction hash" };
 const TX_STATUS = { success: "Success", failed: "Failed (reverted)", pending: "Pending" };
+// Not found is an answer, not a failure: what to check next.
+const NOT_FOUND_NEXT = "Check that the hash is complete and from Pharos Mainnet, not a testnet. A transaction sent moments ago can take a few seconds to appear: inspect it again then.";
 
 let busy = false;
 let shown = null;
-let copyTimer;
 
 input.addEventListener("input", describeInput);
 $("inspect-form").addEventListener("submit", (event) => {
@@ -50,8 +52,8 @@ function describeInput() {
   const typing = /^0x[0-9a-fA-F]*$/.test(value) && value.length < 66;
   input.removeAttribute("aria-invalid");
   detected.classList.remove("invalid");
-  if (value === "") setText(detected, "Detected: nothing yet");
-  else if (check.ok) setText(detected, `Detected: ${KIND[check.kind]}`);
+  if (value === "") setText(detected, "Accepts a contract address (42 characters) or a transaction hash (66).");
+  else if (check.ok) setText(detected, `Detected: ${DETECTED[check.kind]}`);
   else if (typing) setText(detected, `${value.length - 2} hex characters so far: 40 for an address, 64 for a transaction hash.`);
   else setText(detected, check.message);
 }
@@ -97,7 +99,7 @@ async function run() {
     fail(
       data?.error?.message
         ? [data.error.message, data.error.hint].filter(Boolean).join(" ")
-        : response ? `The inspector answered HTTP ${response.status}.` : "Could not reach the inspector, or it did not answer in time.",
+        : `${response ? `The inspector answered HTTP ${response.status}.` : "Could not reach the inspector, or it did not answer in time."} Try again in a moment.`,
     );
   }
   setBusy(false);
@@ -120,12 +122,14 @@ function report(state, detail) {
   if (state !== "error") note.hidden = true;
 }
 
-/** While inspecting, the panel is busy and its buttons wait; they keep focus (aria-disabled). */
+/**
+ * While inspecting, the panel is busy and its buttons wait; they keep focus (aria-disabled). The
+ * button then reads "Inspecting…": both words share one cell in lab.css, so it keeps its size.
+ */
 function setBusy(on) {
   panel.setAttribute("aria-busy", String(on));
   submit.setAttribute("aria-disabled", String(on));
   example.setAttribute("aria-disabled", String(on));
-  setText(submit, on ? "Inspecting" : "Inspect");
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +144,7 @@ function render(data) {
 
 function contractBlocks(data) {
   const summary = rows("rows", [
-    ["Address", data.address, { hex: true, copy: "address" }],
+    ["Address", data.address, { hex: true, copy: "address", explorer: "address" }],
     ["Block", groupDigits(data.blockNumber)],
     ["Network", networkName(data.network)],
   ]);
@@ -155,13 +159,14 @@ function contractBlocks(data) {
 }
 
 function transactionBlocks(data) {
+  // Not found: no explorer link, since nothing was found to show there; the next step instead.
   if (data.status === "not-found" || !data.transaction) {
-    return [rows("rows", [["Hash", data.hash, { hex: true, copy: "hash" }], ["Result", "Not found through Pharos Chain MCP"]])];
+    return [rows("rows", [["Hash", data.hash, { hex: true, copy: "transaction hash" }], ["Result", "Not found through Pharos Chain MCP"]]), element("p", "inspect-message", NOT_FOUND_NEXT)];
   }
   const tx = data.transaction;
   const created = tx.contractCreation;
   const entries = [
-    ["Hash", tx.hash, { hex: true, copy: "hash" }],
+    ["Hash", tx.hash, { hex: true, copy: "transaction hash", explorer: "tx" }],
     tx.status && ["Status", TX_STATUS[tx.status] ?? tx.status],
     tx.blockNumber && ["Block", groupDigits(tx.blockNumber)],
     tx.from && ["From", tx.from, { hex: true }],
@@ -178,7 +183,8 @@ function transactionBlocks(data) {
 
 /**
  * A ruled list of key/value rows. A value is text, or [text, secondary line]; with { hex: true }
- * the value (or the secondary line) is an address or hash, set in groups of four.
+ * the value (or the secondary line) is an address or hash, shown whole (renderHex); with { copy }
+ * its actions follow it: Copy, and View on the explorer with { explorer }.
  */
 function rows(className, entries) {
   const list = element("dl", className);
@@ -191,11 +197,10 @@ function rows(className, entries) {
       dd.append(element("span", "", main.unavailable ? main.text : main));
       dd.append(options.hex ? hexValue(sub, "hex-sub") : element("span", "sub", sub));
     } else if (options.hex) {
-      dd.append(hexValue(value));
+      dd.append(...(options.copy ? withActions(value, options) : [hexValue(value)]));
     } else {
       dd.append(value);
     }
-    if (options.copy) dd.append(copyButton(options.copy, Array.isArray(value) ? value[1] : value));
     row.append(element("dt", "", key), dd);
     list.append(row);
   }
@@ -217,40 +222,31 @@ function networkName(network) {
   return network.name ?? `Chain ID ${network.chainId}`;
 }
 
-function copyButton(what, value) {
-  const button = element("button", "btn-quiet copy", `Copy ${what}`);
-  button.type = "button";
-  button.addEventListener("click", async () => {
-    let copied = false;
-    try {
-      await navigator.clipboard.writeText(value);
-      copied = true;
-    } catch {
-      // Clipboard access can be refused; the value stays selectable.
-    }
-    setText(button, copied ? "Copied" : "Select to copy");
-    clearTimeout(copyTimer);
-    copyTimer = setTimeout(() => setText(button, `Copy ${what}`), reducedMotion() ? 2400 : 1600);
-  });
-  return button;
+/**
+ * The value, then its actions in one row under it: Copy, and View on the explorer when `explorer`
+ * names the explorer page for it ("address" or "tx"). The explorer link is made only from the
+ * well-formed value (linkExplorer); otherwise it is left out.
+ */
+function withActions(hex, { copy: what, explorer }) {
+  const cell = hexValue(hex);
+  // The page's own actions, from its <template>: static markup, never data.
+  const actions = $("actions-template").content.firstElementChild.cloneNode(true);
+  const button = actions.querySelector(".copy");
+  const link = actions.querySelector("a");
+  setText(button.querySelector(".copy-what"), ` ${what}`);
+  wireCopy(button, { value: () => hex, shown: () => cell.firstElementChild, live: $("inspect-copy-state"), what: what[0].toUpperCase() + what.slice(1) });
+  if (explorer) linkExplorer(link, explorer, hex, what);
+  if (link.hidden) link.remove();
+  return [cell, actions];
 }
 
-/** An address or hash as a block of groups; lab.css keeps every line to whole, equal runs. */
+/** An address or hash as one continuous value; lab.css decides where it may break. */
 function hexValue(hex, extra = "") {
   const cell = element("div", ["hex-cell", extra].filter(Boolean).join(" "));
-  const value = element("span", ["hex", hex.length === 66 ? "hex-hash" : hex.length === 42 ? "hex-address" : ""].filter(Boolean).join(" "));
-  appendGrouped(value, hex);
+  const value = element("span", hex.length === 66 ? "hex hex-hash" : "hex");
+  renderHex(value, hex);
   cell.append(value);
   return cell;
-}
-
-/** Hex in groups of four with break points between them, like the address above; the text is unchanged. */
-function appendGrouped(parent, hex) {
-  const groups = hex.slice(2).match(/.{1,4}/g) ?? [];
-  groups.forEach((group, index) => {
-    if (index > 0) parent.append(document.createElement("wbr"));
-    parent.append(element("span", "group", index === 0 ? `0x${group}` : group));
-  });
 }
 
 function element(tag, className, text) {

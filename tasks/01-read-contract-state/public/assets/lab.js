@@ -18,11 +18,42 @@ export function splitAmount(text) {
   };
 }
 
-/** An address in groups of four for reading ("0xC879", "C018", ...); null if it is not an address. */
-export function chunkAddress(address) {
-  if (!/^0x[0-9a-fA-F]{40}$/.test(String(address))) return null;
-  const groups = address.slice(2).match(/.{4}/g);
-  return [`0x${groups[0]}`, ...groups.slice(1)];
+/**
+ * Where a hex value may break: an address only at its middle ("0x" + 20 digits, then 20), a
+ * transaction hash only at its quarters ("0x" + 16 digits, then 16, 16, 16). Rejoined, the parts
+ * are the exact value. null for anything else, which is then shown as plain text.
+ */
+export function hexParts(value) {
+  const text = String(value);
+  if (!/^0x[0-9a-fA-F]+$/.test(text)) return null;
+  const digits = text.length - 2;
+  const count = digits === 40 ? 2 : digits === 64 ? 4 : 0;
+  if (!count) return null;
+  const size = digits / count;
+  return Array.from({ length: count }, (_, index) => (index === 0 ? "0x" : "") + text.slice(2 + index * size, 2 + (index + 1) * size));
+}
+
+/** The block explorer's page for each kind of value, and the only form that value may take. */
+const EXPLORER_FORMS = new Map([["address", /^0x[0-9a-fA-F]{40}$/], ["tx", /^0x[0-9a-fA-F]{64}$/], ["block", /^(?:0|[1-9]\d*)$/]]);
+
+/**
+ * A block explorer link for one value: the base, then "/address/", "/tx/" or "/block/" and the
+ * value; otherwise null. Only a well-formed value (an address of 40 hex digits, a transaction hash
+ * of 64, a block number in decimal digits) on an https base with nothing after its host becomes a
+ * link, so malformed input is never linked.
+ */
+export function explorerUrl(base, kind, value) {
+  const text = String(value ?? "");
+  const form = EXPLORER_FORMS.get(kind);
+  if (!form || !form.test(text)) return null;
+  let url;
+  try {
+    url = new URL(String(base ?? ""));
+  } catch {
+    return null;
+  }
+  const bare = url.protocol === "https:" && !url.username && !url.password && !url.port && url.pathname === "/" && !url.search && !url.hash;
+  return bare ? `${url.origin}/${kind}/${text}` : null;
 }
 
 /** "20175330" -> "0x133d9e2", the form the MCP eth_call requests carried. */
@@ -107,21 +138,78 @@ export function fitFigure(figure, number, min) {
   if (needed > available) figure.style.fontSize = `${Math.floor(min * (available / needed) * 0.99 * 10) / 10}px`;
 }
 
-/** Render an address as inline groups with break points between them and no added characters. */
-export function renderAddress(element, address) {
-  const groups = chunkAddress(address);
-  if (!groups) {
-    element.textContent = address;
+/**
+ * Render an address or hash as one continuous value: its exact characters, with nothing between
+ * them but <wbr> break points at its middle or quarters (hexParts). lab.css then lets it run on one
+ * line or split into equal lines, so a wrapped value never strands a fragment. A copy of the text,
+ * by hand or by Copy, is the exact value.
+ */
+export function renderHex(element, value) {
+  const parts = hexParts(value);
+  if (!parts) {
+    element.textContent = String(value);
     return;
   }
-  const parts = [];
-  groups.forEach((group, index) => {
-    if (index > 0) parts.push(document.createElement("wbr"));
+  const nodes = [];
+  parts.forEach((part, index) => {
+    if (index > 0) nodes.push(document.createElement("wbr"));
     const span = document.createElement("span");
-    span.textContent = group;
-    parts.push(span);
+    span.textContent = part;
+    nodes.push(span);
   });
-  element.replaceChildren(...parts);
+  element.replaceChildren(...nodes);
+}
+
+/**
+ * A Copy button for a technical value. It copies `value()`; if the clipboard is refused, it selects
+ * the value on screen (`shown()`) instead, ready for a copy by hand. Its word and icon change in
+ * place (each pair shares one cell in lab.css), so nothing moves. `live` says the outcome to screen
+ * readers.
+ */
+export function wireCopy(button, { value, shown, live, what }) {
+  let timer;
+  button.addEventListener("click", async () => {
+    let state = "copied";
+    try {
+      await navigator.clipboard.writeText(value());
+    } catch {
+      state = "selected";
+      const target = shown?.();
+      if (target) getSelection()?.selectAllChildren(target);
+    }
+    button.dataset.copy = state;
+    if (live) setText(live, state === "copied" ? `${what} copied` : `${what} selected, ready to copy`);
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      button.dataset.copy = "idle";
+      if (live) setText(live, "");
+    }, reducedMotion() ? 2400 : 1600);
+  });
+}
+
+/**
+ * Point an explorer link at one value, on the explorer the page sets in <meta name="explorer">: its
+ * address in `content`, its name in `data-name`, both on that one line. In the page the link is a
+ * hidden placeholder <a> with no href. Once explorerUrl makes a valid link, the link says the
+ * explorer's name, opens in a new tab with no handle on this page and no referrer, and its accessible
+ * name is its visible words, then what it shows and that it opens a new tab. Otherwise it goes back
+ * to a hidden placeholder.
+ */
+export function linkExplorer(link, kind, value, what) {
+  const explorer = document.querySelector('meta[name="explorer"]');
+  const href = explorerUrl(explorer?.content, kind, value);
+  if (href) {
+    const name = explorer.dataset.name?.trim();
+    const slot = link.querySelector(".explorer-name");
+    if (name && slot) slot.textContent = name;
+    link.href = href;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.setAttribute("aria-label", `${link.textContent.trim()}: ${what}, opens in a new tab`);
+  } else {
+    for (const name of ["href", "target", "rel", "aria-label"]) link.removeAttribute(name);
+  }
+  link.hidden = !href;
 }
 
 /**

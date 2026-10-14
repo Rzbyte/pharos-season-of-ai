@@ -10,7 +10,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { describe, test } from "node:test";
 import vm from "node:vm";
 import { toFunctionSelector } from "viem";
-import { chunkAddress, clockTime, duration, groupDigits, renderAddress, renderTaskContext, snapshotSource, splitAmount, toHexBlock } from "../public/assets/lab.js";
+import { clockTime, duration, explorerUrl, groupDigits, hexParts, renderHex, renderTaskContext, snapshotSource, splitAmount, toHexBlock } from "../public/assets/lab.js";
 import { TASKS } from "../public/assets/tasks.js";
 
 const file = (path) => new URL(`../${path}`, import.meta.url);
@@ -53,10 +53,68 @@ describe("what the page loads and calls", () => {
     for (const [, url] of css.matchAll(/url\("([^"]+)"\)/g)) assert.match(url, /^\/assets\/fonts\/[\w-]+\.woff2$/);
   });
 
-  test("links out only to this project's GitHub repository", () => {
+  test("links out only to verified places: this repository, the Pharos docs and the author's X profile", () => {
     const external = [...html.matchAll(/href="(https?:[^"]+)"/g)].map((match) => match[1]);
-    assert.ok(external.length >= 3);
-    for (const url of external) assert.ok(url.startsWith("https://github.com/Rzbyte/pharos-season-of-ai"), url);
+    assert.ok(external.length >= 5);
+    const verified = [/^https:\/\/github\.com\/Rzbyte\/pharos-season-of-ai(?:\/|$)/, /^https:\/\/docs\.pharos\.xyz\/$/, /^https:\/\/x\.com\/rzbyte_$/];
+    for (const url of external) assert.ok(verified.some((pattern) => pattern.test(url)), url);
+  });
+
+  test("every link that leaves the site opens a new tab with no opener, and says so; links within it stay", () => {
+    const anchors = html.match(/<a\b[^>]*>[\s\S]*?<\/a>/g);
+    assert.ok(anchors.length >= 12);
+    for (const anchor of anchors) {
+      const start = anchor.match(/^<a\b[^>]*>/)[0];
+      // An explorer link is a placeholder (no href, target or rel) until linkExplorer makes it from a
+      // checked value; lab.js then gives it the same new tab, below.
+      if (start.startsWith('<a class="action"')) {
+        assert.doesNotMatch(start, /\s(?:href|target|rel)=/, start);
+        continue;
+      }
+      const leaves = /\shref="https?:/.test(start);
+      if (!leaves) {
+        assert.doesNotMatch(start, /target=/, start);
+        continue;
+      }
+      assert.match(start, /\starget="_blank" rel="noopener noreferrer"[\s>]/, start);
+      // Its name says it opens a new tab: in its aria-label, or in hidden words.
+      assert.ok(/aria-label="[^"]*, opens in a new tab"/.test(start) || anchor.endsWith('<span class="sr">, opens in a new tab</span></a>'), start);
+      // ...and it ends in the out arrow, unless it is an icon by itself.
+      assert.ok(/<svg class="(?:ext|link-arrow)"[^>]*>\s*<path d="M5 11l6-6M6 5h5v5"/.test(anchor) || start.includes('class="icon-link"'), start);
+    }
+    assert.match(script("lab.js"), /link\.href = href;\n {4}link\.target = "_blank";\n {4}link\.rel = "noopener noreferrer";\n {4}link\.setAttribute\("aria-label", `\$\{link\.textContent\.trim\(\)\}: \$\{what\}, opens in a new tab`\);/);
+    assert.match(script("lab.js"), /for \(const name of \["href", "target", "rel", "aria-label"\]\) link\.removeAttribute\(name\);/);
+  });
+
+  test("the block explorer is named once, in a meta tag, and every link to it is built from a checked value", () => {
+    // The explorer's address and name share one line: switching explorers is a one-line change.
+    assert.deepEqual(html.match(/<meta name="explorer" content="([^"]+)" data-name="([^"]+)">/).slice(1), ["https://pharos.socialscan.io", "SocialScan"]);
+    assert.equal(html.match(/socialscan\.io/g).length, 1, "the explorer host appears only in its meta tag");
+    assert.equal(html.match(/SocialScan/g).length, 1, "the explorer name appears only in its meta tag");
+    for (const text of [html, ...scripts.map(({ text }) => text)]) assert.doesNotMatch(text, /pharosscan/i, "no trace of the earlier explorer");
+    assert.match(script("lab.js"), /const name = explorer\.dataset\.name\?\.trim\(\);\n {4}const slot = link\.querySelector\("\.explorer-name"\);\n {4}if \(name && slot\) slot\.textContent = name;/);
+    assert.match(script("lab.js"), /const explorer = document\.querySelector\('meta\[name="explorer"\]'\);\n {2}const href = explorerUrl\(explorer\?\.content, kind, value\);/);
+    for (const link of html.match(/<a class="action"[^>]*>/g)) {
+      assert.doesNotMatch(link, /\shref=/, "no explorer link exists until a value is checked");
+      assert.match(link, /\shidden>$/);
+    }
+    const base = "https://pharos.socialscan.io";
+    const hash = `0x${"0123456789abcdef".repeat(4)}`;
+    assert.equal(explorerUrl(base, "address", USDC), `${base}/address/${USDC}`);
+    assert.equal(explorerUrl(`${base}/`, "tx", hash), `${base}/tx/${hash}`);
+    assert.equal(explorerUrl(base, "block", "20384112"), `${base}/block/20384112`);
+    assert.equal(explorerUrl(base, "block", "0"), `${base}/block/0`);
+    // Malformed values never become links.
+    for (const [kind, value] of [
+      ["address", USDC.slice(0, -1)], ["address", `${USDC}0`], ["address", USDC.slice(2)], ["address", `0x${"g".repeat(40)}`], ["address", ` ${USDC}`],
+      ["address", `${USDC}/../../x`], ["address", hash], ["address", "javascript:alert(1)"], ["address", null], ["address", undefined], ["address", ""],
+      ["tx", USDC], ["tx", `${hash}"`], ["tx", `${hash}?x=1`], ["block", "0x10"], ["block", "-1"], ["block", "1.5"], ["block", "007"], ["block", "1e9"], ["block", ""],
+      ["token", USDC], ["__proto__", USDC], ["constructor", USDC], [undefined, USDC],
+    ]) assert.equal(explorerUrl(base, kind, value), null, `${kind} ${value}`);
+    // Nor does a base that is not a bare https origin.
+    for (const bad of ["http://pharos.socialscan.io", "https://pharos.socialscan.io/address", "https://pharos.socialscan.io?x=1", "https://pharos.socialscan.io#x", "https://user@pharos.socialscan.io", "https://pharos.socialscan.io:8443", "javascript:alert(1)", "//pharos.socialscan.io", "pharos.socialscan.io", "", undefined, null]) {
+      assert.equal(explorerUrl(bad, "address", USDC), null, String(bad));
+    }
   });
 
   test("the browser calls only this site's /api/state and /api/inspect: no MCP, RPC or other client code", () => {
@@ -131,8 +189,8 @@ describe("the words on the page", () => {
     assert.match(visibleText, /Block — read at —/);
     assert.match(visibleText, /On-chain state via Pharos Chain MCP/);
     assert.match(visibleText, /Total supply/);
-    assert.match(html, /<button class="btn" type="button" data-refresh>.*Refresh<span class="wide-only"> snapshot<\/span>/);
-    assert.match(pageJs, /last \? "showing the last good snapshot" : "no snapshot yet"/);
+    assert.match(html, /<button class="btn" type="button" data-refresh>.*<span class="swap"><span>Refresh<span class="wide-only"> snapshot<\/span><\/span><span>Reading…<\/span><\/span><\/button>/);
+    assert.match(pageJs, /last \? "showing the last good snapshot" : "no snapshot yet", `\$\{problem\} Refresh to try again\.`\)/);
   });
 
   test("fresh or cached is decided by the response itself", () => {
@@ -240,12 +298,12 @@ describe("formatting chain data", () => {
     assert.deepEqual(splitAmount("0.5"), { major: "0", minor: ".5", unit: "" });
   });
 
-  test("chunks only a real address, and the chunks rebuild it exactly", () => {
-    const groups = chunkAddress(USDC);
-    assert.deepEqual(groups, ["0xC879", "C018", "dB60", "520F", "4355", "C26e", "D1a6", "D572", "cdAC", "1815"]);
-    assert.equal(groups.join(""), USDC);
-    assert.equal(chunkAddress("0x1234"), null);
-    assert.equal(chunkAddress(`${USDC}00`), null);
+  test("a hex value may break only at its middle (address) or quarters (hash), and the parts rebuild it exactly", () => {
+    assert.deepEqual(hexParts(USDC), ["0xC879C018dB60520F4355", "C26eD1a6D572cdAC1815"]);
+    const hash = `0x${"0123456789abcdef".repeat(4)}`;
+    assert.deepEqual(hexParts(hash), [`0x${"0123456789abcdef"}`, "0123456789abcdef", "0123456789abcdef", "0123456789abcdef"]);
+    for (const value of [USDC, hash]) assert.equal(hexParts(value).join(""), value);
+    for (const other of ["0x1234", `${USDC}00`, "C879C018dB60520F4355C26eD1a6D572cdAC1815", `0x${"g".repeat(40)}`, "<b>0x</b>", ""]) assert.equal(hexParts(other), null, other);
   });
 
   test("block in hex, durations and clock times", () => {
@@ -287,15 +345,19 @@ describe("DOM helpers write text, never markup", () => {
     }
   };
 
-  test("renderAddress shows the exact address in groups, adding no characters", () => {
+  test("renderHex shows the exact value as one run: no spaces, only <wbr> at its break points", () => {
     withDocument(() => {
-      const target = element();
-      renderAddress(target, USDC);
-      assert.equal(target.textContent, USDC);
-      assert.equal(target.children.filter((node) => node.tagName === "SPAN").length, 10);
-      assert.equal(target.children.filter((node) => node.tagName === "WBR").length, 9);
+      const address = element();
+      renderHex(address, USDC);
+      assert.equal(address.textContent, USDC);
+      assert.doesNotMatch(address.textContent, /\s/);
+      assert.deepEqual(address.children.map((node) => node.tagName), ["SPAN", "WBR", "SPAN"]);
+      const hash = element();
+      renderHex(hash, `0x${"ab".repeat(32)}`);
+      assert.equal(hash.textContent, `0x${"ab".repeat(32)}`);
+      assert.deepEqual(hash.children.map((node) => node.tagName), ["SPAN", "WBR", "SPAN", "WBR", "SPAN", "WBR", "SPAN"]);
       const odd = element();
-      renderAddress(odd, "<b>not an address</b>");
+      renderHex(odd, "<b>not an address</b>");
       assert.equal(odd.textContent, "<b>not an address</b>");
       assert.equal(odd.children.length, 0);
     });
@@ -378,7 +440,7 @@ describe("two themes", () => {
       for (const declaration of line.match(/[\w-]+:\s*var\(--brand\)/g)) assert.match(declaration, /^(?:background|border-color):/, line);
     }
     assert.match(rules, /\.btn-primary \{[^}]*border-color: var\(--brand-edge\); background: var\(--brand\); color: var\(--on-brand\);/);
-    assert.match(rules, /\.btn-primary:hover \{ border-color: var\(--brand-edge-hover\); background: var\(--brand-hover\); \}/);
+    assert.match(rules, /\.btn-primary:hover, \.btn-primary:active \{ border-color: var\(--brand-edge-hover\); background: var\(--brand-hover\); \}/);
     // Dark gives the Pharos Blue control an edge in the derived blue it already uses; light keeps the
     // fill as its own edge, exactly as before.
     assert.deepEqual([dark["--brand-edge"], dark["--brand-edge-hover"]], [dark["--accent"], dark["--accent"]]);
@@ -564,6 +626,36 @@ describe("design system", () => {
     assert.match(html, /<span class="sub">Chain ID <span data-chain>—<\/span><\/span>/);
   });
 
+  test("readable sizes: captions at 12px, and no text set smaller", () => {
+    assert.match(rules, /--fs-label: \.75rem;/);
+    for (const [, value, unit] of rules.matchAll(/font-size:\s*(\d*\.?\d+)(rem|px)\b/g)) assert.ok(Number(value) * (unit === "rem" ? 16 : 1) >= 12, `font-size ${value}${unit}`);
+    const tokens = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")));
+    const sizes = [...tokens.matchAll(/(--fs-[\w-]+):\s*([\d.]+)rem;/g)];
+    assert.ok(sizes.length >= 5);
+    for (const [, name, value] of sizes) assert.ok(Number(value) * 16 >= 12, `${name}: ${value}rem`);
+  });
+
+  test("every control answers a press: the hover look, or a darker fill for a bordered control", () => {
+    for (const selector of [".theme-toggle", ".icon-link", ".jump a", ".btn-primary", ".btn-quiet", ".disclosure > summary", ".links a"]) {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      assert.match(rules, new RegExp(`${escaped}:active`), selector);
+    }
+    assert.match(rules, /\.btn:not\(\.btn-primary\):active \{ background: var\(--line\); \}/);
+    assert.match(rules, /\.action:active \{ background: var\(--line\); \}/);
+  });
+
+  test("controls offer a 44px target: buttons, toggles, footer icons and jump links; a 32px action by its hit area", () => {
+    for (const rule of [
+      /\.btn \{[^}]*min-height: 44px;/,
+      /\.btn-quiet \{[^}]*min-height: 44px;/,
+      /\.btn-primary \{ min-height: 48px;/,
+      /\.theme-toggle \{[^}]*min-width: 44px; min-height: 44px;/,
+      /\.icon-link \{[^}]*width: 44px; height: 44px;/,
+      /\.jump a \{[^}]*min-height: 44px;/,
+      /\.input \{[^}]*min-height: 48px;/,
+    ]) assert.match(rules, rule);
+  });
+
   test("Departure Mono is kept to small captions, through .label only", () => {
     const selectors = [...rules.matchAll(/([^{}]+)\{[^{}]*var\(--caption\)[^{}]*\}/g)].flatMap((match) => match[1].split(",").map((part) => part.trim()));
     assert.deepEqual([...new Set(selectors)], [".label"]);
@@ -588,21 +680,85 @@ describe("design system", () => {
     assert.match(inspectorJs, /const TONE = \{ inspecting: "active", success: "success", partial: "warning", "not-found": "neutral", error: "error" \};/);
   });
 
-  test("long hex values break only into whole, equal lines of groups", () => {
+  test("hex values are one continuous run that splits only into equal lines", () => {
     for (const rule of [
-      /\.hex-hash \{ max-width: 21ch; \}/,
-      /\.hex-address \{ max-width: 25\.5ch; \}/,
-      /@container hex \(min-width: 39ch\) \{ \.hex-hash \{ max-width: 39ch; \} \}/,
-      /@container hex \(min-width: 74ch\) \{ \.hex-hash \{ max-width: none; \} \}/,
-      /@container hex \(min-width: 47\.5ch\) \{ \.hex-address \{ max-width: none; \} \}/,
-      /\.hex > span \{ margin-right: \.5ch; \}/,
+      /\.hex \{ display: block; line-height: 1\.6; color: var\(--text\); text-wrap: wrap; overflow-wrap: anywhere; \}/,
+      /\.hex-hash \{ max-width: 26ch; \}/,
+      /@container hex \(min-width: 36ch\) \{ \.hex-hash \{ max-width: 40ch; \} \}/,
+      /@container hex \(min-width: 67ch\) \{ \.hex-hash \{ max-width: none; \} \}/,
     ]) assert.match(rules, rule);
-    // Lines of n groups: the first carries "0x" (2 + 4.5n ch), the others 4.5n ch. Each max-width
-    // must fit n groups on the first line and not n + 1 groups on any line.
-    const fits = (max, n) => 2 + 4.5 * n <= max && 4.5 * (n + 1) > max && 2 + 4.5 * (n + 1) > max;
-    assert.ok(fits(21, 4) && fits(39, 8) && fits(25.5, 5));
-    assert.equal(2 + 4.5 * 16, 74);
-    assert.equal(2 + 4.5 * 10, 47);
+    // The value measures its own width: its actions sit on their own row, never beside it.
+    assert.doesNotMatch(rules, /copyable/);
+    // Nothing spaces the characters out any more.
+    assert.doesNotMatch(rules, /\.hex > span|\.hex \.group|hex-address/);
+    // A hash breaks at its quarters: lines of 16 digits, the first also carrying "0x". A max-width
+    // must hold the first line and no line one quarter longer: 26ch gives 4 x 16, 40ch gives 2 x 32.
+    const lines = (max) => {
+      const quarters = [18, 16, 16, 16];
+      const out = [];
+      for (const width of quarters) {
+        if (out.length && out.at(-1) + width <= max) out[out.length - 1] += width;
+        else out.push(width);
+      }
+      return out;
+    };
+    assert.deepEqual(lines(26), [18, 16, 16, 16]);
+    assert.deepEqual(lines(40), [34, 32]);
+    assert.deepEqual(lines(Infinity), [66]);
+  });
+
+  test("a value's actions are one group under it: Copy and View on the explorer, words that change in place", () => {
+    assert.equal(html.match(/<div class="actions">/g).length, 3, "the snapshot's contract, the inspector's template and the proof's block");
+    const buttons = html.match(/<button class="action copy"[^>]*>[\s\S]*?<\/button>/g);
+    assert.equal(buttons.length, 2, "the snapshot's button and the inspector's template");
+    for (const button of buttons) {
+      assert.match(button, /data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg [^>]*>[\s\S]*?<\/svg><svg [^>]*>[\s\S]*?<\/svg><\/span><span class="swap copy-words"><span>Copy<\/span><span>Copied<\/span><\/span><span class="sr copy-what">[^<]*<\/span><\/button>$/);
+    }
+    const links = html.match(/<a class="action"[^>]*>[\s\S]*?<\/a>/g);
+    assert.equal(links.length, 3);
+    for (const link of links) assert.match(link, /^<a class="action"(?: id="[\w-]+")? hidden><span>View on <span class="explorer-name">the explorer<\/span><\/span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false">/);
+    assert.match(html, /<template id="actions-template"><div class="actions"><button class="action copy"/);
+    assert.match(pageJs, /wireCopy\(\$\("copy"\), \{ value: /);
+    assert.match(inspectorJs, /wireCopy\(button, \{ value: \(\) => hex, /);
+    // Explorer links: the contract and its block from the read, an inspected address or hash, and
+    // never a hash that was not found (there is nothing to show for it).
+    assert.match(pageJs, /linkExplorer\(\$\("contract-explorer"\), "address", contract\.address, "contract address"\);/);
+    assert.match(pageJs, /linkExplorer\(\$\("block-explorer"\), "block", data\.blockNumber, `block \$\{block\}`\);/);
+    assert.match(inspectorJs, /if \(explorer\) linkExplorer\(link, explorer, hex, what\);\n {2}if \(link\.hidden\) link\.remove\(\);/);
+    assert.deepEqual([...inspectorJs.matchAll(/explorer: "(\w+)"/g)].map((match) => match[1]), ["address", "tx"]);
+    assert.match(inspectorJs, /\["Hash", data\.hash, \{ hex: true, copy: "transaction hash" \}\]/);
+    // A utility action: 32px to see, 44px to hit; its words and icon share one cell each.
+    assert.match(rules, /\.action \{[^}]*height: 32px;[^}]*border: 1px solid var\(--line-strong\);/);
+    assert.match(rules, /\.action::after \{ content: ""; position: absolute; inset: -7px -1px; \}/);
+    assert.match(rules, /\.swap > \* \{ grid-area: 1 \/ 1; \}/);
+    assert.match(rules, /\.copy:not\(\[data-copy="copied"\]\) \.swap > :last-child, \.copy\[data-copy="copied"\] \.swap > :first-child,/);
+  });
+
+  test("Sources are one set: title and arrow on one line, a path that breaks only between segments", () => {
+    const links = html.match(/<ul class="links">([\s\S]*?)<\/ul>/)[1].match(/<a [\s\S]*?<\/a>/g);
+    assert.equal(links.length, 3);
+    for (const link of links) assert.match(link, /^<a href="[^"]+"(?: target="_blank" rel="noopener noreferrer")?><span class="link-title">[^<]+<\/span><svg class="link-arrow"[\s\S]*?<\/svg><span class="link-meta">/);
+    // Out arrow and a new tab for the two on GitHub; an arrow across for this site's own data.
+    assert.deepEqual(links.map((link) => [/target="_blank"/.test(link), link.match(/<path d="([^"]+)"/)[1]]), [[true, "M5 11l6-6M6 5h5v5"], [true, "M5 11l6-6M6 5h5v5"], [false, "M3 8h10M9 4l4 4-4 4"]]);
+    assert.match(links[0], /<span class="link-meta"><span class="nowrap">Rzbyte\/<\/span><wbr><span class="nowrap">pharos-season-of-ai<\/span><\/span>/);
+    assert.match(links[1], /<span class="link-meta"><span class="nowrap">proof\/<\/span><wbr><span class="nowrap">mcp-transcript\.json<\/span><\/span>/);
+    assert.match(rules, /\.link-arrow \{ grid-column: 2; grid-row: 1; align-self: center;/);
+    assert.match(rules, /@media \(min-width: 960px\) \{\s*\.links \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  });
+
+  test("the footer links are icons with names: GitHub, the Pharos docs and X, nothing guessed", () => {
+    const footer = html.match(/<footer class="foot">[\s\S]*<\/footer>/)[0];
+    const links = [...footer.matchAll(/<a class="icon-link" href="([^"]+)" target="_blank" rel="noopener noreferrer" aria-label="([^"]+)" title="([^"]+)"><svg viewBox="[^"]+" aria-hidden="true" focusable="false">/g)].map(([, href, label, title]) => [href, label, title]);
+    assert.deepEqual(links, [
+      ["https://github.com/Rzbyte/pharos-season-of-ai", "Source code on GitHub, opens in a new tab", "GitHub"],
+      ["https://docs.pharos.xyz/", "Pharos documentation, opens in a new tab", "Pharos Docs"],
+      ["https://x.com/rzbyte_", "rzbyte_ on X, opens in a new tab", "X"],
+    ]);
+    assert.equal(footer.match(/<a\b/g).length, 3, "no other footer links");
+    assert.match(footer, /<nav aria-label="Elsewhere">/);
+    assert.match(rules, /\.icon-link \{ display: grid; place-items: center; width: 44px; height: 44px;/);
+    assert.match(rules, /\.icon-link svg \{ width: 20px; height: 20px; \}/);
+    assert.match(rules, /\.icon-link:hover, \.icon-link:focus-visible, \.icon-link:active \{ color: var\(--accent\); \}/);
   });
 });
 
@@ -625,7 +781,7 @@ describe("accessible structure", () => {
     assert.match(html, /<p class="status inspect-status" id="inspect-status" role="status" hidden>/);
     // Icons are decoration: each is hidden itself or sits inside a hidden wrapper.
     const unwrapped = html.replace(/<span class="[^"]*" aria-hidden="true">(?:\s*<svg[\s\S]*?<\/svg>)+\s*<\/span>/g, "");
-    assert.equal(html.match(/<svg\b/g).length - unwrapped.match(/<svg\b/g).length, 3, "the two theme icons and the disclosure chevron are wrapped");
+    assert.ok(html.match(/<svg\b/g).length - unwrapped.match(/<svg\b/g).length >= 7, "theme, chevron and copy icons sit in hidden wrappers");
     for (const svg of unwrapped.match(/<svg\b[^>]*>/g)) assert.match(svg, /aria-hidden="true"/, svg);
     // Every button has words: its own text, or the name theme.js gives the theme toggle.
     for (const [, inner] of html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)) assert.match(inner.replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, "").trim(), /\w/);
@@ -639,5 +795,14 @@ describe("accessible structure", () => {
       assert.match(text, /setAttribute\("aria-busy", String\(on\)\)/);
     }
     assert.match(inspectorJs, /example\.addEventListener\("click", \(\) => \{\n {2}if \(busy\) return;/);
+  });
+
+  test("a busy button says what it is doing, in place: Reading… and Inspecting…, at the same size", () => {
+    assert.match(html, /<button class="btn btn-primary" id="inspect-submit" type="submit"><span class="swap"><span>Inspect<\/span><span>Inspecting…<\/span><\/span><\/button>/);
+    assert.match(html, /data-refresh>[^\n]*<span class="swap"><span>Refresh<span class="wide-only"> snapshot<\/span><\/span><span>Reading…<\/span><\/span><\/button>/);
+    // The state picks the words (lab.css); no script rewrites them, so the button cannot resize.
+    assert.match(rules, /\.btn:not\(\[aria-disabled="true"\]\) > \.swap > :last-child, \.btn\[aria-disabled="true"\] > \.swap > :first-child \{ visibility: hidden; \}/);
+    assert.doesNotMatch(inspectorJs, /setText\(submit|submit\.textContent/);
+    assert.doesNotMatch(pageJs, /\[data-refresh\][^;]*(?:textContent|setText)/);
   });
 });

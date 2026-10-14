@@ -4,6 +4,8 @@
 
 A TypeScript CLI that reads the **Circle USDC Contract** on Pharos Mainnet through the official **Pharos Chain MCP** server and prints the values in plain language. Every chain read is an MCP tool call; the CLI never calls Pharos JSON-RPC directly.
 
+A small web demo shows the same read as an on-chain snapshot, next to the **Pharos Inspector**, which reads any contract address or transaction hash through the same server. See [Web Demo](#web-demo).
+
 <!-- live-status:start -->
 **Live run:** captured 2026-10-13T23:01:35Z against `https://mcp.pharos.xyz/mcp`, contract `0xC879C018dB60520F4355C26eD1a6D572cdAC1815`, block 20175330. Output in [Live Sample Output](#live-sample-output), raw MCP messages in [proof/mcp-transcript.json](proof/mcp-transcript.json).
 <!-- live-status:end -->
@@ -28,6 +30,8 @@ Official hosted Pharos Chain MCP server, `https://mcp.pharos.xyz/mcp` ([PharosNe
 | `get_block_number` | The block every read is pinned to |
 | `eth_call` | `name()`, `symbol()`, `decimals()`, `totalSupply()` at that block |
 | `get_chain_info` | Confirms chain ID 1672 before the address is labelled `Circle USDC Contract`; network name in the output |
+| `get_transaction` | Web Inspector only: a pasted transaction's block, sender, recipient, value and gas limit |
+| `get_transaction_receipt` | Web Inspector only: that transaction's status, gas used and number of logs |
 
 ## Requirement Checklist
 
@@ -90,10 +94,19 @@ One `npm run proof` run against `https://mcp.pharos.xyz/mcp` writes:
 
 It refuses to update this README unless the run used the hosted endpoint, every `eth_call` was pinned to the reported block, all four reads succeeded, and the saved output matches the transcript.
 
+## Web Demo
+
+A static page (`public/`) and two Vercel functions (`api/`, configured in `vercel.json`):
+
+- `GET /api/state` runs this CLI with `--json` against the hosted endpoint. The page shows the report as an on-chain snapshot: total supply, name, symbol, decimals, network, and the block and time of the read, with every MCP call behind it under Proof & technical details. A response served again from the edge cache is marked as a cached snapshot.
+- `GET /api/inspect?q=<address or transaction hash>` is the Pharos Inspector: the four ERC-20 reads of any contract at one block, or a transaction's status, block, sender, recipient, value, gas and logs. It is a separate function, so it cannot change the Task 01 read.
+
+The browser calls only these two endpoints of its own site; it never talks to MCP or Pharos RPC. The snapshot's contract and block, and an inspected address or transaction, link to the Pharos Mainnet explorer (SocialScan); only a well-formed value is ever turned into a link. Design, behaviour and the web tests: [TECHNICAL.md](TECHNICAL.md#web-demo).
+
 ## Safety
 
-- **Read-only:** only `eth_call`, `get_block_number` and `get_chain_info`. No private key, no signing, no transactions.
-- **No API key:** the hosted endpoint is public, and no key or token is ever sent to `mcp.pharos.xyz`. `PHAROS_MCP_TOKEN` is used only for a custom self-hosted endpoint and is never written to the transcript.
-- **Untrusted strings:** token names and symbols are sanitized before printing, so they cannot inject terminal escape codes.
+- **Read-only:** the CLI uses only `eth_call`, `get_block_number` and `get_chain_info`; the web Inspector adds `get_transaction` and `get_transaction_receipt`, which only read too. No private key, no signing, no transactions.
+- **No API key:** the hosted endpoint is public, and no key or token is ever sent to `mcp.pharos.xyz`. `PHAROS_MCP_TOKEN` is used only for a custom self-hosted endpoint and is never written to the transcript. The web functions always use the hosted endpoint and never send a token, whatever `PHAROS_MCP_URL` or `PHAROS_MCP_TOKEN` say on the deployment.
+- **Untrusted strings:** token names and symbols are sanitized before printing, so they cannot inject terminal escape codes. The web page writes every value as text, never as markup.
 
-Architecture, error handling and tests: [TECHNICAL.md](TECHNICAL.md).
+Architecture, error handling, the web demo and tests: [TECHNICAL.md](TECHNICAL.md).

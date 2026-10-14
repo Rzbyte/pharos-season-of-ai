@@ -8,7 +8,7 @@
 // (s-maxage=15, stale-while-revalidate=45), so a response can be an earlier read served again.
 // The page says which. CACHED when the edge reports its own copy (x-vercel-cache HIT or STALE,
 // or an Age), or when the read is the one already on screen; FRESH otherwise.
-import { clockTime, duration, fitFigure, groupDigits, renderAddress, renderTaskContext, reducedMotion, setState, setText, settle, snapshotSource, splitAmount, toHexBlock } from "./lab.js";
+import { clockTime, duration, fitFigure, groupDigits, linkExplorer, renderHex, renderTaskContext, setState, setText, settle, snapshotSource, splitAmount, toHexBlock, wireCopy } from "./lab.js";
 import { TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
@@ -22,12 +22,13 @@ const FIGURE_MIN_PX = 22;
 let last = null;
 let busy = false;
 let fitQueued = false;
-let copyTimer;
 
 renderTaskContext(TASKS, main.dataset.task, { counter: $("task-count"), previous: $("nav-previous"), next: $("nav-next") });
-renderAddress($("address"), $("address-sr").textContent.trim());
+renderHex($("address"), $("address-sr").textContent.trim());
+// The frozen Task 01 contract can be looked up on the explorer before the first read.
+linkExplorer($("contract-explorer"), "address", $("address-sr").textContent.trim(), "contract address");
 for (const button of document.querySelectorAll("[data-refresh]")) button.addEventListener("click", measure);
-$("copy").addEventListener("click", copyAddress);
+wireCopy($("copy"), { value: () => last?.contract.address ?? $("address-sr").textContent.trim(), shown: () => $("address"), live: $("copy-state"), what: "Contract address" });
 // A link to the proof opens it, so it never lands on a closed section.
 for (const link of document.querySelectorAll('a[href="#proof"]')) link.addEventListener("click", () => void ($("proof").open = true));
 addEventListener("resize", fitSupply);
@@ -53,7 +54,8 @@ async function measure() {
     // The request itself failed; reported below as an error with no data.
   }
 
-  const fail = (problem) => report("error", last ? "showing the last good snapshot" : "no snapshot yet", problem);
+  // What happened, what is still shown, and what to do next.
+  const fail = (problem) => report("error", last ? "showing the last good snapshot" : "no snapshot yet", `${problem} Refresh to try again.`);
   if (data?.ok === true) {
     try {
       const served = snapshotSource(response.headers, data.fetchedAt, last?.fetchedAt);
@@ -97,8 +99,9 @@ function render(data) {
   setText($("network"), network?.name ?? "Not confirmed");
   setText("[data-chain]", network ? String(network.chainId) : "not confirmed");
   setText("[data-block]", `#${block}`);
-  renderAddress($("address"), contract.address);
+  renderHex($("address"), contract.address);
   setText($("address-sr"), contract.address);
+  linkExplorer($("contract-explorer"), "address", contract.address, "contract address");
   const warnings = $("warnings");
   setText(warnings, data.warnings.join(" "));
   warnings.hidden = data.warnings.length === 0;
@@ -111,6 +114,7 @@ function render(data) {
   setText($("t-server"), source.server ?? "not reported");
   setText($("t-calls"), `${calls}: get_chain_info, get_block_number, eth_call ×${calls - 2}`);
   setText($("t-block"), `${data.blockNumber}, sent as ${toHexBlock(data.blockNumber)} in every eth_call`);
+  linkExplorer($("block-explorer"), "block", data.blockNumber, `block ${block}`);
   setText($("t-raw"), `${values.totalSupply.raw} with ${values.decimals} decimals`);
   setText(
     $("t-label"),
@@ -156,20 +160,4 @@ function fitSupply() {
     fitQueued = false;
     fitFigure($("supply"), $("supply-amount"), FIGURE_MIN_PX);
   });
-}
-
-async function copyAddress() {
-  const button = $("copy");
-  const address = last?.contract.address ?? $("address-sr").textContent.trim();
-  let copied = false;
-  try {
-    await navigator.clipboard.writeText(address);
-    copied = true;
-  } catch {
-    // Clipboard access can be refused; the address text stays selectable.
-  }
-  setText(button, copied ? "Copied" : "Select to copy");
-  setText($("copy-state"), copied ? "Address copied" : "");
-  clearTimeout(copyTimer);
-  copyTimer = setTimeout(() => setText(button, "Copy address"), reducedMotion() ? 2400 : 1600);
 }

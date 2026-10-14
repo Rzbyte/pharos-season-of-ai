@@ -8,7 +8,8 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#EFF1F2" media="(prefers-color-scheme: light)">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230113B7'/%3E%3Crect x='3' y='7' width='10' height='2' fill='%23FFFFFF'/%3E%3C/svg%3E">
+<meta name="explorer" content="https://pharos.socialscan.io" data-name="SocialScan">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20rx='3'%20fill='%230113B7'/%3E%3Crect%20x='3'%20y='7'%20width='10'%20height='2'%20fill='%23FFFFFF'/%3E%3C/svg%3E">
 <script src="/assets/theme.js"></script>
 <link rel="preload" href="/assets/fonts/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/lab.css">
@@ -44,7 +45,7 @@
       <div class="beacon" aria-hidden="true"></div>
       <div class="panel-head">
         <h2 class="label" id="snapshot-h">On-chain snapshot</h2>
-        <button class="btn" type="button" data-refresh><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.29" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12.25 1.75v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Refresh<span class="wide-only"> snapshot</span></span></button>
+        <button class="btn" type="button" data-refresh><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.29" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12.25 1.75v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="swap"><span>Refresh<span class="wide-only"> snapshot</span></span><span>Reading…</span></span></button>
       </div>
       <p class="status" id="status" role="status" data-tone="active"><span class="status-dot" aria-hidden="true"></span><span class="status-word" data-status-word>Reading</span><span class="status-detail" data-status-detail>through Pharos Chain MCP</span><span class="sr" id="status-sr"></span></p>
       <p class="meta measured"><span>Block <b id="block">—</b></span><span>read at <b id="read-at">—</b></span></p>
@@ -64,11 +65,10 @@
 
       <div class="contract">
         <p class="label">Contract</p>
-        <div class="contract-row">
-          <div class="hex-cell"><p class="hex hex-address" id="address" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p></div>
-          <p class="sr" id="address-sr">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
-          <button class="btn-quiet" type="button" id="copy">Copy address</button><span class="sr" id="copy-state" aria-live="polite"></span>
-        </div>
+        <div class="hex-cell"><p class="hex" id="address" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p></div>
+        <p class="sr" id="address-sr">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
+        <div class="actions"><button class="action copy" type="button" id="copy" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"> contract address</span></button><a class="action" id="contract-explorer" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div>
+        <span class="sr" id="copy-state" aria-live="polite"></span>
       </div>
     </section>
 
@@ -91,23 +91,25 @@
           <label class="field-label" for="inspect-input">Paste contract address or transaction hash</label>
           <div class="field">
             <input class="input" id="inspect-input" name="q" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" maxlength="100" placeholder="0x…" aria-describedby="inspect-detected">
-            <button class="btn btn-primary" id="inspect-submit" type="submit">Inspect</button>
+            <button class="btn btn-primary" id="inspect-submit" type="submit"><span class="swap"><span>Inspect</span><span>Inspecting…</span></span></button>
           </div>
-          <p class="field-hint" id="inspect-detected" aria-live="polite">Detected: nothing yet</p>
+          <p class="field-hint" id="inspect-detected" aria-live="polite">Accepts a contract address (42 characters) or a transaction hash (66).</p>
           <p><button class="btn-quiet" type="button" id="inspect-example">Try it with the Circle USDC Contract</button></p>
         </form>
         <p class="status inspect-status" id="inspect-status" role="status" hidden><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="inspect-word"></span><span class="status-detail" id="inspect-detail"></span></p>
         <p class="note" data-tone="error" id="inspect-note" aria-live="polite" hidden></p>
         <div class="inspect-result" id="inspect-result" hidden></div>
+        <span class="sr" id="inspect-copy-state" aria-live="polite"></span>
+        <template id="actions-template"><div class="actions"><button class="action copy" type="button" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"></span></button><a class="action" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></template>
       </div>
     </div>
   </section>
 
-  <section class="section" aria-labelledby="proof-h">
+  <section class="section section-compact" aria-labelledby="proof-h">
     <details class="disclosure" id="proof">
       <summary>
         <h2 class="disclosure-title" id="proof-h">Proof &amp; technical details</h2>
-        <span class="disclosure-hint">The four contract reads, the one block they share, every Chain MCP tool call, the raw value and the transcript.</span>
+        <span class="disclosure-hint">Every Chain MCP call behind this snapshot, the raw value and the transcript.</span>
         <span class="disclosure-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       </summary>
       <div class="disclosure-body">
@@ -131,7 +133,7 @@
             <h3>Pharos Inspector</h3>
             <p class="proof-text">The inspector has its own endpoint, /api/inspect, on the same hosted Chain MCP. A contract: <code>get_block_number</code>, <code>get_chain_info</code> and <code>eth_call</code> ×4 at one block. A transaction: <code>get_transaction</code>, <code>get_transaction_receipt</code> and <code>get_chain_info</code>. <code>scripts/check-mcp-capabilities.mjs</code> lists the tools a server offers.</p>
             <h3>Transcript</h3>
-            <p class="proof-text">Every MCP message of one CLI run against the hosted server, recorded verbatim and in order: <a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json">proof/mcp-transcript.json</a>.</p>
+            <p class="proof-text">Every MCP message of one CLI run against the hosted server, recorded verbatim and in order: <a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json" target="_blank" rel="noopener noreferrer">proof/mcp-transcript.json<svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a>.</p>
           </div>
           <div class="proof-col">
             <h3>Technical details</h3>
@@ -140,7 +142,7 @@
               <div><dt>MCP server</dt><dd id="t-server">—</dd></div>
               <div><dt>Transport</dt><dd class="kv-text">MCP over Streamable HTTP, from this site's server. Each tool result arrives on its own request's stream; the optional standalone GET stream is not opened (client fix 1.0.2).</dd></div>
               <div><dt>Tool calls</dt><dd id="t-calls">—</dd></div>
-              <div><dt>Block</dt><dd id="t-block">—</dd></div>
+              <div><dt>Block</dt><dd><span id="t-block">—</span><div class="actions"><a class="action" id="block-explorer" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></dd></div>
               <div><dt>Selectors</dt><dd>name() 0x06fdde03 · symbol() 0x95d89b41 · decimals() 0x313ce567 · totalSupply() 0x18160ddd</dd></div>
               <div><dt>Raw supply</dt><dd id="t-raw">—</dd></div>
               <div><dt>Label</dt><dd class="kv-text" id="t-label">—</dd></div>
@@ -164,9 +166,9 @@
       <p class="section-lede">The code, a committed MCP transcript and this page's data are all public.</p>
     </div>
     <ul class="links">
-      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/01-read-contract-state"><span class="link-title">Source code</span><span class="link-meta">github.com/Rzbyte/<wbr><span class="nowrap">pharos-season-of-ai</span></span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></li>
-      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json"><span class="link-title">MCP transcript</span><span class="link-meta">proof/mcp-transcript.json</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></li>
-      <li><a href="/api/state"><span class="link-title">API JSON</span><span class="link-meta">/api/state</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></li>
+      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/01-read-contract-state" target="_blank" rel="noopener noreferrer"><span class="link-title">Source code</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="link-meta"><span class="nowrap">Rzbyte/</span><wbr><span class="nowrap">pharos-season-of-ai</span></span><span class="sr">, opens in a new tab</span></a></li>
+      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json" target="_blank" rel="noopener noreferrer"><span class="link-title">MCP transcript</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="link-meta"><span class="nowrap">proof/</span><wbr><span class="nowrap">mcp-transcript.json</span></span><span class="sr">, opens in a new tab</span></a></li>
+      <li><a href="/api/state"><span class="link-title">API JSON</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="link-meta">/api/state</span></a></li>
     </ul>
   </section>
 
@@ -179,9 +181,17 @@
 
 <footer class="foot">
   <div class="rail foot-inner">
-    <p class="label"><span class="nowrap">Pharos / Season of AI</span> · <span class="nowrap">Agent Arena Lab</span></p>
-    <p class="foot-tag">28 on-chain and AI agent experiments built with Chain MCP, Developer Docs MCP and SkillEngine. Task 01 is available; the others are planned.</p>
-    <p><a href="https://github.com/Rzbyte/pharos-season-of-ai">Repository on GitHub</a></p>
+    <div class="foot-id">
+      <p class="label">Agent Arena Lab</p>
+      <p class="foot-tag">28 on-chain and AI agent experiments for Pharos Season of AI, built with Chain MCP, Developer Docs MCP and SkillEngine.</p>
+    </div>
+    <nav aria-label="Elsewhere">
+      <ul class="foot-links">
+        <li><a class="icon-link" href="https://github.com/Rzbyte/pharos-season-of-ai" target="_blank" rel="noopener noreferrer" aria-label="Source code on GitHub, opens in a new tab" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a></li>
+        <li><a class="icon-link" href="https://docs.pharos.xyz/" target="_blank" rel="noopener noreferrer" aria-label="Pharos documentation, opens in a new tab" title="Pharos Docs"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M6 1.5h8.25L20 7.25V20.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-17a2 2 0 0 1 2-2Zm7.5 1.75V8.5h5.25L13.5 3.25ZM7.5 12h9v1.5h-9V12Zm0 3.5h9V17h-9v-1.5Zm0-7h3.5V10H7.5V8.5Z"/></svg></a></li>
+        <li><a class="icon-link" href="https://x.com/rzbyte_" target="_blank" rel="noopener noreferrer" aria-label="rzbyte_ on X, opens in a new tab" title="X"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a></li>
+      </ul>
+    </nav>
   </div>
 </footer>
 </body>
