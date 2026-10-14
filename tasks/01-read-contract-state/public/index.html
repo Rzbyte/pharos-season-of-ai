@@ -23,6 +23,7 @@
   }
 </style>
 <script type="module" src="/assets/task-01.js"></script>
+<script type="module" src="/assets/inspector.js"></script>
 </head>
 <body data-state="reading">
 <a class="skip" href="#main">Skip to the measurement</a>
@@ -141,6 +142,27 @@
       <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json"><span>Live proof: raw MCP transcript<span class="src-meta">proof/mcp-transcript.json</span></span><span class="arw" aria-hidden="true">→</span></a></li>
       <li><a href="/api/state"><span>This page's data, as JSON<span class="src-meta">/api/state</span></span><span class="arw" aria-hidden="true">→</span></a></li>
     </ul>
+  </section>
+
+  <section class="band band-grid" id="inspector" aria-labelledby="inspect-h" data-inspect-api="/api/inspect" data-inspect-state="idle">
+    <div class="band-head">
+      <h2 class="band-title" id="inspect-h">Pharos Inspector</h2>
+      <p class="band-note">Inspect another Pharos object using Chain MCP: paste a contract address or a transaction hash. Separate from the Task 01 read above.</p>
+    </div>
+    <div class="inspect">
+      <form class="inspect-form" id="inspect-form" novalidate>
+        <label class="label" for="inspect-input">Address or transaction hash</label>
+        <div class="inspect-field">
+          <input class="inspect-input" id="inspect-input" name="q" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" maxlength="100" placeholder="0x…" aria-describedby="inspect-detected">
+          <button class="inspect-btn" id="inspect-submit" type="submit">Inspect</button>
+        </div>
+        <p class="inspect-detected" id="inspect-detected" aria-live="polite">Detected: nothing yet</p>
+        <p><button class="text-btn" type="button" id="inspect-example">Try it with the Circle USDC Contract</button></p>
+      </form>
+      <p class="inspect-status" id="inspect-status" role="status" hidden><span class="inspect-dot" aria-hidden="true"></span><span class="inspect-word" id="inspect-word"></span><span class="inspect-detail" id="inspect-detail"></span></p>
+      <p class="note note-inspect" id="inspect-note" aria-live="polite" hidden></p>
+      <div class="inspect-result" id="inspect-result" hidden></div>
+    </div>
   </section>
 
   <nav class="band task-nav" aria-label="Agent Arena tasks">

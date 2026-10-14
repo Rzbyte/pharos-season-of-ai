@@ -17,8 +17,9 @@ const html = read("public/index.html");
 const css = read("public/assets/lab.css");
 /** The stylesheet without comments, for reading selectors. */
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
-const scripts = ["lab.js", "tasks.js", "task-01.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
+const scripts = ["lab.js", "tasks.js", "task-01.js", "inspector.js", "inspect-input.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
 const pageJs = scripts.find((script) => script.name === "task-01.js").text;
+const inspectorJs = scripts.find((script) => script.name === "inspector.js").text;
 const USDC = read("src/constants.ts").match(/export const DEFAULT_TOKEN = "(0x[0-9a-fA-F]{40})"/)[1];
 
 /** Visible text of the page, roughly: tags, the inline style block and entities removed. */
@@ -29,13 +30,13 @@ const visibleText = html
   .replace(/\s+/g, " ");
 
 describe("what the page loads and calls", () => {
-  test("loads only its own assets: one module script, no inline script or handlers", () => {
+  test("loads only its own assets: two module scripts, no inline script or handlers", () => {
     const tags = html.match(/<(?:script|link)\b[^>]*>/g);
     const urls = tags.map((tag) => tag.match(/\s(?:src|href)="([^"]*)"/)?.[1]);
     assert.ok(urls.length >= 3);
     for (const url of urls) assert.match(url, /^(\/assets\/|data:)/, `unexpected asset URL ${url}`);
-    assert.equal(html.match(/<script\b/g).length, 1);
-    assert.match(html, /<script type="module" src="\/assets\/task-01\.js"><\/script>/);
+    assert.equal(html.match(/<script\b/g).length, 2);
+    assert.match(html, /<script type="module" src="\/assets\/task-01\.js"><\/script>\n<script type="module" src="\/assets\/inspector\.js"><\/script>/);
     assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
     assert.doesNotMatch(css, /@import/);
     for (const [, url] of css.matchAll(/url\("([^"]+)"\)/g)) assert.match(url, /^\/assets\/fonts\/[\w-]+\.woff2$/);
@@ -47,18 +48,21 @@ describe("what the page loads and calls", () => {
     for (const url of external) assert.ok(url.startsWith("https://github.com/Rzbyte/pharos-season-of-ai"), url);
   });
 
-  test("the browser calls only this site's /api/state: no MCP, RPC or other client code", () => {
+  test("the browser calls only this site's /api/state and /api/inspect: no MCP, RPC or other client code", () => {
     assert.match(html, /<main id="main"[^>]* data-api="\/api\/state"/);
+    assert.match(html, /<section class="band band-grid" id="inspector"[^>]* data-inspect-api="\/api\/inspect"/);
     assert.match(pageJs, /const API = main\.dataset\.api;/);
+    assert.match(inspectorJs, /const API = root\.dataset\.inspectApi;/);
     for (const { name, text } of scripts) {
       assert.doesNotMatch(text, /https?:\/\//, `${name} contains a URL`);
       assert.doesNotMatch(text, /XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|navigator\.connection/, name);
       assert.doesNotMatch(text, /jsonrpc|@modelcontextprotocol|mcp\.pharos|rpc\.pharos/i, name);
       assert.doesNotMatch(text, /localStorage|sessionStorage|indexedDB|document\.cookie/, name);
     }
-    const fetches = scripts.flatMap(({ text }) => text.match(/\bfetch\(/g) ?? []);
-    assert.equal(fetches.length, 1);
+    const fetches = Object.fromEntries(scripts.map(({ name, text }) => [name, (text.match(/\bfetch\(/g) ?? []).length]));
+    assert.deepEqual(fetches, { "lab.js": 0, "tasks.js": 0, "task-01.js": 1, "inspector.js": 1, "inspect-input.js": 0 });
     assert.match(pageJs, /fetch\(API, \{ headers: \{ accept: "application\/json" \}, cache: "no-store" \}\)/);
+    assert.match(inspectorJs, /fetch\(`\$\{API\}\?q=\$\{encodeURIComponent\(check\.value\)\}`, \{ headers: \{ accept: "application\/json" \}, cache: "no-store", signal: controller\.signal \}\)/);
   });
 
   test("never parses markup: chain data is written as text", () => {
@@ -78,6 +82,17 @@ describe("what the page loads and calls", () => {
     assert.ok(ids.size > 30);
     for (const id of ids) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
     for (const attribute of ["data-refresh", "data-status-word", "data-status-detail", "data-status-time", "data-block", "data-chain"]) assert.match(html, new RegExp(`\\s${attribute}[\\s>]`), attribute);
+    const inspectorIds = new Set([...inspectorJs.matchAll(/\$\("([\w-]+)"\)/g)].map((match) => match[1]));
+    assert.ok(inspectorIds.size >= 10);
+    for (const id of inspectorIds) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
+  });
+
+  test("the inspector is independent of the Task 01 readout: its own state, never the page's", () => {
+    assert.doesNotMatch(inspectorJs, /document\.body|setState|dataset\.state\b|data-status-|data-block|data-chain|data-refresh|\$\("main"\)|getElementById\("main"\)/);
+    assert.match(inspectorJs, /root\.dataset\.inspectState = state;/);
+    assert.doesNotMatch(pageJs, /inspect/i);
+    // Its rows are never .measured, so Task 01's READING dim cannot reach them.
+    assert.doesNotMatch(inspectorJs, /measured/);
   });
 });
 
@@ -318,14 +333,14 @@ describe("design system assets", () => {
 
   test("restrained type: little uppercase, no wide tracking, no glow", () => {
     const uppercase = [...rules.matchAll(/([^{}]+)\{[^{}]*text-transform: uppercase[^{}]*\}/g)].map((match) => match[1].trim());
-    assert.deepEqual(uppercase.sort(), [".foot-brand", ".label, .spec dt", ".shell-brand", ".state-word"]);
+    assert.deepEqual(uppercase.sort(), [".foot-brand", ".inspect-word", ".label, .spec dt", ".shell-brand", ".state-word"]);
     for (const [, value] of `${css}\n${html}`.matchAll(/letter-spacing:\s*(-?[\d.]+)em/g)) assert.ok(Number(value) <= 0.06, `letter-spacing ${value}em`);
     assert.doesNotMatch(`${css}\n${html}`, /box-shadow|text-shadow|drop-shadow/);
   });
 
   test("colour stays semantic: green only for LIVE, red only for ERROR", () => {
     const uses = (token) => [...css.matchAll(new RegExp(`[^\\n]*var\\(${token}[^\\n]*`, "g"))].map((match) => match[0].trim());
-    for (const line of uses("--live")) assert.match(line, /data-state="live"|\.tag-live/, line);
-    for (const line of uses("--fault")) assert.match(line, /data-state="error"/, line);
+    for (const line of uses("--live")) assert.match(line, /data-state="live"|data-inspect-state="success"|\.tag-live/, line);
+    for (const line of uses("--fault")) assert.match(line, /data-(?:inspect-)?state="error"/, line);
   });
 });

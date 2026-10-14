@@ -255,6 +255,54 @@
   .arw { margin-left: auto; color: var(--ink-3); }
   .source-links a:hover .arw { color: var(--beam); }
 
+  /* Inspector: a quiet form, then the same ruled rows as the readout and the state table. Its state
+     lives on #inspector (data-inspect-state), never on <body>, so it can never touch the Task 01
+     readout. Green only for SUCCESS, red only for ERROR; partial and not-found stay neutral. */
+  .inspect-form { display: grid; gap: 8px; }
+  .inspect-field { display: grid; gap: 10px; }
+  @media (min-width: 480px) { .inspect-field { grid-template-columns: minmax(0, 1fr) auto; } }
+  .inspect-input {
+    width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--rule-2); border-radius: 4px;
+    background: transparent; color: var(--ink); font-family: var(--mono); font-size: .9375rem;
+  }
+  .inspect-input::placeholder { color: var(--ink-3); }
+  .inspect-input:hover { border-color: var(--ink-3); }
+  .inspect-input[aria-invalid="true"] { border-color: var(--ink-2); }
+  .inspect-btn {
+    justify-self: start; min-height: 44px; padding: 0 18px; border: 1px solid var(--rule-2); border-radius: 4px;
+    background: none; cursor: pointer; color: var(--ink); font-size: var(--fs-small); font-weight: 600;
+  }
+  .inspect-btn:hover { border-color: var(--ink-3); }
+  .inspect-btn:disabled, .text-btn:disabled { cursor: progress; color: var(--ink-3); }
+  .inspect-detected { color: var(--ink-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+  .inspect-detected.invalid { color: var(--ink); }
+  .inspect-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin-top: 20px; color: var(--ink-2); font-size: var(--fs-small); }
+  .inspect-dot { align-self: center; width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--ink-3); }
+  .inspect-word { font-size: var(--fs-meta); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+  .inspect-detail:not(:empty)::before { content: "·"; content: "·" / ""; margin-right: 8px; color: var(--ink-3); }
+  #inspector[data-inspect-state="success"] .inspect-dot { background: var(--live); }
+  #inspector[data-inspect-state="success"] .inspect-word { color: var(--live); }
+  #inspector[data-inspect-state="error"] .inspect-dot { background: var(--fault); }
+  #inspector[data-inspect-state="error"] .inspect-word { color: var(--fault); }
+  #inspector[data-inspect-state="partial"] .inspect-word, #inspector[data-inspect-state="not-found"] .inspect-word { color: var(--ink); }
+  .note-inspect { margin-top: 10px; }
+  .inspect-result { margin-top: 4px; }
+  #inspector[data-inspect-state="inspecting"] .inspect-result { opacity: .5; }
+  #inspector[data-inspect-state="error"] .inspect-result { opacity: .7; }
+  .inspect-caption { margin: 22px 0 0; }
+  .inspect-caption + .table { margin-top: 8px; }
+  .inspect-result .hex { font-family: var(--mono); font-size: .875rem; line-height: 1.6; overflow-wrap: anywhere; }
+  .inspect-result .hex .group { margin-right: .5ch; }
+  .inspect-result .unavailable { color: var(--ink-3); }
+  .inspect-result dd > .row-sub { font-family: var(--sans); }
+  .inspect-result dd > .row-sub.hex { font-family: var(--mono); }
+  .inspect-copy { display: flex; min-height: 36px; font-family: var(--sans); font-size: var(--fs-meta); word-break: normal; }
+  .inspect-message { margin-top: 12px; max-width: 60ch; color: var(--ink-2); font-size: var(--fs-small); }
+  @media (max-width: 479px) {
+    /* Long hex values get the full width on phones: key above, value below. */
+    .inspect-result .spec > div.wide { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  }
+
   /* MeasurementBar: on phones, once the readout has scrolled away, a slim status line keeps the
      state and Refresh in reach. Its time is always the time of the read on screen. */
   .measure-bar {
@@ -281,6 +329,8 @@
     /* backwards, not both: a filled end state would override the READING and ERROR dimming. */
     .settle { animation: settle .35s var(--ease) backwards; }
     .measure-bar { transition: transform .2s var(--ease), visibility .2s; }
+    #inspector[data-inspect-state="inspecting"] .inspect-dot { animation: pulse 1.1s ease-in-out infinite; }
+    .inspect-result { transition: opacity .2s ease; }
     .source-links .arw { transition: transform .15s ease, color .15s ease; }
     .source-links a:hover .arw { transform: translateX(3px); }
   }
