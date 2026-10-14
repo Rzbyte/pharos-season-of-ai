@@ -1,0 +1,52 @@
+/* Task 02 page: the monitor's own pieces, in the `task` layer of lab.css. Everything else (tokens,
+   shell, panel, status, rows, actions, disclosure) is the shared design system. */
+@layer task {
+  .controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+  .controls .btn { min-height: 44px; }
+  .controls .btn-primary { padding: 0 18px; }
+  .btn:disabled { cursor: default; color: var(--text-3); border-color: var(--line); background: none; }
+  .btn-primary:disabled { border-color: var(--line-strong); background: var(--surface-2); color: var(--text-3); }
+  .btn:disabled:hover { border-color: var(--line); background: none; }
+  .btn-primary:disabled:hover { border-color: var(--line-strong); background: var(--surface-2); }
+  @media (max-width: 379px) {
+    #monitor .panel-head { flex-wrap: wrap; }
+    .controls { width: 100%; justify-content: stretch; }
+    .controls .btn { flex: 1; justify-content: center; }
+  }
+  #monitor .figure { font-variant-numeric: tabular-nums; }
+  #window-meta { margin-top: var(--space-1); }
+  body[data-state="paused"] #monitor .figure, body[data-state="error"] #monitor .figure { color: var(--text-2); }
+
+  /* The feed: one card per event, newest first. A new event carries an accent edge and a "New"
+     badge; events found by the first check say "At start". */
+  .feed { display: grid; gap: var(--space-3); }
+  .feed-empty { color: var(--text-2); font-size: var(--fs-small); }
+  .event {
+    container: event / inline-size; display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-4);
+    border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+  }
+  .event[data-fresh] { border-left: 3px solid var(--accent); }
+  .event-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .event-kind { font-family: var(--caption); font-size: var(--fs-label); letter-spacing: .02em; text-transform: uppercase; color: var(--text-2); }
+  .event[data-kind="Mint"] .event-kind { color: var(--success); }
+  .event[data-kind="Burn"] .event-kind { color: var(--warning); }
+  .event-amount { font-size: 1.25rem; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
+  .event-unit { font-size: .75em; color: var(--text-2); }
+  .event-badge { margin-left: auto; font-size: var(--fs-meta); color: var(--text-3); }
+  .event[data-fresh] .event-badge { color: var(--accent); font-weight: 600; }
+  .event-path { display: flex; flex-wrap: wrap; gap: 0 8px; font-family: var(--mono); font-size: var(--fs-small); color: var(--text); }
+  .event-arrow { color: var(--text-3); }
+  .event-meta { font-size: var(--fs-meta); }
+  .event-tx { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-small); }
+  .event-tx-label { color: var(--text-3); }
+  .event-hash { color: var(--text-2); }
+  .event-tx .actions, .event-tx .action { margin-top: 0; }
+  .event[data-removed] { border-left-color: var(--error); }
+  .event[data-removed] .event-amount { text-decoration: line-through; color: var(--text-2); }
+  .event[data-removed] .event-badge { color: var(--error); font-weight: 600; }
+  @media (min-width: 760px) { .feed { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .event.arrive { animation: settle .45s var(--ease) backwards; }
+  }
+}

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>02 · Event / Log Monitor · Agent Arena Lab</title>
+<meta name="description" content="Agent Arena Lab, task 02: a live monitor of Circle USDC Transfer events on Pharos Mainnet, read through Pharos Chain MCP get_logs, each event shown once.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#EFF1F2" media="(prefers-color-scheme: light)">
+<meta name="explorer" content="https://pharos.socialscan.io">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20rx='3'%20fill='%230113B7'/%3E%3Crect%20x='3'%20y='7'%20width='10'%20height='2'%20fill='%23FFFFFF'/%3E%3C/svg%3E">
+<script src="/assets/theme.js"></script>
+<link rel="preload" href="/assets/fonts/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/lab.css">
+<link rel="stylesheet" href="/assets/monitor.css">
+<script type="module" src="/assets/monitor.js"></script>
+</head>
+<body data-state="starting">
+<a class="skip" href="#feed-h">Skip to the events</a>
+
+
+<header class="topbar">
+  <div class="rail topbar-inner">
+    <p class="label brand"><span class="brand-mark" aria-hidden="true"></span><span><b>Pharos</b> / Season of AI</span></p>
+    <p class="label topbar-count"><span class="sr">Task </span><span id="task-count"><b>02</b> / 28</span></p>
+    <button class="theme-toggle" id="theme-toggle" type="button">
+      <span class="theme-icons" aria-hidden="true">
+        <svg class="when-dark" viewBox="0 0 16 16" focusable="false"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.06 1.06M11.74 11.74l1.06 1.06M3.2 12.8l1.06-1.06M11.74 4.26l1.06-1.06" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <svg class="when-light" viewBox="0 0 16 16" focusable="false"><path d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="theme-words"><span class="when-dark">Light</span><span class="when-light">Dark</span></span>
+    </button>
+  </div>
+</header>
+
+<main id="main" class="rail" data-api="/api/events" data-task="02" data-interval="5">
+  <section class="hero" aria-labelledby="title">
+    <div class="task-head">
+      <p class="label">Task <span class="task-n">02</span> / Event / Log Monitor</p>
+      <h1 class="task-title" id="title">Event / Log Monitor</h1>
+      <p class="task-via">Transfer events via <strong class="nowrap">Pharos Chain MCP</strong></p>
+    </div>
+
+    <section class="panel" id="monitor" aria-labelledby="monitor-h">
+      <div class="beacon" aria-hidden="true"></div>
+      <div class="panel-head">
+        <h2 class="label" id="monitor-h">Monitor</h2>
+        <div class="controls">
+          <button class="btn btn-primary" id="start" type="button" disabled>Start monitoring</button>
+          <button class="btn" id="stop" type="button">Stop</button>
+        </div>
+      </div>
+      <p class="status" id="status" role="status" data-tone="active"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="status-word">Starting</span><span class="status-detail" id="status-detail">first check through Pharos Chain MCP</span></p>
+      <p class="note" data-tone="error" id="status-note" hidden></p>
+      <p class="note" id="gap-note" hidden></p>
+      <noscript><p class="note">This monitor runs in the browser with JavaScript. The same data is at /api/events as JSON.</p></noscript>
+
+      <p class="label figure-label">Last checked block</p>
+      <p class="figure"><span class="figure-num" id="last-block">—</span></p>
+      <p class="meta" id="window-meta"><span>Blocks <b id="window">—</b></span><span>checked <b id="checked-at">—</b></span></p>
+
+      <dl class="rows">
+        <div><dt>Watching</dt><dd>Circle USDC <span aria-hidden="true">·</span><span class="sr">,</span> Transfer</dd></div>
+        <div><dt>Events</dt><dd><span id="count-new">0</span> new<span class="sub" id="count-detail">since monitoring started</span></dd></div>
+        <div><dt>Checks</dt><dd>every <span id="interval">5</span> s<span class="sub">paused while this tab is in the background</span></dd></div>
+      </dl>
+
+      <div class="contract">
+        <p class="label">Contract</p>
+        <div class="hex-cell"><p class="hex" id="address" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p></div>
+        <p class="sr" id="address-sr">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
+        <div class="actions"><a class="action" id="contract-explorer" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div>
+      </div>
+    </section>
+
+    <div class="hero-about">
+      <p class="task-about">Polls Pharos Mainnet for <code>Transfer(address,address,uint256)</code> logs of Circle's USDC contract, filtered by the contract address and the Transfer topic, and shows each event once, decoded into from, to and amount.</p>
+      <p class="jump"><a href="#feed-h">New events</a><a href="#proof">Proof &amp; technical details</a></p>
+    </div>
+  </section>
+
+  <section class="section" id="events" aria-labelledby="feed-h">
+    <div class="section-head">
+      <h2 class="section-title" id="feed-h" tabindex="-1">New events</h2>
+      <p class="section-lede">Newest first. Mint is a transfer from the zero address, Burn a transfer to it.</p>
+    </div>
+    <p class="feed-empty" id="feed-empty">No Transfer events yet. New ones appear here as they are mined.</p>
+    <ol class="feed" id="feed" aria-labelledby="feed-h"></ol>
+    <p class="sr" id="feed-live" aria-live="polite"></p>
+    <template id="event-template"><li class="event"><div class="event-head"><span class="event-kind"></span><span class="event-amount"><span class="event-num"></span> <span class="event-unit"></span></span><span class="event-badge"></span></div><p class="event-path"><span class="event-from"></span><span class="event-arrow" aria-hidden="true">→</span><span class="sr"> to </span><span class="event-to"></span></p><p class="meta event-meta"><span>Block <b class="event-block"></b></span><span>Log <b class="event-log"></b></span></p><div class="event-tx"><span class="event-tx-label">Tx</span><code class="event-hash"></code><a class="action" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></li></template>
+  </section>
+
+  <section class="section section-compact" aria-labelledby="proof-h">
+    <details class="disclosure" id="proof">
+      <summary>
+        <h2 class="disclosure-title" id="proof-h">Proof &amp; technical details</h2>
+        <span class="disclosure-hint">The Chain MCP calls behind each check, how duplicates and removed logs are handled, and the CLI proof.</span>
+        <span class="disclosure-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </summary>
+      <div class="disclosure-body">
+        <dl class="counts">
+          <div><dt>Chain MCP tool calls per check</dt><dd class="count-n" id="proof-calls">—</dd><dd class="count-note" id="proof-calls-sub">get_chain_info, get_block_number, get_logs</dd></div>
+          <div><dt>Blocks per get_logs call</dt><dd class="count-n" id="proof-blocks">—</dd><dd class="count-note">explicit range, at most 1,000</dd></div>
+          <div><dt>Duplicates skipped</dt><dd class="count-n" id="proof-dups">0</dd><dd class="count-note">same transactionHash + logIndex</dd></div>
+          <div><dt>Direct RPC calls from this client</dt><dd class="count-n">0</dd><dd class="count-note">MCP-only client path</dd></div>
+        </dl>
+        <div class="proof-grid">
+          <div class="proof-col">
+            <h3>Each check</h3>
+            <ol class="steps">
+              <li><span class="step-n">1</span><code class="step-k">get_chain_info</code><span class="step-d">Confirms Pharos Mainnet, chain ID 1672</span></li>
+              <li><span class="step-n">2</span><code class="step-k">get_block_number</code><span class="step-d">Resolves the head block once</span></li>
+              <li><span class="step-n">3</span><code class="step-k">get_logs</code><span class="step-d">Exact contract address, exact Transfer topic0, explicit fromBlock and toBlock ending at that head</span></li>
+            </ol>
+            <h3>Decoding</h3>
+            <p class="proof-text">Only a log with exactly three topics and 32 bytes of data is decoded: topic1 is <code>from</code>, topic2 is <code>to</code>, data is the <code>uint256</code> amount, shown with USDC's 6 decimals. From the zero address is a Mint, to the zero address a Burn, anything else a Transfer.</p>
+            <h3>No duplicates</h3>
+            <p class="proof-text">Each event is shown once, keyed by <code>transactionHash</code> + <code>logIndex</code>. The page keeps the last checked block and the keys it has shown; consecutive windows overlap, and the overlap only counts as duplicates.</p>
+            <h3>Removed logs</h3>
+            <p class="proof-text">A log marked <code>removed: true</code> is never shown as an event. If it was already shown, it is marked Removed in the feed.</p>
+          </div>
+          <div class="proof-col">
+            <h3>Last get_logs call</h3>
+            <dl class="kv">
+              <div><dt>address</dt><dd id="t-address">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</dd></div>
+              <div><dt>topics</dt><dd id="t-topics">[0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef]</dd></div>
+              <div><dt>fromBlock</dt><dd id="t-from">—</dd></div>
+              <div><dt>toBlock</dt><dd id="t-to">—</dd></div>
+              <div><dt>MCP endpoint</dt><dd id="t-endpoint">https://mcp.pharos.xyz/mcp</dd></div>
+              <div><dt>MCP server</dt><dd id="t-server">—</dd></div>
+              <div><dt>Answer</dt><dd class="kv-text">This site's /api/events reads the last 200 blocks up to the head and shares that answer at the edge for 4 s (s-maxage=4), so every viewer is served from one upstream check. The page itself keeps the cursor and the dedup keys.</dd></div>
+              <div><dt>CLI proof</dt><dd class="kv-text">The continuous monitor with its own cursor, 1,000-block paging and same-range retries is the CLI in this folder. Its proof run against the hosted endpoint is committed as <a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/02-event-log-monitor/proof/mcp-transcript.json" target="_blank" rel="noopener noreferrer">proof/mcp-transcript.json<svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a>.</dd></div>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section class="section" aria-labelledby="sources-h">
+    <div class="section-head">
+      <h2 class="section-title" id="sources-h">Sources</h2>
+      <p class="section-lede">The code, the CLI proof transcript and this page's data are all public.</p>
+    </div>
+    <ul class="links">
+      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/02-event-log-monitor" target="_blank" rel="noopener noreferrer"><span class="link-title">Source code</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="link-meta"><span class="nowrap">Rzbyte/</span><wbr><span class="nowrap">pharos-season-of-ai</span></span><span class="sr">, opens in a new tab</span></a></li>
+      <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/02-event-log-monitor/proof/mcp-transcript.json" target="_blank" rel="noopener noreferrer"><span class="link-title">MCP transcript</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="link-meta"><span class="nowrap">proof/</span><wbr><span class="nowrap">mcp-transcript.json</span></span><span class="sr">, opens in a new tab</span></a></li>
+      <li><a href="/api/events"><span class="link-title">API JSON</span><svg class="link-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="link-meta">/api/events</span></a></li>
+    </ul>
+  </section>
+
+  <nav class="task-nav" aria-label="Agent Arena tasks">
+    <p class="task-nav-step" id="nav-previous" hidden></p>
+    <p class="task-nav-step" id="nav-next" hidden></p>
+  </nav>
+</main>
+
+<footer class="foot">
+  <div class="rail foot-inner">
+    <div class="foot-id">
+      <p class="label">Agent Arena Lab</p>
+      <p class="foot-tag">28 on-chain and AI agent experiments for Pharos Season of AI, built with Chain MCP, Developer Docs MCP and SkillEngine.</p>
+    </div>
+    <nav aria-label="Elsewhere">
+      <ul class="foot-links">
+        <li><a class="icon-link" href="https://github.com/Rzbyte/pharos-season-of-ai" target="_blank" rel="noopener noreferrer" aria-label="Source code on GitHub, opens in a new tab" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a></li>
+        <li><a class="icon-link" href="https://docs.pharos.xyz/" target="_blank" rel="noopener noreferrer" aria-label="Pharos documentation, opens in a new tab" title="Pharos Docs"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M6 1.5h8.25L20 7.25V20.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-17a2 2 0 0 1 2-2Zm7.5 1.75V8.5h5.25L13.5 3.25ZM7.5 12h9v1.5h-9V12Zm0 3.5h9V17h-9v-1.5Zm0-7h3.5V10H7.5V8.5Z"/></svg></a></li>
+        <li><a class="icon-link" href="https://x.com/rzbyte_" target="_blank" rel="noopener noreferrer" aria-label="rzbyte_ on X, opens in a new tab" title="X"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a></li>
+      </ul>
+    </nav>
+  </div>
+</footer>
+</body>
+</html>
