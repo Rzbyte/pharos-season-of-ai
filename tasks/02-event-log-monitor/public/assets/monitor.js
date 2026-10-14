@@ -117,7 +117,7 @@ function render(data, change) {
   setText($("window"), `${groupDigits(data.fromBlock)}–${groupDigits(data.toBlock)}`);
   setText($("checked-at"), clockTime(data.fetchedAt) || "—");
   setText($("count-new"), groupDigits(String(feed.newSinceStart)));
-  setText($("count-detail"), `since monitoring started${feed.shown > feed.newSinceStart ? `, ${groupDigits(String(feed.shown - feed.newSinceStart))} already in the first check` : ""}`);
+  setText($("count-detail"), `since monitoring started${feed.shown > feed.newSinceStart ? `, ${groupDigits(String(feed.shown - feed.newSinceStart))} initial` : ""}`);
 
   const gap = $("gap-note");
   if (change.gap) {
@@ -143,16 +143,30 @@ function render(data, change) {
   renderFeed(change);
 }
 
+/**
+ * Two lists from the one feed: "New events" holds only events found after monitoring started;
+ * "Initial events" (collapsed) holds those already in the first check. Only display changes here:
+ * dedup, the cursor and the feed limit are feed.js's, as before.
+ */
 function renderFeed(change) {
-  const list = $("feed");
+  const lists = { fresh: $("feed"), initial: $("initial-feed") };
   // Only new events are inserted, newest first; shown ones are never re-rendered or moved.
-  list.prepend(...[...change.added].reverse().map(eventNode));
-  while (list.children.length > feed.items.length) list.lastElementChild.remove();
+  for (const fresh of [true, false]) {
+    const list = fresh ? lists.fresh : lists.initial;
+    list.prepend(...[...change.added].filter((item) => item.fresh === fresh).reverse().map(eventNode));
+    const kept = feed.items.filter((item) => item.fresh === fresh).length;
+    while (list.children.length > kept) list.lastElementChild.remove();
+  }
   for (const item of change.retracted) {
-    const node = list.querySelector(`[data-key="${CSS.escape(item.key)}"]`);
+    const node = document.querySelector(`#events [data-key="${CSS.escape(item.key)}"]`);
     if (node) markRemoved(node);
   }
-  $("feed-empty").hidden = feed.items.length > 0;
+  const newCount = feed.newSinceStart;
+  const initialCount = feed.shown - feed.newSinceStart;
+  setText($("new-count"), groupDigits(String(newCount)));
+  setText($("initial-count"), `${groupDigits(String(initialCount))} found when monitoring started`);
+  $("initial").hidden = initialCount === 0;
+  $("feed-empty").hidden = lists.fresh.children.length > 0;
   const fresh = change.added.filter((item) => item.fresh);
   if (fresh.length > 0) {
     setText($("feed-live"), fresh.length === 1 ? `New ${fresh[0].type}: ${fresh[0].summary}` : `${fresh.length} new Transfer events`);
@@ -171,7 +185,7 @@ function eventNode(item) {
   setText(part("event-kind"), item.type);
   setText(part("event-num"), item.amount.formatted);
   setText(part("event-unit"), item.amount.symbol);
-  setText(part("event-badge"), item.fresh ? "New" : "At start");
+  setText(part("event-badge"), item.fresh ? "New" : "");
   setText(part("event-from"), shortHex(item.from));
   part("event-from").title = item.from;
   setText(part("event-to"), shortHex(item.to));

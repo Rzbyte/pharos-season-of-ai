@@ -109,11 +109,17 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.equal(await statusWord(page), "Monitoring");
     assert.equal(await page.locator("#last-block").innerText(), "20,248,479");
     assert.equal(await page.locator("#window").innerText(), "20,248,280–20,248,479");
-    assert.equal(await page.locator("#feed > li").count(), 2);
-    assert.deepEqual(await page.$$eval("#feed .event-badge", (badges) => badges.map((badge) => badge.textContent)), ["At start", "At start"]);
-    assert.deepEqual(await page.$$eval("#feed .event-kind", (kinds) => kinds.map((kind) => kind.textContent)), ["Mint", "Transfer"]);
-    assert.equal(await page.locator("#feed > li").first().locator(".event-num").innerText(), "5");
-    assert.equal(await page.locator("#feed-empty").isHidden(), true);
+    // The first window's events are initial, not new: they wait in the collapsed section.
+    assert.equal(await page.locator("#feed > li").count(), 0);
+    assert.equal(await page.locator("#new-count").innerText(), "0");
+    assert.equal(await page.locator("#feed-empty").isVisible(), true);
+    assert.equal(await page.locator("#initial").isVisible(), true);
+    assert.equal(await page.locator("#initial").evaluate((details) => details.open), false, "collapsed by default");
+    assert.equal(await page.locator("#initial-count").innerText(), "2 found when monitoring started");
+    assert.equal(await page.locator("#initial-feed > li").count(), 2);
+    assert.deepEqual(await page.$$eval("#initial-feed .event-badge", (badges) => badges.map((badge) => badge.textContent)), ["", ""]);
+    assert.deepEqual(await page.$$eval("#initial-feed .event-kind", (kinds) => kinds.map((kind) => kind.textContent)), ["Mint", "Transfer"]);
+    assert.equal(await page.locator("#initial-feed > li").first().locator(".event-num").textContent(), "5");
     assert.equal(await page.locator("#start").isDisabled(), true);
     assert.equal(await page.locator("#stop").isDisabled(), false);
     assert.equal(await page.locator("#t-from").textContent(), "0x134f6d8 (20,248,280)");
@@ -135,6 +141,38 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.ok(Number(await page.$eval("#proof-dups", (cell) => cell.textContent.replace(/,/g, ""))) > 0, "overlap counted as duplicates");
     assert.match(await page.locator("#count-new").innerText(), /^\d+$/);
     assert.ok(newest);
+    // Only events found after monitoring started are under New events; the initial ones stay apart.
+    const fresh = await page.$$eval("#feed > li", (items) => items.every((item) => "fresh" in item.dataset));
+    assert.equal(fresh, true);
+    assert.equal(await page.locator("#initial-feed > li[data-fresh]").count(), 0);
+    assert.equal(await page.locator("#initial-feed > li").count(), 2);
+    const initialKeys = await page.$$eval("#initial-feed > li", (items) => items.map((item) => item.dataset.key));
+    assert.equal(shown.some((key) => initialKeys.includes(key)), false, "no event in both lists");
+    assert.equal(await page.locator("#new-count").innerText(), String(await page.locator("#feed > li").count()));
+    assert.equal(await page.locator("#feed-empty").isHidden(), true);
+    await context.close();
+  });
+
+  test("the initial events section expands and collapses", async () => {
+    const { page, context } = await open();
+    await page.waitForFunction(() => document.body.dataset.state === "monitoring");
+    assert.equal(await page.locator("#initial-feed > li").first().isVisible(), false);
+    await page.click("#initial > summary");
+    assert.equal(await page.locator("#initial").evaluate((details) => details.open), true);
+    // lab.css animates the disclosure open, so wait for the first card rather than check at once.
+    await page.locator("#initial-feed > li").first().waitFor({ state: "visible" });
+    assert.equal(await page.locator("#initial-feed > li").first().locator(".event-tx a").innerText(), "View in Explorer");
+    await page.keyboard.press("Enter"); // the summary keeps focus: the keyboard closes it again
+    assert.equal(await page.locator("#initial").evaluate((details) => details.open), false);
+    await context.close();
+  });
+
+  test("with no event in the first window, the initial section is not shown", async () => {
+    chain.logs = [];
+    const { page, context } = await open();
+    await page.waitForFunction(() => document.body.dataset.state === "monitoring");
+    assert.equal(await page.locator("#initial").isHidden(), true);
+    assert.equal(await page.locator("#feed-empty").isVisible(), true);
     await context.close();
   });
 
@@ -206,21 +244,22 @@ describe("the Task 02 page in a browser", { skip }, () => {
     await page.waitForFunction(() => document.body.dataset.state === "monitoring");
     const [first] = chain.logs;
     chain.logs[0] = { ...first, removed: true };
-    await page.waitForFunction(() => document.querySelector("#feed > li[data-removed]"));
-    assert.equal(await page.locator("#feed > li[data-removed] .event-badge").innerText(), "Removed");
-    assert.equal(await page.locator("#feed > li").count(), 2);
+    await page.waitForFunction(() => document.querySelector("#initial-feed > li[data-removed]"));
+    assert.equal(await page.locator("#initial-feed > li[data-removed] .event-badge").textContent(), "Removed");
+    assert.equal(await page.locator("#initial-feed > li").count(), 2);
+    assert.equal(await page.locator("#feed > li").count(), 0);
     await context.close();
   });
 
   test("each event links its transaction on the explorer, in a new tab", async () => {
     const { page, context } = await open();
     await page.waitForFunction(() => document.body.dataset.state === "monitoring");
-    const link = page.locator("#feed > li").first().locator(".event-tx a");
+    const link = page.locator("#initial-feed > li").first().locator(".event-tx a");
     const hash = String(chain.logs[1].transactionHash);
     assert.equal(await link.getAttribute("href"), `${EXPLORER}/tx/${hash}`);
     assert.equal(await link.getAttribute("target"), "_blank");
     assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
-    assert.equal(await link.innerText(), "View in Explorer");
+    assert.equal((await link.textContent()).trim(), "View in Explorer");
     assert.equal(await page.locator("#contract-explorer").getAttribute("href"), `${EXPLORER}/address/0xC879C018dB60520F4355C26eD1a6D572cdAC1815`);
     await context.close();
   });
@@ -230,10 +269,13 @@ describe("the Task 02 page in a browser", { skip }, () => {
       chain.logs.push(makeLog({ block: START - 1n, index: 9, amount: 123_456_789_012_345_678n }));
       for (const [width, height] of WIDTHS) {
         const { page, context } = await open({ viewport: { width, height }, colorScheme: scheme });
-        await page.waitForFunction(() => document.querySelectorAll("#feed > li").length === 3);
+        await page.waitForFunction(() => document.querySelectorAll("#initial-feed > li").length >= 3);
+        mine(1);
+        await page.waitForFunction(() => document.querySelectorAll("#feed > li").length >= 1);
+        await page.click("#initial > summary");
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         assert.equal(overflow, 0, `${width}px overflows by ${overflow}px`);
-        const outside = await page.$$eval("#feed > li, #monitor, .controls .btn", (elements) =>
+        const outside = await page.$$eval("#feed > li, #initial-feed > li, #initial > summary, #monitor, .controls .btn", (elements) =>
           elements.filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 0.5).length,
         );
         assert.equal(outside, 0, `${width}px: an element sticks out`);

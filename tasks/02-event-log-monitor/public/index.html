@@ -83,10 +83,18 @@
   <section class="section" id="events" aria-labelledby="feed-h">
     <div class="section-head">
       <h2 class="section-title" id="feed-h" tabindex="-1">New events</h2>
-      <p class="section-lede">Newest first. Mint is a transfer from the zero address, Burn a transfer to it.</p>
+      <p class="section-lede"><span id="new-count">0</span> since monitoring started</p>
     </div>
-    <p class="feed-empty" id="feed-empty">No Transfer events yet. New ones appear here as they are mined.</p>
+    <p class="feed-empty" id="feed-empty">None yet. Each Transfer mined from now on appears here once, newest first.</p>
     <ol class="feed" id="feed" aria-labelledby="feed-h"></ol>
+    <details class="disclosure initial" id="initial" hidden>
+      <summary>
+        <h3 class="disclosure-title" id="initial-h">Initial events</h3>
+        <span class="disclosure-hint" id="initial-count"></span>
+        <span class="disclosure-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </summary>
+      <div class="disclosure-body"><ol class="feed" id="initial-feed" aria-labelledby="initial-h"></ol></div>
+    </details>
     <p class="sr" id="feed-live" aria-live="polite"></p>
     <template id="event-template"><li class="event"><div class="event-head"><span class="event-kind"></span><span class="event-amount"><span class="event-num"></span> <span class="event-unit"></span></span><span class="event-badge"></span></div><p class="event-path"><span class="event-from"></span><span class="event-arrow" aria-hidden="true">→</span><span class="sr"> to </span><span class="event-to"></span></p><p class="meta event-meta"><span>Block <b class="event-block"></b></span><span>Log <b class="event-log"></b></span></p><div class="event-tx"><span class="event-tx-label">Tx</span><code class="event-hash"></code><a class="action" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></li></template>
   </section>

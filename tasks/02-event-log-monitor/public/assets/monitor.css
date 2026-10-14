@@ -21,6 +21,11 @@
      badge; events found by the first check say "At start". */
   .feed { display: grid; gap: var(--space-3); }
   .feed-empty { color: var(--text-2); font-size: var(--fs-small); }
+  /* Initial events: secondary, collapsed under the new ones. */
+  .initial { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--line); }
+  .initial .disclosure-title { font-size: var(--fs-body); }
+  .initial .disclosure-body { padding-top: var(--space-4); }
+  .event-badge:empty { display: none; }
   .event {
     container: event / inline-size; display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-4);
     border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);

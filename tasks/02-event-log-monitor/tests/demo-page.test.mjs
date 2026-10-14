@@ -158,6 +158,11 @@ describe("static files", () => {
     assert.ok(at.every((index) => index !== -1), JSON.stringify(at));
     assert.ok(at[0] < at[2] && at[2] < at[3] && at[3] < at[6]);
     assert.match(html, /View in Explorer/);
+    // Initial events: after the new-events list, collapsed (no open attribute), secondary heading.
+    const initial = html.indexOf('<details class="disclosure initial" id="initial" hidden>');
+    assert.ok(initial > html.indexOf('id="feed"'), "initial events come after the new events list");
+    assert.match(html, /<h3 class="disclosure-title" id="initial-h">Initial events<\/h3>/);
+    assert.doesNotMatch(html, /id="initial"[^>]*\bopen\b/);
   });
 
   test("scripts write text, never HTML", async () => {
