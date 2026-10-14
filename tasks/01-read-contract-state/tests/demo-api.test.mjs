@@ -3,9 +3,11 @@
 // Everything runs against the in-process fake Pharos MCP server or a stubbed fetch; nothing here
 // reaches the network.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, describe, test } from "node:test";
 import { encodeAbiParameters } from "viem";
-import handler, { createHandler, readState } from "../api/state.js";
+import handler, { createHandler, MCP_TIMEOUT_MS, readState } from "../api/state.js";
+import { DEFAULT_TIMEOUT_MS } from "../dist/src/constants.js";
 import { startFakePharosMcp } from "../dist/tests/fake-pharos-mcp.js";
 
 // Test fixtures only: made up, never used as proof.
@@ -132,6 +134,16 @@ describe("deployed handler", () => {
         else process.env[key] = value;
       }
     }
+  });
+
+  test("uses the proven CLI's 20000 ms MCP timeout, and Vercel gives the function room for it", () => {
+    assert.equal(MCP_TIMEOUT_MS, 20_000);
+    assert.equal(MCP_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
+    // Initialize, the get_chain_info/get_block_number pair and the four eth_calls each get the full
+    // timeout before Vercel cuts the function off, so a slow read ends with the API's JSON, not a 504.
+    const { maxDuration } = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8")).functions["api/state.js"];
+    assert.ok(maxDuration >= 30);
+    assert.ok(maxDuration * 1000 >= 3 * MCP_TIMEOUT_MS, `maxDuration ${maxDuration}s is too short for three ${MCP_TIMEOUT_MS} ms phases`);
   });
 
   test("answers only GET", async () => {

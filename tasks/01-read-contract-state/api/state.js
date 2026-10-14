@@ -5,12 +5,12 @@
 // label rules and the 1.0.2 transport fix (no standalone GET stream) are exactly the CLI's.
 // The endpoint is a fixed constant and the CLI gets an empty environment, so PHAROS_MCP_URL or
 // PHAROS_MCP_TOKEN set on the deployment can neither redirect it nor add a token.
-import { HOSTED_ENDPOINT, TOOL_NAME, VERSION } from "../dist/src/constants.js";
+import { DEFAULT_TIMEOUT_MS, HOSTED_ENDPOINT, TOOL_NAME, VERSION } from "../dist/src/constants.js";
 import { formatTokenAmount } from "../dist/src/format.js";
 import { run } from "../dist/src/run.js";
 
-/** Per MCP request; a whole read normally takes a few seconds. */
-const MCP_TIMEOUT_MS = 8_000;
+/** Per MCP request: the proven CLI's own default (20000 ms), which the live proof ran with. */
+export const MCP_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
 
 /** One live read of the Circle USDC Contract through Pharos Chain MCP. Tests pass a local fake endpoint. */
 export async function readState(endpoint = HOSTED_ENDPOINT) {
