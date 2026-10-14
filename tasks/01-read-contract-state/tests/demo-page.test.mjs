@@ -169,7 +169,10 @@ describe("what the page loads and calls", () => {
     assert.ok(inspectorIds.size >= 10);
     for (const id of inspectorIds) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
     const explainIds = new Set([...explainJs.matchAll(/\$\("([\w-]+)"\)/g)].map((match) => match[1]));
-    assert.deepEqual([...explainIds].sort(), ["explain", "explain-body", "explain-meta", "explain-note", "explain-state", "explain-submit", "explain-text", "inspector"]);
+    // Its own elements, the Inspector it listens to, and the input, only as where keyboard focus goes
+    // when the explanation it was in is hidden.
+    assert.deepEqual([...explainIds].sort(), ["explain", "explain-body", "explain-details", "explain-hint", "explain-more", "explain-note", "explain-state", "explain-submit", "explain-text", "inspect-input", "inspector"]);
+    assert.match(explainJs, /\(box\.hidden \? \$\("inspect-input"\) : button\)\.focus\(\);/);
     for (const id of explainIds) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
     assert.match(themeJs, /getElementById\("theme-toggle"\)/);
     assert.match(html, /<button class="theme-toggle" id="theme-toggle" type="button">/);
@@ -210,7 +213,7 @@ describe("the words on the page", () => {
     assert.match(pageJs, /if \(values\.paused === true\) paused\.dataset\.tone = "warning";\n {2}else delete paused\.dataset\.tone;/);
     assert.match(rules, /\.rows dd\[data-tone="warning"\] \{ color: var\(--warning\); font-weight: 600; \}/);
     assert.match(rules, /\.rows\.cols-2 > div:last-child:nth-child\(odd\) \{ grid-column: 1 \/ -1; \}/);
-    assert.match(visibleText, /and its pause flag, paused ?, all pinned to one explicit block/);
+    assert.match(visibleText, /and the pause flag paused ?from Circle's USDC contract on Pharos Mainnet, all at one explicit block\./);
     assert.doesNotMatch(visibleText, /\b(?:safe|healthy)\b/i);
     for (const [name, text] of literals) assert.doesNotMatch(text, /\b(?:safe|healthy)\b/i, `${name}: "${text}"`);
   });
@@ -799,15 +802,18 @@ describe("accessible structure", () => {
     const explanation = html.slice(html.indexOf('<div class="explain" id="explain"'), html.indexOf('<span class="sr" id="inspect-copy-state"'));
     assert.equal(html.match(/<h3\b/g).length, proof.match(/<h3\b/g).length + 1);
     assert.equal(explanation.match(/<h3\b[^>]*>(.*?)<\/h3>/)[1], "Plain-language explanation");
-    // The explanation's sections are h4, under that h3, inside the Inspector (h2).
-    assert.match(explainJs, /element\("h4", "explain-h", section\.heading\)/);
+    // Under that h3 the explanation is paragraphs and a list, with no headings of its own.
+    assert.doesNotMatch(explainJs, /"h[1-6]"/);
+    assert.match(explainJs, /text\.replaceChildren\(\.\.\.paragraphs\.map\(\(part\) => element\("p", part\)\)\);/);
   });
 
   test("labels, names and live regions are in place", () => {
     assert.match(html, /<html lang="en">/);
     assert.match(html, /<a class="skip" href="#snapshot">Skip to the snapshot<\/a>/);
     assert.match(html, /<section class="panel" id="snapshot" aria-labelledby="snapshot-h" tabindex="-1">/);
-    assert.match(html, /<label class="field-label" for="inspect-input">Paste contract address or transaction hash<\/label>/);
+    assert.match(html, /<label class="field-label" for="inspect-input">Contract address or transaction hash<\/label>/);
+    // Show details says whether it is open, and what it opens.
+    assert.match(html, /<button class="btn-quiet explain-more" id="explain-more" type="button" aria-expanded="false" aria-controls="explain-details" hidden>Show details<\/button>\n {12}<ul class="explain-list" id="explain-details" hidden><\/ul>/);
     assert.match(html, /<input class="input" id="inspect-input"[^>]* aria-describedby="inspect-detected">/);
     assert.match(html, /<p class="status" id="status" role="status"/);
     assert.match(html, /<p class="status inspect-status" id="inspect-status" role="status" hidden>/);
@@ -876,9 +882,11 @@ describe("Explain this result, as shipped", () => {
 
   test("its words: no provider name, no claim, and the result stays the source of truth", () => {
     const words = literals.filter(([name]) => name === "explain.js").map(([, text]) => text).join(" ");
-    assert.match(words, /Written by an AI model from the result above\. The result above is the source of truth\./);
-    assert.match(words, /The inspection result above is unchanged\./);
-    assert.match(words, /Reused from an earlier explanation of this same result\./);
+    assert.match(block, /<p class="explain-meta">Written by AI\. The exact values are in the result\.<\/p>/);
+    assert.match(block, /<p class="explain-hint" id="explain-hint">A short reading of what these values mean\.<\/p>/);
+    assert.match(words, /The inspection result is unchanged\./);
+    assert.match(words, /Hide details/);
+    assert.match(words, /Show details/);
     assert.doesNotMatch(`${visibleText} ${words}`, /deepseek/i, "the page never names the provider");
     assert.doesNotMatch(words, /\b(?:safe|secure|trusted|verified|legitimate)\b/i);
   });
@@ -886,7 +894,9 @@ describe("Explain this result, as shipped", () => {
   test("the button is full width on a phone's panel, and dims with the result while a new one is read", () => {
     assert.match(rules, /\.btn-explain \{ width: 100%; \}\n {2}@container panel \(min-width: 460px\) \{ \.btn-explain \{ width: auto; \} \}/);
     assert.match(rules, /#inspector\[data-inspect-state="inspecting"\] \.explain \{ opacity: \.55; \}/);
-    assert.match(rules, /\.explain-h \{ margin: 14px 0 0;/);
+    // The explanation's text wraps inside its box, whatever it holds; on a wide panel it sits beside the result.
+    assert.match(rules, /\.explain-text p, \.explain-list \{ max-width: 62ch;[^}]* overflow-wrap: anywhere; \}/);
+    assert.match(rules, /@container panel \(min-width: 860px\) \{\n {4}\.inspect-out:has\(> \.explain:not\(\[hidden\]\)\) \{ display: grid; grid-template-columns: minmax\(0, 3fr\) minmax\(0, 2fr\);/);
   });
 });
 

@@ -75,10 +75,21 @@
     --fs-h1: clamp(1.5rem, 1.1rem + 2vw, 2.75rem);
     --fs-figure: clamp(2rem, 1.2rem + 4.5vw, 3.75rem);  /* a ceiling: the page script fits the figure to its line */
 
+    /* Spacing: one small scale. 4 and 8 inside a control or between a label and its value, 12 and 16
+       between rows and after a heading, 20 to 24 between groups, 32 to 40 between page sections. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+
     --maxw: 1160px;
     --pad-x: clamp(16px, 4vw, 40px);
-    --section-y: clamp(40px, 6vw, 72px);
-    --panel-pad: 24px;
+    --section-y: clamp(var(--space-8), 3.5vw, var(--space-10));
+    --panel-pad: var(--space-5);
     --radius: 10px;
     --ease: cubic-bezier(.22, .61, .36, 1);
   }
@@ -212,22 +223,22 @@
 
   /* A section: one hairline and generous space. */
   .section { padding-block: var(--section-y); border-top: 1px solid var(--line); }
-  .section-compact { padding-block: clamp(28px, 4vw, 48px); }
-  .section-head { display: grid; gap: 8px; align-content: start; min-width: 0; margin-bottom: 24px; max-width: 62ch; }
+  .section-compact { padding-block: var(--space-6) var(--space-8); }
+  .section-head { display: grid; gap: var(--space-2); align-content: start; min-width: 0; margin-bottom: var(--space-4); max-width: 62ch; }
   .section-title { font-size: var(--fs-h2); line-height: 1.3; letter-spacing: -.01em; }
   .section-lede { color: var(--text-2); font-size: .9375rem; }
   .section-meta { color: var(--text-3); font-size: var(--fs-small); }
 
   /* Hero: the task on the left, its instrument panel on the right. On phones the panel follows the
      task header directly and the longer description comes after it. */
-  .hero { display: grid; gap: 24px; padding-block: 24px var(--section-y); grid-template-areas: "head" "panel" "about"; }
+  .hero { display: grid; gap: var(--space-6); padding-block: var(--space-6) var(--section-y); grid-template-areas: "head" "panel" "about"; }
   .hero > .task-head { grid-area: head; }
   .hero > .panel { grid-area: panel; }
   .hero > .hero-about { grid-area: about; }
   @media (min-width: 960px) {
     .hero {
       grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); grid-template-rows: auto 1fr;
-      grid-template-areas: "head panel" "about panel"; gap: 28px 56px; padding-block: 64px var(--section-y);
+      grid-template-areas: "head panel" "about panel"; gap: var(--space-6) 56px; padding-block: var(--space-10) var(--section-y);
     }
   }
 
@@ -325,7 +336,7 @@
   .meta > span + span::before { content: "·"; content: "·" / ""; margin-right: 8px; color: var(--text-3); }
 
   /* Note: an explanation beside a state. Its rule takes the state's colour. */
-  .note { max-width: 62ch; margin-top: 10px; padding: 2px 0 2px 12px; border-left: 2px solid var(--line-strong); color: var(--text-2); font-size: var(--fs-small); }
+  .note { max-width: 62ch; margin-top: 10px; padding: 2px 0 2px 12px; border-left: 2px solid var(--line-strong); color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
   .note[data-tone="error"] { border-left-color: var(--error); color: var(--text); }
   .note[data-tone="warning"] { border-left-color: var(--warning); }
 
@@ -351,6 +362,7 @@
   /* A value that needs attention (paused: Yes) says so in its words and in the warning tone, never by
      colour alone; its normal state takes no colour at all. */
   .rows dd[data-tone="warning"] { color: var(--warning); font-weight: 600; }
+  .rows dd[data-tone="error"] { color: var(--error); font-weight: 600; }
   @container panel (min-width: 520px) {
     .rows.cols-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
     /* An odd last row takes the whole width, so its rule runs across the panel like the others. */
@@ -452,29 +464,43 @@
 
   /* Inspector: its state lives on #inspector (data-inspect-state), never on <body>, so it can
      never touch the Task 01 snapshot. */
-  .inspect-status { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-  .inspect-result .rows { margin-top: 14px; }
-  .inspect-caption { margin-top: 22px; }
-  .inspect-caption + .rows { margin-top: 6px; }
+  .inspect-status { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--line); }
+  /* The result is its own size container: its rows go two to a line once it has the room. */
+  .inspect-result { container: result / inline-size; min-width: 0; }
+  .inspect-result .rows { margin-top: var(--space-3); }
+  /* The identity rows and the facts read as one list: one rule between them, not two. */
+  .inspect-result .rows:has(+ .rows) { border-bottom: 0; }
+  .inspect-result .rows + .rows { margin-top: 0; }
+  @container result (min-width: 640px) {
+    .rows.pairs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+    .rows.pairs > .hex-row, .rows.pairs > .wide { grid-column: 1 / -1; }
+  }
   #inspector[data-inspect-state="inspecting"] .inspect-result { opacity: .55; }
   #inspector[data-inspect-state="error"] .inspect-result { opacity: .75; }
   .inspect-result .unavailable > span:first-child { color: var(--text-3); }
   .inspect-result .hex-sub { margin-top: 2px; }
-  .inspect-message { margin-top: 12px; max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); }
+  .inspect-message { margin-top: var(--space-3); max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
 
-  /* Explain this result: one action for the whole result, after it, and the explanation under it.
-     A button, not a utility chip: full width on a phone, its own size on a wide panel. While a new
-     result is read, the old one's explanation dims with it. */
-  .explain { margin-top: 20px; }
+  /* Explain this result: one action for the whole result, after it, with the explanation under it.
+     A button, not a utility chip: full width on a phone, its own size on a wider panel. On a wide
+     panel the explanation sits beside the result instead of below it, so explaining a result never
+     doubles the page's length. While a new result is read, the old one's explanation dims with it. */
+  .explain { min-width: 0; margin-top: var(--space-5); }
   .btn-explain { width: 100%; }
   @container panel (min-width: 460px) { .btn-explain { width: auto; } }
-  .explain-body { margin-top: 18px; }
-  .explain-h { margin: 14px 0 0; color: var(--text); font-size: var(--fs-small); font-weight: 600; line-height: 1.4; }
-  .explain-text > :first-child { margin-top: 8px; }
-  .explain-text p, .explain-list { max-width: 62ch; margin-top: 6px; color: var(--text-2); font-size: var(--fs-small); }
-  .explain-list { padding-left: 1.2em; list-style: disc; }
-  .explain-list li + li { margin-top: 4px; }
-  .explain-meta { margin-top: 16px; max-width: 62ch; color: var(--text-3); font-size: var(--fs-meta); }
+  .explain-hint { margin-top: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .explain-body { margin-top: var(--space-4); }
+  .explain-title { margin-bottom: var(--space-2); }
+  .explain-text { display: grid; gap: var(--space-2); }
+  .explain-text p, .explain-list { max-width: 62ch; color: var(--text-2); font-size: .9375rem; line-height: 1.6; overflow-wrap: anywhere; }
+  .explain-more { margin-top: var(--space-1); }
+  .explain-list { display: grid; gap: var(--space-1); padding-left: 1.2em; list-style: disc; font-size: var(--fs-small); }
+  .explain-meta { margin-top: var(--space-3); max-width: 62ch; color: var(--text-3); font-size: var(--fs-meta); }
+  @container panel (min-width: 860px) {
+    .inspect-out:has(> .explain:not([hidden])) { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: 28px; align-items: start; }
+    /* The column and its rule run the full height of the result, so the two read as one split. */
+    .inspect-out > .explain { align-self: stretch; margin-top: var(--space-3); padding-left: 28px; border-left: 1px solid var(--line); }
+  }
   #inspector[data-inspect-state="inspecting"] .explain { opacity: .55; }
 
   /* Disclosure: the proof, collapsed by default. The summary row is the section heading. */
@@ -493,7 +519,7 @@
   .disclosure-icon svg { width: 16px; height: 16px; }
   .disclosure[open] .disclosure-icon svg { transform: rotate(180deg); }
   .disclosure > summary:hover .disclosure-icon, .disclosure > summary:active .disclosure-icon { color: var(--text); border-color: var(--text-3); }
-  .disclosure-body { display: grid; gap: 28px; padding-top: 28px; }
+  .disclosure-body { display: grid; gap: var(--space-6); padding-top: var(--space-6); }
 
   /* Counts: the evidence, one number per claim, in a ruled grid. */
   .counts {

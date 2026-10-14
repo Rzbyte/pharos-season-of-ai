@@ -7,23 +7,33 @@
 import { createServer } from "node:http";
 
 export const SAMPLE_ANSWER = [
-  "What this shows",
-  "This is a token contract on Pharos Mainnet, read at one block.",
+  "This contract answered all four standard token questions at the inspected block.",
   "",
-  "What it means",
-  "The contract answered all four standard token questions. Its total supply is the number of tokens that exist.",
+  "Its total supply is stored as a whole number in the token's smallest unit. With 6 decimals, the last six digits are the fraction, so one token is 1,000,000 of those units.",
   "",
-  "Key details",
-  "- Name and symbol: USDC",
-  "- Decimals: 6, so one token is 1,000,000 of its smallest units",
+  "The name and symbol are text the contract returns. Anyone can deploy a contract with any name or symbol, so they prove nothing about who made it.",
   "",
-  "Anything to note",
-  "Anyone can deploy a contract with any name or symbol, so a name or symbol proves nothing about who made it.",
+  "Details",
+  "- The total supply is the number of tokens that existed at that block; it can differ in later blocks.",
+  "- Decimals only change how the number is shown, not how many tokens exist.",
+].join("\n");
+
+/** The same, for a transaction: what a good answer to the current instructions looks like. */
+export const SAMPLE_TX_ANSWER = [
+  "This transaction completed successfully and was included in block 20,384,350.",
+  "",
+  "No native PROS was sent with it. Gas used shows how much computation the transaction consumed: 46,290 of the 120,000 its sender allowed.",
+  "",
+  "The recipient may be a wallet or a contract, and the exact purpose of the transaction cannot be determined from this inspection.",
+  "",
+  "Details",
+  "- It recorded 2 log entries. Their contents are not part of this inspection.",
+  "- The fee also depends on the gas price, which this inspection does not include.",
 ].join("\n");
 
 /**
  * behavior: { content, finishReason, status, raw, delayMs } or a function (body, n) returning one.
- *   content       the answer's text (default SAMPLE_ANSWER)
+ *   content       the answer's text (default: SAMPLE_TX_ANSWER for a transaction, else SAMPLE_ANSWER)
  *   finishReason  "stop" (default) or "length"
  *   status        an HTTP error status to answer with instead
  *   raw           a raw response body to send as is (for malformed answers)
@@ -53,13 +63,16 @@ export async function startFakeDeepSeek(initial = {}) {
       res.writeHead(200, { "content-type": "application/json" }).end(b.raw);
       return;
     }
+    // By default, the sample answer for what was asked: a transaction or a contract.
+    const asked = body?.messages?.[1]?.content ?? "";
+    const sample = /"inspection": "A transaction/.test(asked) ? SAMPLE_TX_ANSWER : SAMPLE_ANSWER;
     res.writeHead(200, { "content-type": "application/json" }).end(
       JSON.stringify({
         id: `fake-${requests.length}`,
         object: "chat.completion",
         created: 0,
         model: body?.model ?? null,
-        choices: [{ index: 0, message: { role: "assistant", content: b.content ?? SAMPLE_ANSWER }, finish_reason: b.finishReason ?? "stop" }],
+        choices: [{ index: 0, message: { role: "assistant", content: b.content ?? sample }, finish_reason: b.finishReason ?? "stop" }],
         usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       }),
     );

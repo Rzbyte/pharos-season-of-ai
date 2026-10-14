@@ -75,45 +75,47 @@
     </section>
 
     <div class="hero-about">
-      <p class="task-about">Reads <code>name</code>, <code>symbol</code>, <code>decimals</code> and <code>totalSupply</code> of Circle's USDC on Pharos Mainnet, and its pause flag, <code>paused</code>, all pinned to one explicit block, through Pharos Chain MCP. Refresh asks for a new snapshot; one served again from the edge cache is marked cached.</p>
+      <p class="task-about">Reads <code>name</code>, <code>symbol</code>, <code>decimals</code>, <code>totalSupply</code> and the pause flag <code>paused</code> from Circle's USDC contract on Pharos Mainnet, all at one explicit block.</p>
       <p class="jump"><a href="#inspector">Inspect another contract or transaction</a><a href="#proof">Proof &amp; technical details</a></p>
     </div>
   </section>
 
   <section class="section" id="inspector" aria-labelledby="inspect-h" data-inspect-api="/api/inspect" data-explain-api="/api/explain" data-inspect-state="idle">
-    <div class="split">
-      <div class="section-head">
-        <h2 class="section-title" id="inspect-h">Pharos Inspector</h2>
-        <p class="section-lede">Paste a contract address or a transaction hash and it is read through Pharos Chain MCP, separately from the snapshot above.</p>
-        <p class="section-meta">A contract: its ERC-20 name, symbol, decimals and total supply, at one block. A transaction: its status, block, sender, recipient, value, gas and number of logs.</p>
-      </div>
-      <div class="panel" id="inspect-panel">
-        <div class="beacon" aria-hidden="true"></div>
-        <form id="inspect-form" novalidate>
-          <label class="field-label" for="inspect-input">Paste contract address or transaction hash</label>
-          <div class="field">
-            <input class="input" id="inspect-input" name="q" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" maxlength="100" placeholder="0x…" aria-describedby="inspect-detected">
-            <button class="btn btn-primary" id="inspect-submit" type="submit"><span class="swap"><span>Inspect</span><span>Inspecting…</span></span></button>
-          </div>
-          <p class="field-hint" id="inspect-detected" aria-live="polite">Accepts a contract address (42 characters) or a transaction hash (66).</p>
-          <p><button class="btn-quiet" type="button" id="inspect-example">Try it with the Circle USDC Contract</button></p>
-        </form>
-        <p class="status inspect-status" id="inspect-status" role="status" hidden><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="inspect-word"></span><span class="status-detail" id="inspect-detail"></span></p>
-        <p class="note" data-tone="error" id="inspect-note" aria-live="polite" hidden></p>
+    <div class="section-head">
+      <h2 class="section-title" id="inspect-h">Pharos Inspector</h2>
+      <p class="section-lede">Read any contract or transaction on Pharos Mainnet through Chain MCP, separately from the snapshot above.</p>
+    </div>
+    <div class="panel" id="inspect-panel">
+      <div class="beacon" aria-hidden="true"></div>
+      <form id="inspect-form" novalidate>
+        <label class="field-label" for="inspect-input">Contract address or transaction hash</label>
+        <div class="field">
+          <input class="input" id="inspect-input" name="q" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" maxlength="100" placeholder="0x…" aria-describedby="inspect-detected">
+          <button class="btn btn-primary" id="inspect-submit" type="submit"><span class="swap"><span>Inspect</span><span>Inspecting…</span></span></button>
+        </div>
+        <p class="field-hint" id="inspect-detected" aria-live="polite">Accepts a contract address (42 characters) or a transaction hash (66).</p>
+        <p><button class="btn-quiet" type="button" id="inspect-example">Try it with the Circle USDC Contract</button></p>
+      </form>
+      <p class="status inspect-status" id="inspect-status" role="status" hidden><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="inspect-word"></span><span class="status-detail" id="inspect-detail"></span></p>
+      <p class="note" data-tone="error" id="inspect-note" aria-live="polite" hidden></p>
+      <div class="inspect-out">
         <div class="inspect-result" id="inspect-result" hidden></div>
         <div class="explain" id="explain" hidden>
           <button class="btn btn-explain" id="explain-submit" type="button" aria-disabled="false"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2.5 3.5h11M2.5 6.5h11M2.5 9.5h7M2.5 12.5h4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="swap"><span>Explain this result</span><span>Explaining…</span></span></button>
+          <p class="explain-hint" id="explain-hint">A short reading of what these values mean.</p>
           <p class="note" data-tone="error" id="explain-note" hidden></p>
           <div class="explain-body" id="explain-body" hidden>
             <h3 class="label explain-title">Plain-language explanation</h3>
             <div class="explain-text" id="explain-text"></div>
-            <p class="explain-meta" id="explain-meta"></p>
+            <button class="btn-quiet explain-more" id="explain-more" type="button" aria-expanded="false" aria-controls="explain-details" hidden>Show details</button>
+            <ul class="explain-list" id="explain-details" hidden></ul>
+            <p class="explain-meta">Written by AI. The exact values are in the result.</p>
           </div>
           <span class="sr" id="explain-state" aria-live="polite"></span>
         </div>
-        <span class="sr" id="inspect-copy-state" aria-live="polite"></span>
-        <template id="actions-template"><div class="actions"><button class="action copy" type="button" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"></span></button><a class="action" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></template>
       </div>
+      <span class="sr" id="inspect-copy-state" aria-live="polite"></span>
+      <template id="actions-template"><div class="actions"><button class="action copy" type="button" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"></span></button><a class="action" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></template>
     </div>
   </section>
 
@@ -186,7 +188,6 @@
 
   <nav class="task-nav" aria-label="Agent Arena tasks">
     <p class="task-nav-step" id="nav-previous" hidden></p>
-    <p class="lab">Agent Arena Lab · 28 tasks</p>
     <p class="task-nav-step" id="nav-next" hidden></p>
   </nav>
 </main>

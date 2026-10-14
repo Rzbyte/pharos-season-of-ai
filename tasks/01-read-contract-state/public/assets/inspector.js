@@ -20,12 +20,15 @@ const note = $("inspect-note");
 const result = $("inspect-result");
 const CLIENT_TIMEOUT_MS = 55_000;
 const EXAMPLE_ADDRESS = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
-const WORD = { inspecting: "Inspecting", success: "Success", partial: "Partial", "not-found": "Not found", error: "Error" };
+// A full result is "Complete", never "Success", so it is not mistaken for a transaction's own status.
+const WORD = { inspecting: "Inspecting", success: "Complete", partial: "Partial", "not-found": "Not found", error: "Error" };
 // Green only for a full result, amber for a partial one, red for an error; not found is neutral.
 const TONE = { inspecting: "active", success: "success", partial: "warning", "not-found": "neutral", error: "error" };
 const KIND = { contract: "Contract", transaction: "Transaction" };
 const DETECTED = { contract: "contract address", transaction: "transaction hash" };
 const TX_STATUS = { success: "Success", failed: "Failed (reverted)", pending: "Pending" };
+/** A transaction status that needs attention says so in its words and its tone; success takes none. */
+const TX_TONE = { failed: "error", pending: "warning" };
 // Not found is an answer, not a failure: what to check next.
 const NOT_FOUND_NEXT = "Check that the hash is complete and from Pharos Mainnet, not a testnet. A transaction sent moments ago can take a few seconds to appear: inspect it again then.";
 
@@ -158,17 +161,16 @@ function render(data) {
 function contractBlocks(data) {
   const summary = rows("rows", [
     ["Address", data.address, { hex: true, copy: "address", explorer: "address" }],
-    ["Block", groupDigits(data.blockNumber)],
-    ["Network", networkName(data.network)],
+    ["Block", [groupDigits(data.blockNumber), networkName(data.network)]],
   ]);
   const { name, symbol, decimals, totalSupply } = data.state;
-  const state = rows("rows keys-code", [
+  const state = rows("rows keys-code pairs", [
     ["name", name.ok ? name.value : missing(name)],
     ["symbol", symbol.ok ? symbol.value : missing(symbol)],
     ["decimals", decimals.ok ? String(decimals.value) : missing(decimals)],
     ["totalSupply", totalSupply.ok ? supplyText(totalSupply) : missing(totalSupply)],
   ]);
-  return [summary, element("p", "label inspect-caption", "State"), state];
+  return [summary, state];
 }
 
 function transactionBlocks(data) {
@@ -178,20 +180,26 @@ function transactionBlocks(data) {
   }
   const tx = data.transaction;
   const created = tx.contractCreation;
-  const entries = [
-    ["Hash", tx.hash, { hex: true, copy: "transaction hash", explorer: "tx" }],
-    tx.status && ["Status", TX_STATUS[tx.status] ?? tx.status],
-    tx.blockNumber && ["Block", groupDigits(tx.blockNumber)],
+  const facts = [
+    tx.status && ["Status", TX_STATUS[tx.status] ?? tx.status, { tone: TX_TONE[tx.status] }],
+    // The network goes with the block; a transaction in no block yet still shows its network.
+    tx.blockNumber ? ["Block", [groupDigits(tx.blockNumber), networkName(data.network)]] : ["Network", networkName(data.network)],
     tx.from && ["From", tx.from, { hex: true }],
     tx.to && ["To", tx.to, { hex: true }],
     created && (created.address ? ["To", ["Contract creation", created.address], { hex: true }] : ["To", "Contract creation"]),
     tx.value && ["Value", tx.value.display],
-    tx.gasLimit && ["Gas limit", groupDigits(tx.gasLimit)],
-    tx.gasUsed && ["Gas used", groupDigits(tx.gasUsed)],
+    gas(tx),
     tx.logs !== null && tx.logs !== undefined && ["Logs", String(tx.logs)],
-    ["Network", networkName(data.network)],
   ];
-  return [rows("rows", entries.filter(Boolean))];
+  return [rows("rows", [["Hash", tx.hash, { hex: true, copy: "transaction hash", explorer: "tx" }]]), rows("rows pairs", facts.filter(Boolean))];
+}
+
+/** Gas in one row: what the transaction used, and the limit its sender set. */
+function gas(tx) {
+  const used = tx.gasUsed ? `${groupDigits(tx.gasUsed)} used` : null;
+  const limit = tx.gasLimit ? `limit ${groupDigits(tx.gasLimit)}` : null;
+  if (used && limit) return ["Gas", [used, limit]];
+  return used || limit ? ["Gas", used ?? limit] : null;
 }
 
 /**
@@ -201,13 +209,17 @@ function transactionBlocks(data) {
  */
 function rows(className, entries) {
   const list = element("dl", className);
-  for (const [key, value, options = {}] of entries) {
-    const row = element("div", options.hex ? "hex-row" : "");
+  const wide = wideRows(entries);
+  entries.forEach(([key, value, options = {}], index) => {
+    const row = element("div", [options.hex ? "hex-row" : "", wide.has(index) ? "wide" : ""].filter(Boolean).join(" "));
     const dd = element("dd");
+    if (options.tone) dd.dataset.tone = options.tone;
     if (Array.isArray(value)) {
       const [main, sub] = value;
       if (main.unavailable) dd.classList.add("unavailable");
       dd.append(element("span", "", main.unavailable ? main.text : main));
+      // Two values, read aloud with a pause between them ("20,384,350, Pharos Mainnet"); shown as two lines.
+      dd.append(element("span", "sr", ", "));
       dd.append(options.hex ? hexValue(sub, "hex-sub") : element("span", "sub", sub));
     } else if (options.hex) {
       dd.append(...(options.copy ? withActions(value, options) : [hexValue(value)]));
@@ -216,8 +228,27 @@ function rows(className, entries) {
     }
     row.append(element("dt", "", key), dd);
     list.append(row);
-  }
+  });
   return list;
+}
+
+/**
+ * Where rows sit two to a line (a "pairs" list with room for it), an address or hash takes the whole
+ * width, and so does the last row of a run of short ones that would otherwise sit alone.
+ */
+function wideRows(entries) {
+  const wide = new Set();
+  let run = [];
+  const close = () => {
+    if (run.length % 2 === 1) wide.add(run.at(-1));
+    run = [];
+  };
+  entries.forEach(([, , options = {}], index) => {
+    if (options.hex) close();
+    else run.push(index);
+  });
+  close();
+  return wide;
 }
 
 /** An "Unavailable" value with its reason on a second line, as [main, sub]. */
@@ -231,7 +262,7 @@ function supplyText(supply) {
 }
 
 function networkName(network) {
-  if (!network) return "Not confirmed";
+  if (!network) return "Network not confirmed";
   return network.name ?? `Chain ID ${network.chainId}`;
 }
 

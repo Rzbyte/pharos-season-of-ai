@@ -36,8 +36,34 @@ const USDC = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
 const PARTIAL = "0x0000000000000000000000000000000000c0ffee";
 const MINED = `0x${"ab".repeat(32)}`;
 const PENDING = `0x${"cd".repeat(32)}`;
+const REVERTED = `0x${"be".repeat(32)}`;
 const UNKNOWN = `0x${"ef".repeat(32)}`;
 const SENDER = "0x5b3d0f4e9a2c7d1b8e6f0a4c2d9e7b1a3c5f8d02";
+/** A long unbroken run that is not an 0x value, so only the page's own wrapping keeps it in bounds. */
+const LONG_RUN = `a9059cbb${"0".repeat(24)}${USDC.slice(2).toLowerCase()}`;
+/**
+ * The worst answer a model could give for MINED: the old four-heading format, every value repeated in
+ * full, field lines, and wording the data cannot support. The server shortens and corrects it.
+ */
+const VERBOSE_TX_ANSWER = [
+  "What this shows",
+  `This is a transaction on Pharos Mainnet (chain ID 1672) with the hash ${MINED}. It was sent from ${SENDER} to ${USDC} and included in block 20,384,350.`,
+  "",
+  "What it means",
+  "The transaction succeeded, so its changes took effect. It sent 0 PROS, the token used on this network. Gas is the fee paid to run the transaction: it used 46,290 gas out of a limit of 120,000.",
+  "",
+  "Key details",
+  "- Status: success",
+  `- From: ${SENDER}`,
+  "- Gas used: 46,290 of 120,000",
+  "",
+  "Anything to note",
+  "The recipient is a wallet address. A successful status does not mean the transaction was safe.",
+  "",
+  "Details",
+  `- The input data begins ${LONG_RUN}.`,
+  `- The transaction ${MINED} is the one inspected.`,
+].join("\n");
 const CHAIN = {
   blockNumber: 20_384_112n,
   contracts: {
@@ -50,6 +76,10 @@ const CHAIN = {
       receipt: { transactionHash: MINED, blockNumber: "0x1370a5e", from: SENDER, to: USDC, status: "0x1", gasUsed: "0xb4d2", logs: [{}, {}], contractAddress: null },
     },
     [PENDING]: { tx: { hash: PENDING, blockNumber: null, from: SENDER, to: PARTIAL, value: "0x14d1120d7b160000", gas: "0x5208", nonce: "0x2b", input: "0x" }, receipt: null },
+    [REVERTED]: {
+      tx: { hash: REVERTED, blockNumber: "0x1370a60", from: SENDER, to: USDC, value: "0x0", gas: "0x1d4c0", nonce: "0x2c", input: "0xa9059cbb" },
+      receipt: { transactionHash: REVERTED, blockNumber: "0x1370a60", from: SENDER, to: USDC, status: "0x0", gasUsed: "0x6d60", logs: [], contractAddress: null },
+    },
   },
 };
 const WIDTHS = [[320, 568], [360, 640], [390, 844], [412, 915], [430, 932], [1280, 860]];
@@ -63,6 +93,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
   let pausedFake;
   let retryFake;
   let ai;
+  let verboseAi;
   let server;
   let browser;
   let base;
@@ -84,11 +115,13 @@ describe("the Task 01 page in a browser", { skip }, () => {
     const deadState = stateHandler("http://127.0.0.1:9/mcp");
     const inspect = inspectHandler(fake.url);
     const deadInspect = inspectHandler("http://127.0.0.1:9/mcp");
-    // Explain: the real handler on the fake provider; one that is always over its limit; one whose
-    // provider cannot be reached.
+    // Explain: the real handler on the fake provider; one whose provider answers in the worst format;
+    // one that is always over its limit; one whose provider cannot be reached.
     ai = await startFakeDeepSeek({});
+    verboseAi = await startFakeDeepSeek({ content: VERBOSE_TX_ANSWER });
     const quiet = () => undefined;
     const explain = explainHandler({ apiKey: "sk-browser-test", providerUrl: ai.url, log: quiet });
+    const verboseExplain = explainHandler({ apiKey: "sk-browser-test", providerUrl: verboseAi.url, log: quiet });
     const limitedExplain = explainHandler({ apiKey: "sk-browser-test", providerUrl: ai.url, limits: { perClient: 0 }, log: quiet });
     const downExplain = explainHandler({ apiKey: "sk-browser-test", providerUrl: "http://127.0.0.1:9/chat/completions", log: quiet });
     server = createServer(async (req, res) => {
@@ -119,7 +152,8 @@ describe("the Task 01 page in a browser", { skip }, () => {
         explainRequests.push(req.method);
         if (mode.explain === "slow") await new Promise((resolve) => setTimeout(resolve, 1200));
         if (mode.explain === "unreachable") return void req.socket.destroy();
-        return void (mode.explain === "limited" ? limitedExplain : mode.explain === "down" ? downExplain : explain)(req, res);
+        const handler = { limited: limitedExplain, down: downExplain, verbose: verboseExplain }[mode.explain] ?? explain;
+        return void handler(req, res);
       }
       const path = url.pathname === "/" ? "/index.html" : url.pathname;
       if (path.includes("..")) return void res.writeHead(404).end();
@@ -142,6 +176,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await pausedFake?.close();
     await retryFake?.close();
     await ai?.close();
+    await verboseAi?.close();
   });
 
   /** A fresh page; resolves once the snapshot has settled (or failed). */
@@ -231,6 +266,26 @@ describe("the Task 01 page in a browser", { skip }, () => {
       }
       return { scroll: document.documentElement.scrollWidth - document.documentElement.clientWidth, box: Math.round((widest - innerWidth) * 10) / 10 };
     });
+
+  /** The contrast ratio of each element's text on the first solid background behind it. */
+  const contrast = (page, selectors) =>
+    page.evaluate((list) => {
+      const rgb = (value) => value.match(/[\d.]+/g).map(Number);
+      const channel = (value) => { const c = value / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+      const luminance = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+      const behind = (element) => {
+        for (let node = element; node; node = node.parentElement) {
+          const color = rgb(getComputedStyle(node).backgroundColor);
+          if (color.length === 3 || color[3] === 1) return color;
+        }
+        return [255, 255, 255];
+      };
+      return Object.fromEntries(list.map((selector) => {
+        const element = document.querySelector(selector);
+        const [a, b] = [luminance(rgb(getComputedStyle(element).color)), luminance(behind(element))];
+        return [selector, Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100];
+      }));
+    }, selectors);
 
   test("every width, both themes: no horizontal overflow, one-line supply, balanced hex lines, no errors", async () => {
     for (const theme of ["dark", "light"]) {
@@ -611,32 +666,71 @@ describe("the Task 01 page in a browser", { skip }, () => {
     assert.equal(explainRequests.length - sent, 1, "two clicks, one request");
     const shown = await page.evaluate(() => {
       const button = document.getElementById("explain-submit").getBoundingClientRect();
+      const more = document.getElementById("explain-more");
       return {
         label: document.getElementById("explain-submit").innerText.trim(),
         busy: document.getElementById("explain-submit").getAttribute("aria-disabled"),
         title: document.querySelector("#explain-body h3").textContent,
-        headings: [...document.querySelectorAll("#explain-text h4")].map((heading) => heading.textContent),
-        items: [...document.querySelectorAll("#explain-text li")].map((item) => item.textContent),
-        meta: document.getElementById("explain-meta").textContent,
+        headings: document.querySelectorAll("#explain-body h4, #explain-text h3").length,
+        paragraphs: [...document.querySelectorAll("#explain-text p")].map((paragraph) => paragraph.textContent),
+        more: { shown: !more.hidden, words: more.textContent, expanded: more.getAttribute("aria-expanded"), controls: more.getAttribute("aria-controls") },
+        details: document.getElementById("explain-details").checkVisibility(),
+        hint: document.getElementById("explain-hint").checkVisibility(),
+        meta: document.querySelector("#explain-body .explain-meta").textContent,
         live: document.getElementById("explain-state").textContent,
         below: document.getElementById("explain-body").getBoundingClientRect().top >= button.bottom,
         result: document.querySelectorAll("#inspect-result dl > div").length,
       };
     });
+    // A few short paragraphs, no headings and no list of fields; the details stay folded away.
     assert.deepEqual(shown, {
       label: "Explain this result",
       busy: "false",
       title: "Plain-language explanation",
-      headings: ["What this shows", "What it means", "Key details", "Anything to note"],
-      items: ["Name and symbol: USDC", "Decimals: 6, so one token is 1,000,000 of its smallest units"],
-      meta: shown.meta,
+      headings: 0,
+      paragraphs: [
+        "This transaction completed successfully and was included in block 20,384,350.",
+        "No native PROS was sent with it. Gas used shows how much computation the transaction consumed: 46,290 of the 120,000 its sender allowed.",
+        "The recipient may be a wallet or a contract, and the exact purpose of the transaction cannot be determined from this inspection.",
+      ],
+      more: { shown: true, words: "Show details", expanded: "false", controls: "explain-details" },
+      details: false,
+      hint: false,
+      meta: "Written by AI. The exact values are in the result.",
       live: "Explanation ready, below the button.",
       below: true,
       result: shown.result,
     });
-    assert.match(shown.meta, /^Written by an AI model from the result above\. The result above is the source of truth\./);
     assert.ok(shown.result >= 8, "the inspection result is still there");
     assert.equal((await box(page, "#explain-submit")).split(" ").slice(2).join(" "), idle.split(" ").slice(2).join(" "), "the button keeps its size while it waits");
+    // The model was never given the hash or a full address: the reader already sees them.
+    const asked = JSON.stringify(ai.requests.at(-1).body.messages).toLowerCase();
+    for (const value of [MINED, SENDER, USDC]) assert.ok(!asked.includes(value.toLowerCase()), `${value} is not in the request`);
+    const explanation = (await page.textContent("#explain-body")).toLowerCase();
+    for (const value of [MINED, SENDER, USDC]) assert.ok(!explanation.includes(value.toLowerCase()), `${value} is not repeated`);
+
+    // Show details / Hide details, by pointer and by keyboard, with the state on the button.
+    const details = () =>
+      page.evaluate(() => {
+        const more = document.getElementById("explain-more");
+        return { words: more.textContent, expanded: more.getAttribute("aria-expanded"), items: document.getElementById("explain-details").checkVisibility() ? [...document.querySelectorAll("#explain-details li")].map((item) => item.textContent) : [] };
+      });
+    const points = ["It recorded 2 log entries. Their contents are not part of this inspection.", "The fee also depends on the gas price, which this inspection does not include."];
+    await page.click("#explain-more");
+    assert.deepEqual(await details(), { words: "Hide details", expanded: "true", items: points });
+    await page.click("#explain-more");
+    assert.deepEqual(await details(), { words: "Show details", expanded: "false", items: [] });
+    await page.focus("#explain-more");
+    await page.keyboard.press("Enter");
+    assert.deepEqual(await details(), { words: "Hide details", expanded: "true", items: points });
+    await page.keyboard.press("Space");
+    assert.deepEqual(await details(), { words: "Show details", expanded: "false", items: [] });
+    assert.equal(await page.evaluate(() => document.activeElement.id), "explain-more", "focus stays on the button");
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    const ring = await page.evaluate(() => { const style = getComputedStyle(document.activeElement); return [document.activeElement.id, style.outlineStyle, parseFloat(style.outlineWidth) >= 2]; });
+    assert.deepEqual(ring, ["explain-more", "solid", true]);
+
     // Explained already: a click shows it again without asking again.
     await page.click("#explain-submit");
     await page.waitForTimeout(250);
@@ -652,12 +746,13 @@ describe("the Task 01 page in a browser", { skip }, () => {
       const { context, page } = await open({ width: 1280, height: 860 });
       await inspect(page, USDC, "success");
       await explainResult(page);
-      seen.push(await page.evaluate(() => ({ text: document.getElementById("explain-text").textContent, meta: document.getElementById("explain-meta").textContent })));
+      seen.push(await page.evaluate(() => ({ text: document.getElementById("explain-text").textContent, details: document.getElementById("explain-details").textContent, body: document.getElementById("explain-body").innerText })));
       await context.close();
     }
     assert.ok(ai.requests.length - asked <= 1, "one provider call at most for the same result");
-    assert.equal(seen[1].text, seen[0].text);
-    assert.match(seen[1].meta, /Reused from an earlier explanation of this same result\.$/);
+    // A cached answer reads exactly like the first one: where it came from is not the reader's concern.
+    assert.deepEqual(seen[1], seen[0]);
+    assert.doesNotMatch(seen[1].body, /reused|cache/i);
   });
 
   test("explain: a limit, a provider failure or no answer leaves the inspection result as it was", async () => {
@@ -665,9 +760,9 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await inspect(page, USDC, "success");
     const result = await page.textContent("#inspect-result");
     for (const [name, message] of [
-      ["limited", "Explanation limit reached. Try again later. The inspection result above is unchanged."],
-      ["down", "The explanation is not available right now. Try again later. The inspection result above is unchanged."],
-      ["unreachable", "The explanation service could not be reached. The inspection result above is unchanged."],
+      ["limited", "Explanation limit reached. Try again later. The inspection result is unchanged."],
+      ["down", "The explanation is not available right now. Try again later. The inspection result is unchanged."],
+      ["unreachable", "The explanation service could not be reached. The inspection result is unchanged."],
     ]) {
       mode.explain = name;
       await explainResult(page);
@@ -708,6 +803,116 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await context.close();
   });
 
+  test("explain: a new result brings the hint back, and keyboard focus in the old explanation moves to what stays", async () => {
+    const { context, page, errors } = await open({ width: 390 });
+    const state = () => page.evaluate(() => ({ focus: document.activeElement.id, hint: document.getElementById("explain-hint").checkVisibility(), shown: !document.getElementById("explain").hidden }));
+    await inspect(page, MINED, "success");
+    assert.equal((await state()).hint, true);
+    await explainResult(page);
+    await page.click("#explain-more");
+    assert.deepEqual(await state(), { focus: "explain-more", hint: false, shown: true });
+    // A new inspection, started while focus stays on "Hide details" (a click that moves no focus).
+    mode.inspect = "slow";
+    try {
+      const again = async (value, expected) => {
+        await page.fill("#inspect-input", value);
+        await page.focus(expected === "not-found" ? "#explain-submit" : "#explain-more");
+        await page.evaluate(() => document.getElementById("inspect-submit").click());
+        await page.waitForFunction(() => document.getElementById("inspector").dataset.inspectState === "inspecting");
+        await page.waitForFunction((state) => document.getElementById("inspector").dataset.inspectState === state, expected, { timeout: 15_000 });
+      };
+      await again(USDC, "success");
+      assert.deepEqual(await state(), { focus: "explain-submit", hint: true, shown: true }, "an explainable result: focus on Explain this result");
+      await again(UNKNOWN, "not-found");
+      assert.deepEqual(await state(), { focus: "inspect-input", hint: false, shown: false }, "nothing to explain: the box goes, and focus is back on the input");
+    } finally {
+      mode.inspect = "ok";
+    }
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  test("explain: an answer in the old long format comes out short and corrected, and fits every width in both themes", async () => {
+    mode.explain = "verbose";
+    try {
+      for (const theme of ["dark", "light"]) {
+        for (const [width, height] of [[320, 568], [360, 640], [390, 844], [430, 932], [768, 1024], [1024, 768], [1280, 860]]) {
+          const where = `${theme} ${width}`;
+          const { context, page, errors } = await open({ width, height, theme });
+          await inspect(page, MINED, "success");
+          await explainResult(page);
+          await page.click("#explain-more");
+          const shown = await page.evaluate(() => ({
+            paragraphs: [...document.querySelectorAll("#explain-text p")].map((paragraph) => paragraph.textContent),
+            details: [...document.querySelectorAll("#explain-details li")].map((item) => item.textContent),
+            headings: document.querySelectorAll("#explain-body h4").length,
+            // Every line of the explanation stays inside its own box: nothing is clipped or pushed out.
+            spill: [...document.querySelectorAll("#explain-text p, #explain-details li")].filter((line) => line.scrollWidth > line.clientWidth + 1).length,
+          }));
+          const room = await overflow(page);
+          assert.ok(room.scroll <= 0 && room.box <= 0.5, `${where}: ${JSON.stringify(room)}`);
+          assert.equal(shown.spill, 0, `${where}: a line is wider than its box`);
+          if (theme === "dark" && width === 390) {
+            // Headings and field lines are gone, the hash and addresses are referred to, not repeated,
+            // and what the data cannot support is said the way it can be.
+            assert.equal(shown.headings, 0);
+            assert.deepEqual(shown.paragraphs, [
+              "This is a transaction on Pharos Mainnet (chain ID 1672) with the hash 0xabab…abab. It was sent from 0x5b3d…8d02 to 0xC879…1815 and included in block 20,384,350.",
+              "The transaction completed and was included in a block. PROS is the network's native currency label, used to show the value. Gas used shows how much computation the transaction consumed.",
+              "The recipient may be a wallet or a contract; the inspection does not say which. A successful status does not mean the transaction was safe.",
+            ]);
+            assert.deepEqual(shown.details, [`The input data begins ${LONG_RUN}.`, "The transaction 0xabab…abab is the one inspected."]);
+            // The long run is wrapped by the page, not cut or spaced: its exact characters are all there.
+            assert.ok((await page.textContent("#explain-details")).includes(LONG_RUN));
+            const lines = await page.evaluate(() => { const item = document.querySelector("#explain-details li"); return Math.round(item.getBoundingClientRect().height / parseFloat(getComputedStyle(item).lineHeight)); });
+            assert.ok(lines >= 3, `the run wraps onto more lines (${lines})`);
+          }
+          assert.deepEqual(errors, [], where);
+          await context.close();
+        }
+      }
+    } finally {
+      mode.explain = "ok";
+    }
+    assert.equal(verboseAi.requests.length, 1, "the same result was explained once; every other width was served from the cache");
+  });
+
+  test("explain: beside the result on wide screens, under it on phones and tablets", async () => {
+    for (const [width, height, beside] of [[390, 844, false], [768, 1024, false], [1024, 768, true], [1280, 860, true]]) {
+      const { context, page } = await open({ width, height });
+      await inspect(page, MINED, "success");
+      await explainResult(page);
+      const layout = await page.evaluate(() => {
+        const result = document.getElementById("inspect-result").getBoundingClientRect();
+        const explain = document.getElementById("explain").getBoundingClientRect();
+        const panel = document.getElementById("inspect-panel").getBoundingClientRect();
+        return { result: [result.left, result.right, result.top, result.bottom].map(Math.round), explain: [explain.left, explain.right, explain.top, explain.bottom].map(Math.round), panel: Math.round(panel.width) };
+      });
+      const where = `${width}: ${JSON.stringify(layout)}`;
+      if (beside) {
+        assert.ok(layout.explain[0] >= layout.result[1] + 20, `${where}: the explanation starts right of the result`);
+        assert.ok(Math.abs(layout.explain[2] - layout.result[2]) <= 16, `${where}: the two start at the same height`);
+      } else {
+        assert.ok(layout.explain[2] >= layout.result[3], `${where}: the explanation follows the result`);
+        assert.deepEqual([layout.explain[0], layout.explain[1]], [layout.result[0], layout.result[1]], `${where}: at the same width`);
+      }
+      await context.close();
+    }
+  });
+
+  test("explain: its text, details, note and button read at 4.5:1 or more in both themes", async () => {
+    for (const theme of ["dark", "light"]) {
+      const { context, page } = await open({ width: 390, theme });
+      await inspect(page, MINED, "success");
+      const before = await contrast(page, ["#explain-hint"]);
+      await explainResult(page);
+      await page.click("#explain-more");
+      const after = await contrast(page, ["#explain-body .explain-title", "#explain-text p", "#explain-details li", "#explain-more", "#explain-body .explain-meta"]);
+      for (const [selector, ratio] of Object.entries({ ...before, ...after })) assert.ok(ratio >= 4.5, `${theme} ${selector}: ${ratio}:1`);
+      await context.close();
+    }
+  });
+
   test("proof & technical details: collapsed, opened by keyboard or by the link to it, closed again", async () => {
     const { context, page } = await open({ width: 390 });
     const isOpen = () => page.evaluate(() => document.getElementById("proof").open);
@@ -736,13 +941,19 @@ describe("the Task 01 page in a browser", { skip }, () => {
 
     await inspect(page, PARTIAL, "partial");
     const partial = await rows(page);
-    assert.deepEqual([partial.name, partial.symbol, partial.decimals], ["Partial Token", "Unavailablereverted", "Unavailableno data returned"]);
+    assert.deepEqual([partial.name, partial.symbol, partial.decimals], ["Partial Token", "Unavailable, reverted", "Unavailable, no data returned"]);
     assert.equal(await page.evaluate(() => document.getElementById("inspect-status").dataset.tone), "warning");
 
     await inspect(page, MINED, "success");
     const tx = await rows(page);
-    assert.deepEqual(Object.keys(tx), ["Hash", "Status", "Block", "From", "To", "Value", "Gas limit", "Gas used", "Logs", "Network"]);
-    assert.deepEqual([tx.Status, tx["Gas used"], tx.Logs], ["Success", "46,290", "2"]);
+    // The network rides with the block, gas used and its limit share one row; a screen reader hears
+    // each pair as two values, with a pause between them.
+    assert.deepEqual(Object.keys(tx), ["Hash", "Status", "Block", "From", "To", "Value", "Gas", "Logs"]);
+    assert.deepEqual([tx.Status, tx.Block, tx.Gas, tx.Logs], ["Success", "20,384,350, Pharos Mainnet", "46,290 used, limit 120,000", "2"]);
+    const pauses = await page.evaluate(() => [...document.querySelectorAll("#inspect-result dd > .sr")].filter((pause) => pause.textContent === ", ").map((pause) => pause.getBoundingClientRect().width <= 1));
+    assert.deepEqual(pauses, [true, true], "one unseen pause in Block and one in Gas");
+    // The inspection's own state reads "Complete", so it is never mistaken for the transaction's status.
+    assert.deepEqual([await page.textContent("#inspect-word"), await page.evaluate(() => document.querySelector("#inspect-result dd[data-tone]"))], ["Complete", null]);
 
     await inspect(page, UNKNOWN, "not-found");
     assert.equal((await rows(page)).Result, "Not found through Pharos Chain MCP");
@@ -750,8 +961,15 @@ describe("the Task 01 page in a browser", { skip }, () => {
     // Not found is an answer with a next step, not a dead end.
     assert.match(await page.textContent("#inspect-result .inspect-message"), /^Check that the hash is complete and from Pharos Mainnet, not a testnet\./);
 
+    // A reverted transaction is a complete result whose own status reads in the error tone.
+    await inspect(page, REVERTED, "success");
+    const reverted = await page.evaluate(() => { const dd = document.querySelector("#inspect-result dd[data-tone]"); return [dd.textContent, dd.dataset.tone, getComputedStyle(dd).color, document.getElementById("inspect-word").textContent]; });
+    assert.deepEqual(reverted, ["Failed (reverted)", "error", "rgb(255, 107, 107)", "Complete"]);
+
     await inspect(page, PENDING, "partial");
-    assert.equal((await rows(page)).Status, "Pending");
+    const pending = await rows(page);
+    assert.deepEqual([pending.Status, pending.Network, "Block" in pending], ["Pending", "Pharos Mainnet", false], "no block yet: the network has its own row");
+    assert.equal(await page.evaluate(() => document.querySelector("#inspect-result dd[data-tone]").dataset.tone), "warning");
 
     // INSPECTING keeps the last result, dimmed; the button keeps focus, sends nothing twice and
     // reads Inspecting… in place, at the same size.
@@ -1000,6 +1218,9 @@ describe("the Task 01 page in a browser", { skip }, () => {
   test("touch: every control offers at least 44 x 44px, a 32px action through its hit area", async () => {
     const { context, page } = await open({ width: 390 });
     await inspect(page, MINED, "success");
+    // With the explanation and its details open, so its buttons are counted too.
+    await explainResult(page);
+    await page.click("#explain-more");
     await page.click("#proof > summary");
     await page.waitForTimeout(450);
     const sweep = await page.evaluate(() => {
@@ -1020,8 +1241,9 @@ describe("the Task 01 page in a browser", { skip }, () => {
       }
       return { count: controls.length, small };
     });
-    assert.ok(sweep.count >= 18, `${sweep.count} controls`);
+    assert.ok(sweep.count >= 20, `${sweep.count} controls`);
     assert.deepEqual(sweep.small, []);
+    assert.deepEqual(await page.evaluate(() => ["explain-submit", "explain-more"].map((id) => document.getElementById(id).checkVisibility())), [true, true]);
     await context.close();
   });
 
@@ -1029,6 +1251,8 @@ describe("the Task 01 page in a browser", { skip }, () => {
     for (const width of [320, 1280]) {
       const { context, page } = await open({ width, height: 900 });
       await inspect(page, MINED, "success");
+      await explainResult(page);
+      await page.click("#explain-more");
       const tiny = await page.evaluate(() => {
         const found = new Set();
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
