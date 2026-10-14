@@ -3,13 +3,14 @@
 // The browser only ever calls this site's own GET /api/state, the frozen Task 01 function that
 // reads Pharos server-side through Chain MCP. Every value is written as text. The last good
 // measurement stays on screen while a new one is taken (READING) and after a failed one (ERROR).
-import { clockTime, duration, fitText, groupDigits, renderAddress, renderFigure, renderTaskContext, reducedMotion, setState, setText, settle, splitAmount, toHexBlock } from "./lab.js";
+import { clockTime, duration, fitFigure, groupDigits, renderAddress, renderTaskContext, reducedMotion, setState, setText, settle, splitAmount, toHexBlock } from "./lab.js";
 import { TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
 const main = $("main");
 const API = main.dataset.api;
 const STATUS_WORD = { reading: "Reading", live: "Live", error: "Error" };
+const FIGURE_MIN_PX = 22;
 
 let last = null;
 let busy = false;
@@ -21,9 +22,10 @@ renderAddress($("address"), $("address-sr").textContent.trim());
 for (const button of document.querySelectorAll("[data-refresh]")) button.addEventListener("click", measure);
 $("copy").addEventListener("click", copyAddress);
 addEventListener("resize", fitSupply);
-// The fit is measured in the display face, so measure again whenever webfonts finish loading.
+// The fit is measured in the real faces, so measure again whenever webfonts finish loading.
 document.fonts?.addEventListener?.("loadingdone", fitSupply);
 document.fonts?.ready.then(fitSupply);
+showBarWhenReadoutLeaves();
 measure();
 
 /** LIVE -> READING -> LIVE, or ERROR with the last good measurement kept. */
@@ -32,7 +34,7 @@ async function measure() {
   busy = true;
   setButtons(true);
   const lastRead = last ? clockTime(last.fetchedAt) : "";
-  report("reading", last ? `Last read ${lastRead}` : "Calling Pharos Chain MCP", lastRead);
+  report("reading", last ? `last read ${lastRead}` : "calling Pharos Chain MCP", lastRead);
 
   let response;
   let data = null;
@@ -44,7 +46,7 @@ async function measure() {
     // The request itself failed; reported below as an error with no data.
   }
 
-  const fail = (reason) => report("error", last ? `${reason} Showing the last good read from ${lastRead}.` : reason, last ? lastRead : "no data");
+  const fail = (problem) => report("error", last ? `last good read ${lastRead}` : "no data yet", lastRead, problem);
   if (data?.ok === true) {
     try {
       // The server caches a good read briefly, so a quick Refresh can return the same one. Say so.
@@ -53,7 +55,7 @@ async function measure() {
       last = data;
       main.dataset.measured = "";
       const read = clockTime(data.fetchedAt);
-      report("live", `MCP read OK · ${repeat ? "cached read" : "read"} ${read}`, read);
+      report("live", `${repeat ? "cached read" : "read"} ${read}`, read);
     } catch {
       // Never left stuck in READING: a report this page cannot use is an error like any other.
       fail("The state endpoint sent a report this page could not read.");
@@ -79,10 +81,11 @@ function render(data) {
 
   // First screen: what contract, what state, which block.
   setText($("subject"), contract.label);
-  renderFigure($("supply-major"), supply.major);
-  renderFigure($("supply-minor"), supply.minor);
+  // The decimal point keeps the whole number's size, so it reads clearly; only the digits after it are smaller.
+  setText($("supply-major"), supply.major + supply.minor.slice(0, 1));
+  setText($("supply-minor"), supply.minor.slice(1));
   setText($("supply-unit"), supply.unit);
-  renderFigure($("block"), block);
+  setText($("block"), block);
   setText("[data-block]", `#${block}`);
   setText($("network"), network?.name ?? "Not confirmed");
   setText("[data-chain]", network ? String(network.chainId) : "not confirmed");
@@ -94,8 +97,8 @@ function render(data) {
   setText($("v-name"), values.name);
   setText($("v-symbol"), values.symbol);
   setText($("v-decimals"), String(values.decimals));
-  setText($("v-supply"), `${supply.major}${supply.minor} ${supply.unit}`.trim());
-  setText($("v-raw"), `raw ${values.totalSupply.raw}, divided by 10^${values.decimals}`);
+  setText($("v-supply"), `${supply.major}${supply.minor}`);
+  setText($("v-raw"), `raw ${values.totalSupply.raw}`);
   renderAddress($("address"), contract.address);
   setText($("address-sr"), contract.address);
   setText($("proof-calls"), String(calls));
@@ -121,30 +124,43 @@ function render(data) {
   setText($("t-summary"), data.summary);
 
   fitSupply();
-  if (changed) for (const element of [$("supply-major"), $("block")]) settle(element);
-  $("path").classList.add("flow");
+  if (changed) for (const element of [$("supply"), $("block")]) settle(element);
 }
 
-/** One state for the whole page. The bar's time is always the time of the read on screen. */
-function report(state, text, barText) {
+/**
+ * One state for the whole page: the hero's status line, the phone status bar, and the error
+ * note. `time` is always the time of the read on screen.
+ */
+function report(state, detail, time, problem = "") {
   setState(state);
   setText("[data-status-word]", STATUS_WORD[state]);
-  setText($("status-text"), text);
-  setText($("bar-time"), barText);
+  setText("[data-status-detail]", detail);
+  setText("[data-status-time]", time);
+  const note = $("status-note");
+  setText(note, problem);
+  note.hidden = !problem;
 }
 
 function setButtons(disabled) {
   for (const button of document.querySelectorAll("[data-refresh]")) button.disabled = disabled;
 }
 
-/** Keep the supply readout as large as its box allows, on any screen and with any value. */
+/** Keep the supply on one line, as large as its box allows, on any screen and with any value. */
 function fitSupply() {
   if (fitQueued) return;
   fitQueued = true;
   requestAnimationFrame(() => {
     fitQueued = false;
-    fitText($("supply-major"));
+    fitFigure($("supply"), $("supply").firstElementChild, FIGURE_MIN_PX);
   });
+}
+
+/** Phones: show the slim status bar only while the readout's own Refresh is out of view. */
+function showBarWhenReadoutLeaves() {
+  if (typeof IntersectionObserver !== "function") return;
+  new IntersectionObserver(([entry]) => {
+    document.body.dataset.bar = entry.isIntersecting ? "" : "show";
+  }).observe(document.querySelector(".readout-head"));
 }
 
 async function copyAddress() {

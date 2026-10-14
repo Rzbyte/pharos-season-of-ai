@@ -8,13 +8,15 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { describe, test } from "node:test";
 import { toFunctionSelector } from "viem";
-import { chunkAddress, clockTime, duration, groupDigits, renderAddress, renderFigure, renderTaskContext, splitAmount, toHexBlock } from "../public/assets/lab.js";
+import { chunkAddress, clockTime, duration, groupDigits, renderAddress, renderTaskContext, splitAmount, toHexBlock } from "../public/assets/lab.js";
 import { TASKS } from "../public/assets/tasks.js";
 
 const file = (path) => new URL(`../${path}`, import.meta.url);
 const read = (path) => readFileSync(file(path), "utf8");
 const html = read("public/index.html");
 const css = read("public/assets/lab.css");
+/** The stylesheet without comments, for reading selectors. */
+const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
 const scripts = ["lab.js", "tasks.js", "task-01.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
 const pageJs = scripts.find((script) => script.name === "task-01.js").text;
 const USDC = read("src/constants.ts").match(/export const DEFAULT_TOKEN = "(0x[0-9a-fA-F]{40})"/)[1];
@@ -75,7 +77,7 @@ describe("what the page loads and calls", () => {
     const ids = new Set([...pageJs.matchAll(/\$\("([\w-]+)"\)/g)].map((match) => match[1]));
     assert.ok(ids.size > 30);
     for (const id of ids) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
-    for (const attribute of ["data-refresh", "data-status-word", "data-block", "data-chain"]) assert.match(html, new RegExp(`\\s${attribute}[\\s>]`), attribute);
+    for (const attribute of ["data-refresh", "data-status-word", "data-status-detail", "data-status-time", "data-block", "data-chain"]) assert.match(html, new RegExp(`\\s${attribute}[\\s>]`), attribute);
   });
 });
 
@@ -91,8 +93,10 @@ describe("the page reports evidence, not certification", () => {
   test("makes no certification claims anywhere", () => {
     const everything = [html, ...scripts.map(({ text }) => text)].join("\n");
     assert.doesNotMatch(everything, /verif|certif|guarantee|audited|trustless|100%/i);
-    assert.match(pageJs, /MCP read OK/);
+    assert.match(visibleText, /On-chain state via Pharos Chain MCP/);
     assert.match(pageJs, /const STATUS_WORD = \{ reading: "Reading", live: "Live", error: "Error" \};/);
+    assert.match(pageJs, /`\$\{repeat \? "cached read" : "read"\} \$\{read\}`/);
+    assert.match(pageJs, /`last good read \$\{lastRead\}`/);
   });
 
   test("keeps the four contract reads apart from the two context calls", () => {
@@ -211,19 +215,6 @@ describe("DOM helpers write text, never markup", () => {
     }
   };
 
-  test("renderFigure keeps the text and puts each separator in its own span", () => {
-    withDocument(() => {
-      const major = element();
-      renderFigure(major, "12,345,678");
-      assert.equal(major.textContent, "12,345,678");
-      assert.deepEqual(major.children.map((node) => (typeof node === "string" ? node : `<${node.className}>${node.textContent}`)), ["12", "<sep>,", "345", "<sep>,", "678"]);
-      const minor = element();
-      renderFigure(minor, ".034793");
-      assert.equal(minor.textContent, ".034793");
-      assert.equal(minor.children[0].className, "sep sep-lead");
-    });
-  });
-
   test("renderAddress shows the exact address in groups, adding no characters", () => {
     withDocument(() => {
       const target = element();
@@ -298,6 +289,38 @@ describe("design system assets", () => {
     assert.ok(declarations(motion) >= 5);
     assert.equal(declarations(css), declarations(motion), "an animation or transition is declared outside the no-preference block");
     assert.equal(declarations(html), 0);
+  });
+
+  test("the supply is one element in Geist SemiBold: number, fraction and unit on one line, nothing reshaped", () => {
+    assert.match(html, /<p class="figure measured" id="supply"><span class="figure-num"><span id="supply-major">—<\/span><span class="figure-frac" id="supply-minor"><\/span><\/span><span class="figure-unit" id="supply-unit"><\/span><\/p>/);
+    assert.match(rules, /\.figure \{[^}]*white-space: nowrap;[^}]*font-family: var\(--sans\);[^}]*font-weight: 600;/);
+    assert.match(rules, /\.figure-frac \{ font-size: \.72em; \}/);
+    // No punctuation tricks: no separator spans, and no negative spacing or glyph scaling on the figure.
+    assert.doesNotMatch(`${rules}\n${scripts.map(({ text }) => text).join("\n")}`, /\.sep\b|"sep"|scaleX|font-stretch/);
+    const figureRules = [...rules.matchAll(/([^{}]*figure[^{}]*)\{([^{}]*)\}/g)].map((match) => match[2]);
+    assert.ok(figureRules.length >= 4);
+    for (const body of figureRules) assert.doesNotMatch(body, /margin[\w-]*:\s*-|letter-spacing:\s*-/, body);
+  });
+
+  test("every value a reader needs is set in Geist: never Departure Mono, never Geist Mono", () => {
+    const using = (token) => [...rules.matchAll(new RegExp(`([^{}]+)\\{[^{}]*var\\(${token}\\)[^{}]*\\}`, "g"))].flatMap((match) => match[1].split(",").map((part) => part.trim()));
+    const values = /figure|spec dd|table dd|\.count|state-|\.status|step-n|\.subject|\.via/;
+    for (const selector of [...using("--display"), ...using("--mono")]) assert.doesNotMatch(selector, values, selector);
+    assert.match(html, /<dd id="block">/);
+    assert.match(html, /<div><dt>Chain ID<\/dt><dd data-chain>/);
+  });
+
+  test("Departure Mono is kept to small labels: the shell line and the readout captions", () => {
+    const selectors = [...rules.matchAll(/([^{}]+)\{[^{}]*var\(--display\)[^{}]*\}/g)].flatMap((match) => match[1].split(",").map((part) => part.trim()));
+    assert.deepEqual([...new Set(selectors)].sort(), [".foot-brand", ".label", ".shell", ".spec dt"]);
+    for (const label of ["Total supply", "Task <span class=\"task-n\">01</span>"]) assert.match(html, new RegExp(`class="[^"]*\\blabel\\b[^"]*">${label}`), label);
+  });
+
+  test("restrained type: little uppercase, no wide tracking, no glow", () => {
+    const uppercase = [...rules.matchAll(/([^{}]+)\{[^{}]*text-transform: uppercase[^{}]*\}/g)].map((match) => match[1].trim());
+    assert.deepEqual(uppercase.sort(), [".foot-brand", ".label, .spec dt", ".shell-brand", ".state-word"]);
+    for (const [, value] of `${css}\n${html}`.matchAll(/letter-spacing:\s*(-?[\d.]+)em/g)) assert.ok(Number(value) <= 0.06, `letter-spacing ${value}em`);
+    assert.doesNotMatch(`${css}\n${html}`, /box-shadow|text-shadow|drop-shadow/);
   });
 
   test("colour stays semantic: green only for LIVE, red only for ERROR", () => {

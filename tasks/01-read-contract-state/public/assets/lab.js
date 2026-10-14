@@ -79,18 +79,18 @@ export function fitText(element) {
 }
 
 /**
- * Write a figure into a Departure Mono readout with each separator in its own span, so CSS can
- * draw "," and "." narrower than a digit cell, as a meter does. The text content is unchanged.
+ * Fit a figure (a number and its unit) on one line by shrinking it. Below `min` px the unit may
+ * wrap to the next line instead, and only the number is fitted, so a figure never overflows.
  */
-export function renderFigure(element, text) {
-  const parts = String(text)
-    .split(/([,.])/)
-    .filter(Boolean)
-    .map((part, index) => {
-      if (part !== "," && part !== ".") return part;
-      return Object.assign(document.createElement("span"), { className: index === 0 ? "sep sep-lead" : "sep", textContent: part });
-    });
-  element.replaceChildren(...parts);
+export function fitFigure(figure, number, min) {
+  figure.classList.remove("wrap");
+  fitText(figure);
+  if (parseFloat(getComputedStyle(figure).fontSize) >= min) return;
+  figure.classList.add("wrap");
+  figure.style.fontSize = `${min}px`;
+  const needed = number.getBoundingClientRect().width;
+  const available = figure.clientWidth;
+  if (needed > available) figure.style.fontSize = `${Math.floor(min * (available / needed) * 0.99 * 10) / 10}px`;
 }
 
 /** Render an address as inline groups with break points between them and no added characters. */

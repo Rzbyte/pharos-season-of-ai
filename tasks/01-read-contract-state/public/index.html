@@ -7,31 +7,18 @@
 <meta name="description" content="Agent Arena Lab, task 01: the live state of the Circle USDC Contract on Pharos Mainnet, read at one explicit block through Pharos Chain MCP.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0A0B12">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230A0B12'/%3E%3Crect x='2' y='7' width='12' height='2' fill='%23F2B33D'/%3E%3C/svg%3E">
-<link rel="preload" href="/assets/fonts/DepartureMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230A0B12'/%3E%3Crect x='2' y='7' width='12' height='2' fill='%23E6A93E'/%3E%3C/svg%3E">
+<link rel="preload" href="/assets/fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/lab.css">
 <style>
   /* Task 01 composition only. Everything reusable lives in /assets/lab.css. */
   @layer task {
-    .hero { display: grid; gap: var(--gap-5); padding-top: clamp(20px, 5vw, 64px); }
-    .hero-id { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap-3); min-width: 0; }
-    .hero-read { position: relative; display: flex; flex-direction: column; gap: var(--gap-5); min-width: 0; padding-top: var(--gap-4); border-top: 1px solid var(--rule); }
-    .hero-read .snapshot { padding-top: var(--gap-4); border-top: 1px solid var(--rule); }
-    @media (max-width: 759px) { .hero-refresh { display: none; } }
+    .hero { display: grid; gap: 28px; padding-top: 28px; }
+    .hero-id { display: grid; gap: 8px; align-content: start; min-width: 0; }
+    .hero-id .status { margin-top: 6px; }
     @media (min-width: 980px) {
-      .hero { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--gap-7); align-items: end; }
-      .hero-read { padding-top: var(--gap-5); border-top: 0; }
-      .hero-read > * { position: relative; z-index: 1; }
-      /* A faint calibration grid behind the instrument, fading out from the reading. */
-      .hero-read::after {
-        content: ""; position: absolute; inset: -24px -24px -24px -40px; z-index: 0; pointer-events: none;
-        background:
-          radial-gradient(60% 70% at 32% 42%, color-mix(in srgb, var(--beam) 9%, transparent), transparent 70%),
-          linear-gradient(to right, var(--rule) 1px, transparent 1px) 0 0 / 44px 44px,
-          linear-gradient(to bottom, var(--rule) 1px, transparent 1px) 0 0 / 44px 44px;
-        -webkit-mask-image: radial-gradient(80% 90% at 35% 45%, #000 0%, transparent 70%);
-        mask-image: radial-gradient(80% 90% at 35% 45%, #000 0%, transparent 70%);
-      }
+      .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: baseline; gap: 64px; padding-block: 64px 72px; }
+      .hero .readout { border-top-color: transparent; }
     }
   }
 </style>
@@ -40,120 +27,113 @@
 <body data-state="reading">
 <a class="skip" href="#main">Skip to the measurement</a>
 
-<header class="shell">
-  <div class="shell-in rail">
-    <p class="shell-brand"><span class="lab">Pharos / Season of AI</span><span class="shell-name">Agent Arena Lab</span></p>
-    <p class="shell-count"><span class="lab">Task</span><span class="num" id="task-count"><b>01</b> / 28</span></p>
-  </div>
+<header class="shell rail">
+  <p class="shell-brand">Pharos / Season of AI</p>
+  <p class="shell-count"><span class="sr">Task </span><span id="task-count"><b>01</b> / 28</span></p>
 </header>
 
 <main id="main" class="rail" data-api="/api/state" data-task="01">
   <section class="band hero" aria-labelledby="subject">
-    <div class="hero-id entrance">
-      <p class="task-id"><span class="task-n">01</span><span class="task-sep" aria-hidden="true">/</span><span>Read Contract State</span><span class="tool-label">Chain MCP</span></p>
-      <h1 class="task-subject" id="subject">Circle USDC Contract</h1>
-      <p class="lead">Live on-chain state decoded through <strong class="nowrap">Pharos Chain MCP</strong>.</p>
-      <div class="status-row">
-        <span class="status-chip"><span class="dot" aria-hidden="true"></span><span data-status-word>Reading</span></span>
-        <span class="status-text" id="status-text" role="status">Calling Pharos Chain MCP</span>
-      </div>
+    <div class="hero-id">
+      <p class="eyebrow"><span class="eyebrow-task label">Task <span class="task-n">01</span></span><span class="eyebrow-sep" aria-hidden="true">/</span>Read Contract State</p>
+      <h1 class="subject" id="subject">Circle USDC Contract</h1>
+      <p class="via">On-chain state via <strong class="nowrap">Pharos Chain MCP</strong></p>
+      <p class="status" role="status"><span class="dot" aria-hidden="true"></span><span class="state-word" data-status-word>Reading</span><span class="state-detail" data-status-detail>calling Pharos Chain MCP</span></p>
+      <p class="note note-error" id="status-note" hidden></p>
       <p class="note" id="warnings" hidden></p>
       <noscript><p class="note">This page reads live data with JavaScript. The same data is at /api/state as JSON.</p></noscript>
-      <button class="btn btn-measure hero-refresh" type="button" data-refresh>Refresh state</button>
     </div>
-    <div class="hero-read">
-      <div class="scanline" aria-hidden="true"></div>
-      <div class="metric measured">
-        <p class="lab">Total supply</p>
-        <p class="metric-value"><span class="metric-major" id="supply-major">—</span><span class="metric-tail"><span class="metric-minor" id="supply-minor"></span><span class="metric-unit" id="supply-unit"></span></span></p>
+    <div class="readout">
+      <div class="progress" aria-hidden="true"></div>
+      <div class="readout-head">
+        <p class="label">Total supply</p>
+        <button class="refresh" type="button" data-refresh><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.29" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12.25 1.75v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Refresh</button>
       </div>
-      <dl class="snapshot measured">
-        <div class="snap-main"><dt class="lab">Block</dt><dd class="readout" id="block">—</dd></div>
-        <div><dt class="lab">Network</dt><dd id="network">—</dd></div>
-        <div><dt class="lab">Chain ID</dt><dd data-chain>—</dd></div>
+      <p class="figure measured" id="supply"><span class="figure-num"><span id="supply-major">—</span><span class="figure-frac" id="supply-minor"></span></span><span class="figure-unit" id="supply-unit"></span></p>
+      <dl class="spec measured">
+        <div><dt>Block</dt><dd id="block">—</dd></div>
+        <div><dt>Network</dt><dd id="network">—</dd></div>
+        <div><dt>Chain ID</dt><dd data-chain>—</dd></div>
       </dl>
     </div>
   </section>
 
-  <section class="band band-grid" aria-labelledby="state-h">
-    <div class="band-head">
-      <h2 class="lab" id="state-h">Contract state</h2>
-      <p class="band-note">Four contract reads with <code>eth_call</code>, all at the same explicit block.</p>
-    </div>
-    <dl class="data-rows measured">
-      <div class="data-row"><dt><span class="row-n">01</span><span class="row-k">Name</span><span class="row-call">name()</span></dt><dd id="v-name">—</dd></div>
-      <div class="data-row"><dt><span class="row-n">02</span><span class="row-k">Symbol</span><span class="row-call">symbol()</span></dt><dd id="v-symbol">—</dd></div>
-      <div class="data-row"><dt><span class="row-n">03</span><span class="row-k">Decimals</span><span class="row-call">decimals()</span></dt><dd id="v-decimals">—</dd></div>
-      <div class="data-row stack"><dt><span class="row-n">04</span><span class="row-k">Total supply</span><span class="row-call">totalSupply()</span></dt><dd><span id="v-supply">—</span><span class="row-sub" id="v-raw"></span></dd></div>
-    </dl>
-  </section>
-
   <section class="band band-grid" aria-labelledby="contract-h">
     <div class="band-head">
-      <h2 class="lab" id="contract-h">Contract address</h2>
+      <h2 class="band-title" id="contract-h">Contract</h2>
       <p class="band-note">Circle's USDC on Pharos Mainnet, in groups of four for checking by eye.</p>
     </div>
     <div>
       <p class="address" id="address" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
       <p class="sr" id="address-sr">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
-      <div class="address-actions"><button class="btn" type="button" id="copy">Copy address</button><span class="sr" id="copy-state" aria-live="polite"></span></div>
+      <div><button class="text-btn" type="button" id="copy">Copy address</button><span class="sr" id="copy-state" aria-live="polite"></span></div>
     </div>
+  </section>
+
+  <section class="band band-grid" aria-labelledby="state-h">
+    <div class="band-head">
+      <h2 class="band-title" id="state-h">Contract state</h2>
+      <p class="band-note">Four <code>eth_call</code> reads, all at block <span data-block>—</span>.</p>
+    </div>
+    <dl class="table measured">
+      <div><dt>name</dt><dd id="v-name">—</dd></div>
+      <div><dt>symbol</dt><dd id="v-symbol">—</dd></div>
+      <div><dt>decimals</dt><dd id="v-decimals">—</dd></div>
+      <div><dt>totalSupply</dt><dd><span id="v-supply">—</span><span class="row-sub" id="v-raw"></span></dd></div>
+    </dl>
   </section>
 
   <section class="band band-grid" aria-labelledby="path-h">
     <div class="band-head">
-      <h2 class="lab" id="path-h">Read path</h2>
-      <p class="band-note">Two context calls, then the four contract reads: six Chain MCP tool calls.</p>
+      <h2 class="band-title" id="path-h">Read path</h2>
+      <p class="band-note">Six Chain MCP tool calls: two for context, then the four contract reads.</p>
     </div>
-    <ol class="exec-path" id="path">
-      <li class="exec-step"><span class="step-n">01</span><span class="step-k">get_chain_info</span><span class="step-d">Context: confirms chain ID <span data-chain>—</span></span></li>
-      <li class="exec-step"><span class="step-n">02</span><span class="step-k">get_block_number</span><span class="step-d">Context: fixes block <span data-block>—</span></span></li>
-      <li class="exec-step"><span class="step-n">03</span><span class="step-k">eth_call ×4</span><span class="step-d">Contract reads: name, symbol, decimals, totalSupply</span></li>
-      <li class="exec-step key"><span class="step-n">04</span><span class="step-k">One explicit block</span><span class="step-d">All four reads at <span data-block>—</span></span></li>
+    <ol class="steps">
+      <li><span class="step-n">1</span><code class="step-k">get_chain_info</code><span class="step-d">Context: confirms chain ID <span data-chain>—</span></span></li>
+      <li><span class="step-n">2</span><code class="step-k">get_block_number</code><span class="step-d">Context: fixes block <span data-block>—</span></span></li>
+      <li><span class="step-n">3</span><code class="step-k">eth_call ×4</code><span class="step-d">Contract reads: name, symbol, decimals, totalSupply, each at block <span data-block>—</span></span></li>
     </ol>
   </section>
 
   <section class="band band-grid" aria-labelledby="proof-h">
     <div class="band-head">
-      <h2 class="lab" id="proof-h">Proof</h2>
+      <h2 class="band-title" id="proof-h">Evidence</h2>
       <p class="band-note">MCP-only client path: this demo's server reaches Pharos through Chain MCP tools and opens no JSON-RPC connection of its own. Pharos MCP talks to the chain on its side.</p>
     </div>
-    <dl class="proof-strip">
-      <div class="proof-cell"><dt class="lab">Contract reads</dt><dd class="proof-v">4</dd><dd class="proof-s">name · symbol · decimals · totalSupply</dd></div>
-      <div class="proof-cell"><dt class="lab">Explicit block</dt><dd class="proof-v">1</dd><dd class="proof-s" data-block>—</dd></div>
-      <div class="proof-cell"><dt class="lab">Chain MCP tool calls</dt><dd class="proof-v" id="proof-calls">—</dd><dd class="proof-s" id="proof-calls-sub">2 context + 4 contract reads</dd></div>
-      <div class="proof-cell"><dt class="lab">Direct RPC calls from this client</dt><dd class="proof-v">0</dd><dd class="proof-s">MCP-only client path</dd></div>
+    <dl class="evidence">
+      <div><dt>Contract reads</dt><dd class="count">4</dd><dd class="ev-note">name · symbol · decimals · totalSupply</dd></div>
+      <div><dt>Explicit block</dt><dd class="count">1</dd><dd class="ev-note" data-block>—</dd></div>
+      <div><dt>Chain MCP tool calls</dt><dd class="count" id="proof-calls">—</dd><dd class="ev-note" id="proof-calls-sub">2 context + 4 contract reads</dd></div>
+      <div><dt>Direct RPC calls from this client</dt><dd class="count">0</dd><dd class="ev-note">MCP-only client path</dd></div>
     </dl>
   </section>
 
   <section class="band" aria-label="Technical details">
     <details class="tech-details">
-      <summary><span class="lab">Technical details</span><span class="summary-hint">How this measurement is made</span></summary>
-      <div class="screen">
-        <dl class="kv">
-          <div><dt>MCP endpoint</dt><dd id="t-endpoint">https://mcp.pharos.xyz/mcp</dd></div>
-          <div><dt>MCP server</dt><dd id="t-server">—</dd></div>
-          <div><dt>Transport</dt><dd>MCP over Streamable HTTP, from this site's server. Each tool result arrives on its own request's stream; the optional standalone GET stream is not opened (client fix 1.0.2).</dd></div>
-          <div><dt>Tool calls</dt><dd id="t-calls">—</dd></div>
-          <div><dt>Block</dt><dd id="t-block">—</dd></div>
-          <div><dt>Selectors</dt><dd>name() 0x06fdde03 · symbol() 0x95d89b41 · decimals() 0x313ce567 · totalSupply() 0x18160ddd</dd></div>
-          <div><dt>Raw supply</dt><dd id="t-raw">—</dd></div>
-          <div><dt>Label</dt><dd id="t-label">—</dd></div>
-          <div><dt>Retries</dt><dd id="t-retries">—</dd></div>
-          <div><dt>Warnings</dt><dd id="t-warnings">—</dd></div>
-          <div><dt>Elapsed</dt><dd id="t-elapsed">—</dd></div>
-          <div><dt>Fetched at</dt><dd id="t-fetched">—</dd></div>
-          <div><dt>Caching</dt><dd>A good read is sent with Cache-Control "public, s-maxage=15, stale-while-revalidate=45", so the edge can serve it for up to a minute and Refresh can return the same read; the read time shows when it was taken. Errors are sent with no-store.</dd></div>
-          <div><dt>Client</dt><dd id="t-client">—</dd></div>
-          <div><dt>Summary</dt><dd id="t-summary">—</dd></div>
-        </dl>
-      </div>
+      <summary><span class="summary-title">Technical details</span><span class="summary-hint">How this measurement is made</span></summary>
+      <dl class="kv">
+        <div><dt>MCP endpoint</dt><dd id="t-endpoint">https://mcp.pharos.xyz/mcp</dd></div>
+        <div><dt>MCP server</dt><dd id="t-server">—</dd></div>
+        <div><dt>Transport</dt><dd>MCP over Streamable HTTP, from this site's server. Each tool result arrives on its own request's stream; the optional standalone GET stream is not opened (client fix 1.0.2).</dd></div>
+        <div><dt>Tool calls</dt><dd id="t-calls">—</dd></div>
+        <div><dt>Block</dt><dd id="t-block">—</dd></div>
+        <div><dt>Selectors</dt><dd>name() 0x06fdde03 · symbol() 0x95d89b41 · decimals() 0x313ce567 · totalSupply() 0x18160ddd</dd></div>
+        <div><dt>Raw supply</dt><dd id="t-raw">—</dd></div>
+        <div><dt>Label</dt><dd id="t-label">—</dd></div>
+        <div><dt>Retries</dt><dd id="t-retries">—</dd></div>
+        <div><dt>Warnings</dt><dd id="t-warnings">—</dd></div>
+        <div><dt>Elapsed</dt><dd id="t-elapsed">—</dd></div>
+        <div><dt>Fetched at</dt><dd id="t-fetched">—</dd></div>
+        <div><dt>Caching</dt><dd>A good read is sent with Cache-Control "public, s-maxage=15, stale-while-revalidate=45", so the edge can serve it for up to a minute and Refresh can return the same read; the read time shows when it was taken. Errors are sent with no-store.</dd></div>
+        <div><dt>Client</dt><dd id="t-client">—</dd></div>
+        <div><dt>Summary</dt><dd id="t-summary">—</dd></div>
+      </dl>
     </details>
   </section>
 
   <section class="band band-grid" aria-labelledby="src-h">
     <div class="band-head">
-      <h2 class="lab" id="src-h">Sources</h2>
+      <h2 class="band-title" id="src-h">Sources</h2>
       <p class="band-note">The code, and a committed transcript of a live run, are public.</p>
     </div>
     <ul class="source-links">
@@ -171,15 +151,14 @@
 </main>
 
 <footer class="foot rail">
-  <p class="foot-brand"><span class="lab">Pharos / Season of AI</span><span class="shell-name">Agent Arena Lab</span></p>
+  <p class="foot-brand"><span class="nowrap">Pharos / Season of AI</span> · <span class="nowrap">Agent Arena Lab</span></p>
   <p class="foot-tag">28 on-chain and AI agent experiments built with Chain MCP, Developer Docs MCP and SkillEngine. Task 01 is live; the others are planned.</p>
   <p><a href="https://github.com/Rzbyte/pharos-season-of-ai">Repository on GitHub →</a></p>
 </footer>
 
-<div class="measure-bar">
-  <span class="status-chip"><span class="dot" aria-hidden="true"></span><span data-status-word>Reading</span></span>
-  <span class="bar-time num" id="bar-time"></span>
-  <button class="btn btn-measure" type="button" data-refresh>Refresh</button>
+<div class="measure-bar" id="bar">
+  <p class="status" aria-hidden="true"><span class="dot"></span><span class="state-word" data-status-word>Reading</span><span class="state-time" data-status-time></span></p>
+  <button class="refresh" type="button" data-refresh><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.29" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12.25 1.75v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Refresh</button>
 </div>
 </body>
 </html>

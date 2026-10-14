@@ -1,13 +1,17 @@
 /* Agent Arena Lab: the shared design system for the Pharos Season of AI task pages.
  *
- * One stylesheet for every task page. Cascade layers keep the order explicit: tokens, base
- * elements, the site shell, reusable primitives, and last a page's own `task` layer.
- * The visual language comes from SafeHands: calibration rails, section ticks, silkscreened
- * mono labels, instrument readouts and hairline structure. The amber accent, the wordmark and
- * the copy are this project's own.
+ * One stylesheet for every task page, in cascade layers: tokens, base elements, the site
+ * shell, reusable primitives, and last a page's own `task` layer.
  *
- * Colour carries meaning, never decoration: amber is structure, focus and READING; green
- * only ever means LIVE; red only ever means ERROR. */
+ * The register is an on-chain measurement instrument: a near-black ground, neutral ink, thin
+ * rules, aligned rows and a clear type hierarchy, with whitespace doing the separating.
+ * Geist carries the words and every number a reader needs at a glance (supply, block, chain ID,
+ * times, state values): conventional digits and normal punctuation, sized and weighted, never
+ * reshaped. Geist Mono is for technical strings (address, ABI names, raw values). Departure Mono
+ * is only for small labels: the shell line and the readout's silkscreened captions.
+ *
+ * Colour carries meaning, never decoration: green only ever means LIVE, red only ERROR.
+ * Amber is a restrained structural accent: the task number, focus, and the reading line. */
 @layer tokens, base, shell, primitives, task;
 
 /* Self-hosted, SIL Open Font License 1.1 (licences next to the files). Four faces, ~160 KB. */
@@ -21,59 +25,49 @@
   :root {
     color-scheme: dark;
     --ground: #0A0B12;
-    --panel: #12141E;
-    --panel-2: #181B27;
-    --ink: #EAECF5;
-    --ink-2: #9CA1B4;
-    --ink-3: #7C8196;          /* SafeHands' #616579, lifted so 11px labels pass WCAG AA (~5.1:1) */
-    --rule: #1C1F2C;
-    --rule-2: #2A2E3E;
-    --beam: #F2B33D;           /* the one accent: structure, indices, focus, READING */
-    --beam-glow: rgb(242 179 61 / .28);
-    --live: #4ADE80;           /* LIVE and success only */
-    --live-glow: rgb(74 222 128 / .3);
+    --ink: #E9EAF0;
+    --ink-2: #A2A6B4;
+    --ink-3: #7C8196;          /* ~5.1:1 on the ground, so 13px labels pass WCAG AA */
+    --rule: #1C1F2A;
+    --rule-2: #2A2E3B;
+    --beam: #E6A93E;           /* amber: structure, focus and the reading line only */
+    --live: #4ADE80;           /* LIVE only */
     --fault: #FF5A5A;          /* ERROR only */
-    --fault-glow: rgb(255 90 90 / .28);
 
     --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     --display: "Departure Mono", "Geist Mono", ui-monospace, monospace;
 
-    --fs-label: .68rem;
+    --fs-meta: .8125rem;
     --fs-small: .875rem;
     --fs-body: 1rem;
-    --fs-lead: clamp(1rem, .95rem + .3vw, 1.12rem);
-    --fs-h1: clamp(1.75rem, 1.1rem + 3.2vw, 3.1rem);
-    --fs-display: clamp(3rem, 18vw, 7.25rem);    /* the page's one primary measurement */
-    --fs-display-2: clamp(1.75rem, 8vw, 2.6rem); /* secondary readouts: block, counts, fine digits */
-    --track-label: .16em;
-    --track-tight: -.035em;
+    --fs-h1: clamp(1.5rem, 1.1rem + 2vw, 2.5rem);
+    --fs-figure: clamp(2rem, 10vw, 4rem);  /* a ceiling: the page script fits the figure to its line */
 
     --maxw: 1120px;
-    --pad-x: clamp(20px, 4vw, 32px);
-    --sec-y: clamp(36px, 7vw, 88px);
-    --gap-1: 4px; --gap-2: 8px; --gap-3: 12px; --gap-4: 16px; --gap-5: 24px; --gap-6: 32px; --gap-7: 48px;
-    --radius: 6px;             /* only on things a hand touches; measuring surfaces stay square */
-    --bar-h: 64px;
-
-    --ease-out: cubic-bezier(.22, .61, .36, 1);
+    --pad-x: clamp(20px, 4.5vw, 40px);
+    --sec-y: clamp(32px, 6vw, 72px);
+    --bar-h: 48px;
+    --ease: cubic-bezier(.22, .61, .36, 1);
   }
   /* The measurement state, set on <body data-state> by the page script. */
-  body[data-state="live"] { --state: var(--live); --state-glow: var(--live-glow); }
-  body[data-state="reading"] { --state: var(--beam); --state-glow: var(--beam-glow); }
-  body[data-state="error"] { --state: var(--fault); --state-glow: var(--fault-glow); }
+  body[data-state="live"] { --state: var(--live); }
+  body[data-state="reading"] { --state: var(--ink-2); }
+  body[data-state="error"] { --state: var(--fault); }
 }
 
 /* ── base ───────────────────────────────────────────────────────────── */
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
+  /* `hidden` must win over any display a component sets. */
+  [hidden] { display: none !important; }
   html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body {
     margin: 0; min-height: 100vh; background: var(--ground); color: var(--ink);
-    font: 400 var(--fs-body)/1.6 var(--sans);
+    font: 400 var(--fs-body)/1.55 var(--sans);
     -webkit-font-smoothing: antialiased; overflow-x: hidden;
   }
-  h1, h2, h3, p, dl, dd, ol, ul, figure { margin: 0; }
+  h1, h2, h3, p, dl, dd, ol, ul { margin: 0; }
   ol, ul { padding: 0; list-style: none; }
   h1, h2, h3 { font-weight: 600; text-wrap: balance; }
   a { color: inherit; text-decoration: none; }
@@ -81,74 +75,60 @@
   code { font-family: var(--mono); font-size: .92em; }
   strong { font-weight: 600; color: var(--ink); }
   ::selection { background: var(--beam); color: var(--ground); }
-  :focus-visible { outline: 2px solid var(--beam); outline-offset: 3px; }
+  :focus-visible { outline: 2px solid var(--beam); outline-offset: 3px; border-radius: 2px; }
 
-  /* Device labels are uppercase because that is what is silkscreened on an instrument. */
-  .lab {
-    font-family: var(--mono); font-size: var(--fs-label); font-weight: 400; line-height: 1.45;
-    text-transform: uppercase; letter-spacing: var(--track-label); color: var(--ink-3);
-  }
+  .lab { font-size: var(--fs-meta); line-height: 1.4; color: var(--ink-3); }
+  /* A silkscreened caption on the instrument: TOTAL SUPPLY, BLOCK, TASK 01. Labels only, never values. */
+  .label, .spec dt { font-family: var(--display); font-size: 11px; line-height: 1.4; font-weight: 400; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); }
   .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .nowrap { white-space: nowrap; }
   .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   .skip {
-    position: absolute; left: var(--gap-4); top: -100px; z-index: 50; padding: var(--gap-2) var(--gap-3);
-    background: var(--beam); color: var(--ground); border-radius: var(--radius);
+    position: absolute; left: 16px; top: -100px; z-index: 50; padding: 8px 12px;
+    background: var(--beam); color: var(--ground); border-radius: 4px;
   }
-  .skip:focus { top: var(--gap-2); }
+  .skip:focus { top: 8px; }
 }
 
-/* ── shell: the frame every task page shares ───────────────────────── */
+/* ── shell: the frame every task page shares, kept quiet ──────────── */
 @layer shell {
-  /* The calibration rail: one measured column with hairline edges. */
-  .rail { width: 100%; max-width: var(--maxw); margin-inline: auto; border-inline: 1px solid var(--rule); }
+  .rail { width: 100%; max-width: var(--maxw); margin-inline: auto; }
 
-  .shell { background: var(--ground); border-bottom: 1px solid var(--rule); }
-  .shell-in { display: flex; align-items: center; gap: var(--gap-4); min-height: 56px; padding: 9px var(--pad-x); }
-  .shell-brand { display: flex; flex-direction: column; min-width: 0; }
-  .shell-name { font-size: .9rem; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2); }
-  .shell-count { margin-left: auto; display: flex; align-items: baseline; gap: var(--gap-2); white-space: nowrap; }
-  .shell-count .num { font-size: .8rem; color: var(--ink-3); }
-  .shell-count b { font-weight: 400; color: var(--beam); }
-  @media (max-width: 759px) {
-    /* A compact frame on phones, so the measurement owns the first screen. */
-    .shell-in { min-height: 48px; padding-block: 7px; }
-    .shell-name { line-height: 1.3; }
+  /* One line of small metadata. It never competes with the task below it. */
+  .shell {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    padding: 14px var(--pad-x) 13px; border-bottom: 1px solid var(--rule);
+    font-family: var(--display); font-size: 11px; line-height: 1.4; color: var(--ink-3);
   }
-  @media (max-width: 359px) {
-    /* 320px: the counter's "Task" caption is read out but not shown, so the brand keeps one line. */
-    .shell-count .lab { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  }
-  @media (min-width: 760px) {
-    /* Sticky only where there is room: on a phone the task, not the frame, owns the screen. */
-    .shell { position: sticky; top: 0; z-index: 20; }
-    .shell-brand { flex-direction: row; align-items: baseline; gap: var(--gap-3); }
-  }
+  .shell-brand { text-transform: uppercase; letter-spacing: .04em; }
+  .shell-count { white-space: nowrap; }
+  .shell-count b { font-weight: 400; color: var(--ink-2); }
 
-  /* A band is one ruled section, hung off the rail by a 9px tick. */
+  /* A band is one section, separated by a hairline and whitespace. */
   .band { position: relative; padding: var(--sec-y) var(--pad-x); border-bottom: 1px solid var(--rule); }
-  .band::before { content: ""; position: absolute; left: 0; top: 0; width: 9px; height: 1px; background: var(--rule-2); }
-  .band-head { display: flex; flex-direction: column; gap: var(--gap-2); margin-bottom: var(--gap-5); }
-  .band-note { max-width: 40ch; color: var(--ink-2); font-size: var(--fs-small); }
+  .band-head { display: grid; gap: 4px; margin-bottom: 20px; }
+  .band-title { font-size: 1rem; line-height: 1.4; color: var(--ink); }
+  .band-note { max-width: 46ch; color: var(--ink-2); font-size: var(--fs-small); }
   @media (min-width: 760px) {
-    /* Editorial asymmetry: a narrow label column, the evidence beside it. */
-    .band-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.6fr); gap: var(--gap-6); align-items: start; }
+    /* The column edges as hairlines, and a short tick where each section starts. */
+    .rail { border-inline: 1px solid var(--rule); }
+    .band::before { content: ""; position: absolute; left: 0; top: -1px; width: 9px; height: 1px; background: var(--ink-3); }
+    /* Editorial asymmetry: a narrow heading column, the evidence beside it. */
+    .band-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2.4fr); gap: 40px; align-items: start; }
     .band-grid > .band-head { margin-bottom: 0; }
   }
 
-  /* Where this page sits among the 28 tasks. Context only: planned tasks are never links. */
-  .task-nav { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gap-3) var(--gap-5); }
-  .task-nav-step { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-3); color: var(--ink-2); }
-  .task-nav-step .t { color: var(--ink); font-weight: 600; letter-spacing: -.01em; }
+  /* Where this page sits among the 28 tasks: plain text. Planned tasks are never links. */
+  .task-nav { display: grid; gap: 6px; padding-block: 24px; }
+  .task-nav-step { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; color: var(--ink-2); font-size: var(--fs-small); }
+  .task-nav-step .t { color: var(--ink); font-weight: 600; }
+  @media (min-width: 760px) { .task-nav { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; } }
   .task-nav-step a.t:hover { color: var(--beam); }
-  .tag {
-    display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--rule-2); border-radius: 4px;
-    font-family: var(--mono); font-size: .6rem; letter-spacing: .15em; text-transform: uppercase; color: var(--ink-3);
-  }
-  .tag-live { color: var(--live); border-color: color-mix(in srgb, var(--live) 42%, var(--rule-2)); }
+  .tag { font-size: var(--fs-meta); color: var(--ink-3); }
+  .tag-live { color: var(--live); }
 
-  .foot { display: grid; gap: var(--gap-3); padding: var(--gap-7) var(--pad-x); }
-  .foot-brand { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-3); }
+  .foot { display: grid; gap: 10px; padding: 40px var(--pad-x) 48px; }
+  .foot-brand { font-family: var(--display); font-size: 11px; line-height: 1.4; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); }
   .foot-tag { max-width: 60ch; color: var(--ink-2); font-size: var(--fs-small); }
   .foot a { color: var(--ink-2); font-size: var(--fs-small); }
   .foot a:hover { color: var(--ink); }
@@ -156,200 +136,152 @@
 
 /* ── primitives: reusable across all 28 task pages ─────────────────── */
 @layer primitives {
-  /* TaskNumber + title: "01 / READ CONTRACT STATE". */
-  .task-id {
-    display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2) var(--gap-3);
-    font-family: var(--mono); font-size: .8rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2);
-  }
-  .task-n { color: var(--beam); }
-  .task-sep { color: var(--ink-3); }
-  .task-subject { font-size: var(--fs-h1); line-height: 1.06; letter-spacing: var(--track-tight); max-width: 20ch; }
-  .lead { max-width: 46ch; color: var(--ink-2); font-size: var(--fs-lead); }
+  /* TaskHeader: "Task 01 / Read Contract State", the subject, and the tool that reads it.
+     Convention: a task's tool is named in the `via` line, so it is visible on the first screen. */
+  .eyebrow { font-size: .9375rem; line-height: 1.4; font-weight: 600; color: var(--ink); }
+  .eyebrow-task { margin-right: .1em; }
+  .task-n { color: var(--beam); font-variant-numeric: tabular-nums; }
+  .eyebrow-sep { margin-inline: .45em; font-weight: 400; color: var(--ink-3); }
+  .subject { font-size: var(--fs-h1); line-height: 1.12; letter-spacing: -.025em; color: var(--ink); }
+  .via { color: var(--ink-2); font-size: .9375rem; line-height: 1.5; }
 
-  /* ToolLabel: which Pharos tool a task is built on. */
-  .tool-label {
-    display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 4px; white-space: nowrap;
-    border: 1px solid color-mix(in srgb, var(--beam) 45%, var(--rule-2));
-    font-family: var(--mono); font-size: .62rem; letter-spacing: .16em; text-transform: uppercase; color: var(--beam);
-  }
-  /* 320px: the badge would take a line of its own. A task's lead always names its tool, so it can go. */
-  @media (max-width: 359px) { .task-id .tool-label { display: none; } }
+  /* LiveStatus: "● LIVE · read 08:36:23". Only the dot and the word take the state colour. */
+  .status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; font-size: var(--fs-small); line-height: 1.5; color: var(--ink-2); }
+  .dot { align-self: center; width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--state, var(--ink-3)); }
+  .state-word { font-size: var(--fs-meta); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--state, var(--ink-2)); }
+  .state-detail:not(:empty)::before, .state-time:not(:empty)::before { content: "·"; content: "·" / ""; margin-right: 8px; color: var(--ink-3); }
+  .note { max-width: 52ch; padding-left: 12px; border-left: 2px solid var(--rule-2); color: var(--ink-2); font-size: var(--fs-small); }
+  body[data-state="error"] .note-error { border-left-color: var(--fault); }
 
-  /* LiveStatus: one chip that reads the page state. */
-  .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2) var(--gap-3); }
-  .status-chip {
-    display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; white-space: nowrap;
-    border: 1px solid color-mix(in srgb, var(--state, var(--ink-3)) 40%, var(--rule-2)); border-radius: var(--radius);
-    background: color-mix(in srgb, var(--state, var(--ink-3)) 9%, transparent);
-    font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--state, var(--ink-2));
+  /* Refresh: a quiet text control on the instrument, not a call to action. */
+  .refresh {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin-left: auto; padding: 0 2px;
+    border: 0; background: none; cursor: pointer; color: var(--ink-2); font-size: var(--fs-small); font-weight: 600;
   }
-  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--state, var(--ink-3)); box-shadow: 0 0 8px 1px var(--state-glow, transparent); }
-  .status-text { color: var(--ink-2); font-size: var(--fs-small); }
-  body[data-state="error"] .status-text { color: var(--fault); }
-  .note { padding: 8px 12px; border-left: 2px solid var(--beam); background: color-mix(in srgb, var(--beam) 6%, transparent); color: var(--ink-2); font-size: var(--fs-small); }
+  .refresh svg { width: 14px; height: 14px; flex: none; }
+  .refresh:hover { color: var(--ink); }
+  .refresh:disabled { cursor: progress; color: var(--ink-3); }
 
-  /* PrimaryMetric: the page's measurement, sized to dominate and fitted so it never overflows. */
-  .metric { display: flex; flex-direction: column; gap: var(--gap-2); }
-  .metric-major {
-    display: block; white-space: nowrap; font-family: var(--display); font-size: var(--fs-display);
-    font-variant-numeric: tabular-nums; line-height: .95; color: var(--ink);
+  /* Readout: the measurement. Its label and control, the primary figure, then context rows. */
+  /* Block flow, not grid: a grid item would grow to the unwrapped figure and defeat the fit. */
+  .readout { position: relative; min-width: 0; padding-top: 6px; border-top: 1px solid var(--rule-2); }
+  .readout-head { display: flex; align-items: center; gap: 16px; }
+  /* During READING a thin amber line runs along the readout's top edge. */
+  .progress { position: absolute; left: 0; right: 0; top: -1px; height: 1px; overflow: hidden; pointer-events: none; }
+  .progress::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 35%; background: var(--beam); opacity: 0; }
+  body[data-state="reading"] .progress { background: color-mix(in srgb, var(--beam) 30%, transparent); }
+  body[data-state="reading"] .progress::after { opacity: 1; }
+
+  /* PrimaryMetric: one value on one line, in Geist SemiBold with conventional digits and normal
+     punctuation. The fraction shares the baseline and the colour, only smaller; the unit follows
+     as a label. The page script fits the line to its column by font size alone. */
+  .figure {
+    display: block; margin-top: 2px; white-space: nowrap; font-family: var(--sans); font-size: var(--fs-figure);
+    font-weight: 600; line-height: 1.1; color: var(--ink);
   }
-  .metric-tail { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1) var(--gap-3); min-height: 1em; }
-  .metric-minor { font-family: var(--display); font-size: var(--fs-display-2); line-height: 1; color: var(--ink-2); }
-  .metric-unit { font-family: var(--mono); font-size: .82rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-2); }
-  /* In a monospaced display face a separator fills a whole digit cell; on a meter it does not. */
-  .sep { margin-inline: -.16em; }
-  .sep-lead { margin-left: 0; }
+  .figure.wrap .figure-unit { display: block; margin-left: 0; }
+  .figure-num { white-space: nowrap; }
+  .figure-frac { font-size: .72em; }
+  .figure-unit { margin-left: .45em; font-family: var(--sans); font-size: .42em; font-weight: 600; letter-spacing: .02em; color: var(--ink-2); }
 
-  /* Snapshot: the point in time a measurement belongs to. */
-  .snapshot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--gap-2) var(--gap-5); align-items: start; }
-  .snapshot > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .snapshot dd { color: var(--ink-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
-  .snapshot .snap-main { grid-row: span 2; }
-  .readout { font-family: var(--display); font-size: var(--fs-display-2); line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .snapshot dd.readout { color: var(--ink); font-size: var(--fs-display-2); }
-  @media (min-width: 760px) {
-    .snapshot { grid-template-columns: repeat(3, max-content); gap: var(--gap-2) var(--gap-7); }
-    .snapshot .snap-main { grid-row: auto; }
-  }
+  /* Spec rows: label and value in two aligned columns, hairlines between. */
+  .spec { margin-top: 16px; border-top: 1px solid var(--rule); }
+  .spec > div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+  .spec dd { color: var(--ink); font-size: 1.0625rem; overflow-wrap: anywhere; }
 
-  /* Scan line: during READING an amber light crosses the instrument's top edge. */
-  .scanline { position: absolute; left: 0; right: 0; top: -1px; height: 1px; overflow: hidden; pointer-events: none; }
-  .scanline::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 40%; opacity: 0; background: linear-gradient(90deg, transparent, var(--beam), transparent); }
-  body[data-state="reading"] .scanline { background: color-mix(in srgb, var(--beam) 35%, transparent); }
-  body[data-state="reading"] .scanline::after { opacity: 1; }
   /* The previous good measurement stays on screen, quieter, while a new one is taken, and a
      little quieter after a failed one: full brightness always means a fresh read. */
-  body[data-state="reading"] main[data-measured] .measured { opacity: .55; }
+  body[data-state="reading"] main[data-measured] .measured { opacity: .5; }
   body[data-state="error"] main[data-measured] .measured { opacity: .7; }
 
-  /* DataRow: ruled key/value rows, numbered when they are a real sequence. */
-  .data-rows { border-top: 1px solid var(--rule); }
-  .data-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--gap-4); align-items: baseline; padding: 13px 0; border-bottom: 1px solid var(--rule); }
-  .data-row dt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--gap-3); }
-  .data-row dd { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .row-n { font-family: var(--mono); font-size: var(--fs-label); letter-spacing: .1em; color: var(--beam); }
-  .row-k { font-weight: 600; letter-spacing: -.012em; }
-  .row-call { font-family: var(--mono); font-size: .76rem; color: var(--ink-3); }
-  .row-sub { display: block; margin-top: 2px; font-size: .74rem; color: var(--ink-3); }
-  @media (max-width: 479px) {
-    .data-row.stack { grid-template-columns: minmax(0, 1fr); }
-    .data-row.stack dd { text-align: left; }
+  /* StateTable: one row per contract read, keyed as the ABI names it. */
+  .table { border-top: 1px solid var(--rule); }
+  .table > div { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 2px 16px; align-items: baseline; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+  .table dt { font-family: var(--mono); font-size: var(--fs-small); color: var(--ink-2); }
+  .table dd { font-size: 1rem; color: var(--ink); overflow-wrap: anywhere; }
+  .row-sub { display: block; margin-top: 2px; font-family: var(--mono); font-size: var(--fs-meta); color: var(--ink-3); }
+  @media (min-width: 760px) { .table > div { grid-template-columns: 10rem minmax(0, 1fr); } }
+
+  /* Address: exact characters in groups of four, inline with no added characters, so a manual
+     copy still yields the exact string. */
+  .address { font-family: var(--mono); font-size: clamp(.95rem, 3.6vw, 1.125rem); line-height: 1.7; color: var(--ink); overflow-wrap: anywhere; }
+  .address span { margin-right: .5ch; }
+  .text-btn {
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: none; cursor: pointer;
+    color: var(--ink-2); font-size: var(--fs-small); font-weight: 600;
+    text-decoration: underline; text-decoration-color: var(--rule-2); text-underline-offset: 4px;
+  }
+  .text-btn:hover { color: var(--ink); text-decoration-color: var(--ink-3); }
+
+  /* Steps: the read path, numbered because it is a real sequence. */
+  .steps { border-top: 1px solid var(--rule); }
+  .steps > li { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: 2px 12px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+  .step-n { grid-row: span 2; padding-top: 1px; font-size: var(--fs-small); color: var(--ink-3); }
+  .step-k { font-size: .9375rem; color: var(--ink); overflow-wrap: anywhere; }
+  .step-d { color: var(--ink-2); font-size: var(--fs-small); }
+  @media (min-width: 760px) {
+    .steps > li { grid-template-columns: 1.5rem 11rem minmax(0, 1fr); align-items: baseline; }
+    .step-n { grid-row: auto; }
   }
 
-  /* Address: exact characters, shown in groups of four so it can be read and compared. The
-     groups are inline with no spaces, so a manual copy still yields the exact string. */
-  .address { font-family: var(--mono); font-size: clamp(.95rem, 3.4vw, 1.15rem); line-height: 1.7; color: var(--ink); overflow-wrap: anywhere; }
-  .address span { margin-right: .55ch; }
-  .address-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-3); margin-top: var(--gap-3); }
-
-  /* ExecutionPath: the only numbered strip, because it is the only real sequence. */
-  .exec-path { position: relative; display: grid; border: 1px solid var(--rule); }
-  .exec-path::before { content: ""; position: absolute; z-index: 2; top: -1px; left: 0; height: 2px; width: 0; background: var(--beam); box-shadow: 0 0 11px 1px var(--beam-glow); }
-  .exec-path.flow::before { width: 100%; }
-  body[data-state="reading"] .exec-path::before { width: 0; }
-  .exec-step { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px var(--gap-3); padding: 14px 16px; border-bottom: 1px solid var(--rule); }
-  .exec-step:last-child { border-bottom: 0; }
-  .exec-step:not(:last-child)::after {
-    content: "\2193"; position: absolute; z-index: 1; left: 15px; bottom: -.8em; padding: 0 3px;
-    font-family: var(--mono); font-size: .75rem; line-height: 1.5; color: var(--ink-3); background: var(--ground);
-  }
-  .step-n { grid-row: span 2; padding-top: 3px; font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; color: var(--ink-3); }
-  .step-k { font-family: var(--mono); font-size: .95rem; color: var(--ink); overflow-wrap: anywhere; }
-  .step-d { color: var(--ink-2); font-size: .82rem; }
-  .exec-step.key { background: var(--panel); }
-  .exec-step.key .step-n { color: var(--beam); }
-  .exec-step.key:not(:last-child)::after { background: var(--panel); }
-  @media (min-width: 900px) {
-    .exec-path { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .exec-step { grid-template-columns: minmax(0, 1fr); align-content: start; padding: 18px 16px; border-bottom: 0; border-right: 1px solid var(--rule); }
-    .exec-step:last-child { border-right: 0; }
-    .step-n { grid-row: auto; padding-top: 0; }
-    .exec-step:not(:last-child)::after { content: "\2192"; left: auto; right: -.75em; bottom: auto; top: 16px; }
+  /* Evidence: each count in one aligned column, next to what it counts. */
+  .evidence { border-top: 1px solid var(--rule); }
+  .evidence > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+  .evidence dt { font-size: .9375rem; color: var(--ink); }
+  .evidence .count { grid-column: 2; grid-row: 1; font-size: 1.125rem; font-weight: 600; text-align: right; color: var(--ink); }
+  .evidence .ev-note { grid-column: 1; color: var(--ink-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+  @media (min-width: 760px) {
+    .evidence > div { grid-template-columns: minmax(0, 1.15fr) 2.5rem minmax(0, 1.6fr); }
+    .evidence .ev-note { grid-column: 3; grid-row: 1; }
   }
 
-  /* ProofStrip: evidence as figures, in a 1px cell grid rather than cards. */
-  .proof-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
-  .proof-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 16px 14px 18px; background: var(--ground); }
-  .proof-v { font-family: var(--display); font-size: var(--fs-display-2); line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
-  .proof-s { color: var(--ink-2); font-size: .78rem; overflow-wrap: anywhere; }
-  @media (min-width: 760px) { .proof-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-
-  /* TechnicalDetails: collapsed by default; the "how", on a recessed readout screen. */
-  .tech-details { border: 1px solid var(--rule); }
-  .tech-details > summary {
-    display: flex; align-items: center; gap: var(--gap-3); min-height: 52px; padding: 12px 16px; cursor: pointer; list-style: none;
-  }
+  /* TechnicalDetails: collapsed by default; the "how", as plain rows. */
+  .tech-details > summary { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 4px 28px 4px 0; cursor: pointer; list-style: none; }
   .tech-details > summary::-webkit-details-marker { display: none; }
-  .tech-details > summary::after { content: "+"; margin-left: auto; font-family: var(--mono); font-size: 1.1rem; line-height: 1; color: var(--beam); }
-  @media (max-width: 479px) {
-    /* Label over hint on phones, the +/- sign centred beside both. */
-    .tech-details > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--gap-3); }
-    .tech-details > summary::after { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
-  }
-  .tech-details[open] > summary { border-bottom: 1px solid var(--rule); }
+  .tech-details > summary::after { content: "+"; position: absolute; right: 0; top: 2px; font-family: var(--mono); font-size: 1.1rem; color: var(--ink-2); }
   .tech-details[open] > summary::after { content: "\2212"; }
+  .summary-title { font-weight: 600; }
   .summary-hint { color: var(--ink-2); font-size: var(--fs-small); }
-  .screen {
-    position: relative; padding: 6px 16px 10px; background: var(--panel);
-    box-shadow: inset 0 0 34px -14px rgb(0 0 0 / .7); font-family: var(--mono); font-size: .8rem; line-height: 1.65;
-  }
-  .screen::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .4;
-    background: repeating-linear-gradient(to bottom, color-mix(in srgb, var(--ink) 4%, transparent) 0 1px, transparent 1px 3px);
-  }
-  .kv > div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 2px var(--gap-3); padding: 8px 0; border-bottom: 1px solid var(--rule-2); }
-  .kv > div:last-child { border-bottom: 0; }
-  .kv dt { padding-top: 2px; font-size: .66rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
-  .kv dd { color: var(--ink); overflow-wrap: anywhere; }
+  .kv { margin-top: 20px; border-top: 1px solid var(--rule); }
+  .kv > div { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 2px 16px; padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: var(--fs-small); }
+  .kv dt { color: var(--ink-3); }
+  .kv dd { font-family: var(--mono); font-size: var(--fs-meta); line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
   @media (max-width: 479px) { .kv > div { grid-template-columns: minmax(0, 1fr); } }
 
-  /* SourceLinks: full-width ruled rows, an amber arrow that nudges on hover. */
+  /* SourceLinks: full-width ruled rows. */
   .source-links { border-top: 1px solid var(--rule); }
-  .source-links a { display: flex; align-items: center; gap: var(--gap-3); min-height: 56px; padding: 12px 0; border-bottom: 1px solid var(--rule); color: var(--ink); }
-  .source-links a:hover { color: var(--beam); }
-  .src-meta { display: block; color: var(--ink-3); font-family: var(--mono); font-size: .74rem; overflow-wrap: anywhere; }
-  .arw { margin-left: auto; font-family: var(--mono); color: var(--beam); }
+  .source-links a { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 12px 0; border-bottom: 1px solid var(--rule); color: var(--ink); }
+  .src-meta { display: block; color: var(--ink-3); font-family: var(--mono); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  .arw { margin-left: auto; color: var(--ink-3); }
+  .source-links a:hover .arw { color: var(--beam); }
 
-  /* Buttons: the one place with a radius, because a hand touches it. */
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: var(--gap-2); min-height: 44px; padding: 10px 18px;
-    border: 1px solid var(--rule-2); border-radius: var(--radius); background: transparent; cursor: pointer;
-    font-family: var(--mono); font-size: .76rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink);
-  }
-  .btn:hover { border-color: var(--ink-3); }
-  .btn:disabled { cursor: progress; opacity: .55; }
-  .btn-measure { border-color: color-mix(in srgb, var(--beam) 60%, var(--rule-2)); color: var(--beam); }
-  .btn-measure:hover { border-color: var(--beam); background: color-mix(in srgb, var(--beam) 10%, transparent); }
-
-  /* MeasurementBar: on phones, status and Refresh stay under the thumb. */
+  /* MeasurementBar: on phones, once the readout has scrolled away, a slim status line keeps the
+     state and Refresh in reach. Its time is always the time of the read on screen. */
   .measure-bar {
-    position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: var(--gap-3);
-    min-height: var(--bar-h); padding: 9px var(--pad-x) calc(10px + env(safe-area-inset-bottom));
+    position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 12px;
+    min-height: calc(var(--bar-h) + env(safe-area-inset-bottom)); padding: 0 var(--pad-x) env(safe-area-inset-bottom);
     background: var(--ground); border-top: 1px solid var(--rule-2);
+    transform: translateY(100%); visibility: hidden;
   }
-  .measure-bar .btn-measure { margin-left: auto; min-width: 124px; }
-  .bar-time { font-size: .8rem; color: var(--ink-2); }
+  .measure-bar .status { flex-wrap: nowrap; white-space: nowrap; }
+  body[data-bar="show"] .measure-bar { transform: none; visibility: visible; }
   @media (max-width: 759px) { body { padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom)); } }
   @media (min-width: 760px) { .measure-bar { display: none; } }
 
-  /* ── motion: purposeful, and only when the reader allows it ── */
-  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
-  @keyframes scan { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
-  @keyframes settle { from { opacity: .2; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  /* ── motion: functional only, and only when the reader allows it ── */
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes settle { from { opacity: .35; transform: translateY(3px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: no-preference) {
-    body[data-state="live"] .dot { animation: breathe 2.4s ease-in-out infinite; }
-    body[data-state="reading"] .scanline::after { animation: scan 1.15s var(--ease-out) infinite; }
-    .measured { transition: opacity .25s ease; }
-    .settle { animation: settle .45s var(--ease-out) both; }
-    .exec-path::before { transition: width .9s var(--ease-out); }
-    .source-links .arw { transition: transform .18s ease; }
+    body[data-state="reading"] .dot { animation: pulse 1.1s ease-in-out infinite; }
+    body[data-state="reading"] .progress::after { animation: sweep 1.2s var(--ease) infinite; }
+    body[data-state="reading"] .refresh svg { animation: spin 1s linear infinite; }
+    .measured { transition: opacity .2s ease; }
+    /* backwards, not both: a filled end state would override the READING and ERROR dimming. */
+    .settle { animation: settle .35s var(--ease) backwards; }
+    .measure-bar { transition: transform .2s var(--ease), visibility .2s; }
+    .source-links .arw { transition: transform .15s ease, color .15s ease; }
     .source-links a:hover .arw { transform: translateX(3px); }
-    .entrance > * { animation: rise .6s var(--ease-out) both; }
-    .entrance > :nth-child(2) { animation-delay: .06s; }
-    .entrance > :nth-child(3) { animation-delay: .12s; }
-    .entrance > :nth-child(4) { animation-delay: .18s; }
-    .entrance > :nth-child(n + 5) { animation-delay: .24s; }
   }
 }
