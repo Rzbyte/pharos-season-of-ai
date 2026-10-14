@@ -4,7 +4,7 @@
 
 A TypeScript CLI that reads the **Circle USDC Contract** on Pharos Mainnet through the official **Pharos Chain MCP** server and prints the values in plain language. Every chain read is an MCP tool call; the CLI never calls Pharos JSON-RPC directly.
 
-A small web demo shows the same read as an on-chain snapshot, next to the **Pharos Inspector**, which reads any contract address or transaction hash through the same server and can explain a result in plain language when asked. See [Web Demo](#web-demo).
+A small web demo shows the same read as an on-chain snapshot, next to the **Pharos Inspector**, which reads any address or transaction hash through the same server and can explain a result in plain language when asked. See [Web Demo](#web-demo).
 
 <!-- live-status:start -->
 **Live run:** captured 2026-10-14T07:10:47Z against `https://mcp.pharos.xyz/mcp`, contract `0xC879C018dB60520F4355C26eD1a6D572cdAC1815`, block 20202384. Output in [Live Sample Output](#live-sample-output), raw MCP messages in [proof/mcp-transcript.json](proof/mcp-transcript.json).
@@ -30,6 +30,9 @@ Official hosted Pharos Chain MCP server, `https://mcp.pharos.xyz/mcp` ([PharosNe
 | `get_block_number` | The block every read is pinned to |
 | `eth_call` | `name()`, `symbol()`, `decimals()`, `totalSupply()` and `paused()` at that block |
 | `get_chain_info` | Confirms chain ID 1672 before the address is labelled `Circle USDC Contract`; network name in the output |
+| `get_code` | Web Inspector only: whether a pasted address has contract code at that block, which decides what else is read |
+| `get_balance` | Web Inspector only: a wallet-like address's native PROS balance at that block |
+| `get_transaction_count` | Web Inspector only: how many transactions a wallet-like address has sent (its nonce) at that block |
 | `get_transaction` | Web Inspector only: a pasted transaction's block, sender, recipient, value and gas limit |
 | `get_transaction_receipt` | Web Inspector only: that transaction's status, gas used and number of logs |
 
@@ -109,14 +112,14 @@ The web demo's optional Explain this result is not part of this proof: it never 
 A static page (`public/`) and three Vercel functions (`api/`, configured in `vercel.json`):
 
 - `GET /api/state` runs this CLI with `--json` against the hosted endpoint. The page shows the report as an on-chain snapshot: total supply, name, symbol, decimals, network, the pause flag (`Yes` in the warning colour), and the block and time of the read, with every MCP call behind it under Proof & technical details. A response served again from the edge cache is marked as a cached snapshot.
-- `GET /api/inspect?q=<address or transaction hash>` is the Pharos Inspector: the four ERC-20 reads of any contract at one block, or a transaction's status, block, sender, recipient, value, gas and logs. It is a separate function, so it cannot change the Task 01 read.
+- `GET /api/inspect?q=<address or transaction hash>` is the Pharos Inspector. An address is first checked for contract code at one block: a contract gets the four ERC-20 reads at that block, and an address without code is shown as a wallet-like address with its native PROS balance and the number of transactions it has sent. If the code check fails, the address type is reported as not determined and nothing is guessed. A transaction hash gets the transaction's status, block, sender, recipient, value, gas and logs. It is a separate function, so it cannot change the Task 01 read.
 - `POST /api/explain` is **Explain this result**, optional and only on request. After an inspection, one button asks an AI model what that result means, in a few short paragraphs for someone new to blockchains, with any extra points folded away behind Show details. It is an explanation layer only: the Inspector's values, read through Chain MCP, stay the source of truth, and inspecting never calls the model. The same result is explained once and then served from a cache, and new explanations are rate limited. It needs `DEEPSEEK_API_KEY` in the server's environment; without it the button says explanations are unavailable and everything else works as before.
 
 The browser calls only these three endpoints of its own site; it never talks to MCP, Pharos RPC or the AI provider. The snapshot's contract and block, and an inspected address or transaction, link to the Pharos Mainnet explorer (SocialScan); only a well-formed value is ever turned into a link. Design, behaviour and the web tests: [TECHNICAL.md](TECHNICAL.md#web-demo).
 
 ## Safety
 
-- **Read-only:** the CLI uses only `eth_call`, `get_block_number` and `get_chain_info`; the web Inspector adds `get_transaction` and `get_transaction_receipt`, which only read too. No private key, no signing, no transactions.
+- **Read-only:** the CLI uses only `eth_call`, `get_block_number` and `get_chain_info`; the web Inspector adds `get_code`, `get_balance`, `get_transaction_count`, `get_transaction` and `get_transaction_receipt`, which only read too. No private key, no signing, no transactions.
 - **No API key:** the hosted endpoint is public, and no key or token is ever sent to `mcp.pharos.xyz`. `PHAROS_MCP_TOKEN` is used only for a custom self-hosted endpoint and is never written to the transcript. The web functions always use the hosted endpoint and never send a token, whatever `PHAROS_MCP_URL` or `PHAROS_MCP_TOKEN` say on the deployment.
 - **Untrusted strings:** token names and symbols are sanitized before printing, so they cannot inject terminal escape codes. The web page writes every value as text, never as markup.
 - **Explain this result:** runs only when a visitor clicks it. The model gets a fixed, validated summary of one inspection (public on-chain facts; no IP address, cookies or visitor text), told that every value in it is untrusted data, never instructions. It has no tools and cannot read the chain or make transactions, and its answer is checked before it is shown. The provider key lives only in the server's environment and never reaches the browser. Details: [TECHNICAL.md](TECHNICAL.md#explain-this-result).

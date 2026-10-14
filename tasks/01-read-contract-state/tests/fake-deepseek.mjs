@@ -31,9 +31,22 @@ export const SAMPLE_TX_ANSWER = [
   "- The fee also depends on the gas price, which this inspection does not include.",
 ].join("\n");
 
+/** The same, for a wallet-like address (no contract code): what a good answer looks like. */
+export const SAMPLE_WALLET_ANSWER = [
+  "This address has no smart-contract code at the inspected block, so it behaves like a wallet-like account rather than a smart contract. The inspection does not show who controls it.",
+  "",
+  "It holds 1.5 PROS, the network's own currency, at that block.",
+  "",
+  "It has sent 37 transactions so far. Transactions it received are not part of that count.",
+  "",
+  "Details",
+  "- The balance and the count are from one block and can change in later ones.",
+].join("\n");
+
 /**
  * behavior: { content, finishReason, status, raw, delayMs } or a function (body, n) returning one.
- *   content       the answer's text (default: SAMPLE_TX_ANSWER for a transaction, else SAMPLE_ANSWER)
+ *   content       the answer's text (default: SAMPLE_TX_ANSWER for a transaction, SAMPLE_WALLET_ANSWER for a
+ *                 wallet-like address, else SAMPLE_ANSWER)
  *   finishReason  "stop" (default) or "length"
  *   status        an HTTP error status to answer with instead
  *   raw           a raw response body to send as is (for malformed answers)
@@ -63,9 +76,9 @@ export async function startFakeDeepSeek(initial = {}) {
       res.writeHead(200, { "content-type": "application/json" }).end(b.raw);
       return;
     }
-    // By default, the sample answer for what was asked: a transaction or a contract.
+    // By default, the sample answer for what was asked: a transaction, a wallet-like address or a contract.
     const asked = body?.messages?.[1]?.content ?? "";
-    const sample = /"inspection": "A transaction/.test(asked) ? SAMPLE_TX_ANSWER : SAMPLE_ANSWER;
+    const sample = /"inspection": "A transaction/.test(asked) ? SAMPLE_TX_ANSWER : /"inspection": "An address checked for contract code/.test(asked) ? SAMPLE_WALLET_ANSWER : SAMPLE_ANSWER;
     res.writeHead(200, { "content-type": "application/json" }).end(
       JSON.stringify({
         id: `fake-${requests.length}`,

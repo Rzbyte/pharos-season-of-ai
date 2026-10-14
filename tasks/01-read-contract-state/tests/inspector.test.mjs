@@ -8,7 +8,7 @@ import { after, before, describe, test } from "node:test";
 import { encodeAbiParameters, getAddress } from "viem";
 import handler, { createHandler } from "../api/inspect.js";
 import { readState } from "../api/state.js";
-import { NO_ERC20_MESSAGE, inspect } from "../inspector/inspect.js";
+import { NO_CODE_TOOL_MESSAGE, NO_ERC20_MESSAGE, UNDETERMINED_MESSAGE, inspect } from "../inspector/inspect.js";
 import { classifyInput, MAX_INPUT_LENGTH } from "../public/assets/inspect-input.js";
 import { startFakePharosMcp } from "../dist/tests/fake-pharos-mcp.js";
 import { ALL_TOOLS, startFakeInspectorMcp } from "./fake-inspector-mcp.mjs";
@@ -32,12 +32,16 @@ const erc20 = (overrides = {}) => ({
 });
 
 const PARTIAL = addr("1"); // name only, symbol reverts, decimals returns nothing, totalSupply reverts
-const NONE = addr("2"); // no contract: every eth_call returns "0x"
+const NONE = addr("2"); // a contract that is not an ERC-20: it has code, and every standard call reverts
 const NO_DECIMALS = addr("3");
 const NO_SUPPLY = addr("4");
 const FLAKY = addr("5"); // totalSupply fails once with a transient RPC error
 const HANGS = addr("6");
 const HOSTILE = addr("7"); // a name made to spoof the page
+const WALLET = addr("8"); // no code: a wallet-like address with a balance and a nonce
+const EMPTY = addr("9"); // no code, nothing held, nothing sent
+const NO_CODE_CHECK = addr("a"); // get_code keeps failing
+const FLAKY_CODE = addr("b"); // get_code fails once, then answers "no code"; its balance read fails once too
 
 const MINED = {
   hash: hash("a"),
@@ -61,6 +65,12 @@ const chain = {
     [FLAKY]: erc20({ [SEL.totalSupply]: { failTimes: 1, then: uint(5_000_000n) } }),
     [HANGS]: erc20({ [SEL.name]: { hang: true } }),
     [HOSTILE]: erc20({ [SEL.name]: str(`Safe‮token\u0007${"x".repeat(200)}`) }),
+    [NONE]: {},
+  },
+  code: { [NO_CODE_CHECK]: { rpcError: "upstream unavailable" }, [FLAKY_CODE]: { failTimes: 1, then: "0x" } },
+  accounts: {
+    [WALLET]: { balance: 1_500_000_000_000_000_000n, nonce: 37n },
+    [FLAKY_CODE]: { balance: { failTimes: 1, then: 2_000_000_000_000_000_000n }, nonce: 4n },
   },
   transactions: {
     [hash("a")]: { tx: MINED, receipt: RECEIPT },
@@ -73,12 +83,16 @@ const chain = {
 };
 
 const ethCalls = (server) => server.calls.filter((call) => call.tool === "eth_call");
+/** The tools an inspection called, in order, each with the block it was pinned to. */
+const toolLog = (server) => server.calls.map((call) => (call.args.block ? `${call.tool}@${call.args.block}` : call.tool));
 
 describe("input rules (shared by the page and /api/inspect)", () => {
-  test("a 40-hex address is a contract, in any letter case; surrounding whitespace is ignored", () => {
+  test("a 40-hex value is an address, in any letter case; surrounding whitespace is ignored", () => {
+    // An address, not a contract: only its code, read on the server, says which it is.
     for (const value of [USDC, USDC.toLowerCase(), `0x${USDC.slice(2).toUpperCase()}`]) {
-      assert.deepEqual(classifyInput(`  ${value}\n`), { ok: true, kind: "contract", value });
+      assert.deepEqual(classifyInput(`  ${value}\n`), { ok: true, kind: "address", value });
     }
+    assert.equal(classifyInput("").message, "Paste an address or a transaction hash.");
   });
 
   test("a 64-hex hash is a transaction, in any letter case, normalized to lowercase", () => {
@@ -149,7 +163,9 @@ describe("contract mode against a fake Pharos Chain MCP", () => {
       totalSupply: { ok: true, raw: "20262168134328", formatted: "20,262,168.134328", display: "20,262,168.134328 USDC" },
     });
     assert.equal(body.message, null);
-    assert.deepEqual(body.source, { via: "Pharos Chain MCP", endpoint: server.url, server: "fake-pharos-mcp 0.0.0", toolCalls: 6 });
+    // The code check first, at the block, then the four reads at that same block: seven tool calls.
+    assert.deepEqual(body.source, { via: "Pharos Chain MCP", endpoint: server.url, server: "fake-pharos-mcp 0.0.0", toolCalls: 7 });
+    assert.deepEqual(toolLog(server).slice(2), [`get_code@${BLOCK_HEX}`, ...Array(4).fill(`eth_call@${BLOCK_HEX}`)]);
     assert.deepEqual(ethCalls(server).map((call) => call.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
     assert.deepEqual(ethCalls(server).map((call) => call.args.transaction.data).sort(), Object.values(SEL).sort());
   });
@@ -167,13 +183,27 @@ describe("contract mode against a fake Pharos Chain MCP", () => {
     assert.equal(body.message, null);
   });
 
-  test("no ERC-20 methods: the exact message, and no crash", async () => {
+  test("a contract whose four reads all fail on the server is partial, each failure shown: never called a non-token", async () => {
+    const failing = await startFakeInspectorMcp({ ...chain, contracts: { [USDC.toLowerCase()]: Object.fromEntries(Object.values(SEL).map((selector) => [selector, { rpcError: "header not found" }])) } });
+    try {
+      const { status, body, shareable } = await inspect(USDC, { endpoint: failing.url, retryDelayMs: 5 });
+      assert.equal(status, 200);
+      assert.deepEqual([body.kind, body.status, body.message], ["contract", "partial", null]);
+      for (const entry of Object.values(body.state)) assert.deepEqual(entry, { ok: false, reason: "failed: header not found" });
+      assert.equal(shareable, false, "a failed read is never shared from a cache");
+    } finally {
+      await failing.close();
+    }
+  });
+
+  test("a contract with code but no ERC-20 methods: still a contract, described without blame", async () => {
     const { status, body } = await run(NONE);
     assert.equal(status, 200);
-    assert.equal(body.status, "none");
+    assert.deepEqual([body.kind, body.status], ["contract", "none"]);
     assert.equal(body.message, NO_ERC20_MESSAGE);
-    assert.equal(NO_ERC20_MESSAGE, "Standard ERC-20 state methods were not available for this contract.");
-    for (const entry of Object.values(body.state)) assert.deepEqual(entry, { ok: false, reason: "no data returned" });
+    assert.equal(NO_ERC20_MESSAGE, "This contract's standard ERC-20 metadata (name, symbol, decimals and totalSupply) was not available. Many contracts are not ERC-20 tokens, so this does not mean anything is wrong with it.");
+    assert.doesNotMatch(NO_ERC20_MESSAGE, /invalid|unsafe|broken|scam/i);
+    for (const entry of Object.values(body.state)) assert.deepEqual(entry, { ok: false, reason: "reverted" });
   });
 
   test("decimals unavailable: totalSupply is shown raw, never with guessed decimals", async () => {
@@ -229,6 +259,142 @@ describe("contract mode against a fake Pharos Chain MCP", () => {
     assert.match(body.warnings.join(" "), /EIP-55 checksum/);
     const { body: lower } = await run(USDC.toLowerCase());
     assert.deepEqual(lower.warnings, []);
+  });
+});
+
+describe("address classification: get_code at the block decides what is read", () => {
+  let server;
+  before(async () => {
+    server = await startFakeInspectorMcp(chain);
+  });
+  after(async () => {
+    await server.close();
+  });
+  const run = async (value, options = {}) => {
+    server.calls.length = 0;
+    return inspect(value, { endpoint: server.url, retryDelayMs: 5, ...options });
+  };
+
+  test("no contract code: a wallet-like address with its native balance and nonce, and no eth_call", async () => {
+    const { status, body } = await run(WALLET);
+    assert.equal(status, 200);
+    assert.deepEqual([body.ok, body.kind, body.status], [true, "wallet-like", "success"]);
+    assert.equal(body.address, getAddress(WALLET));
+    assert.equal(body.blockNumber, "4242");
+    assert.deepEqual(body.network, { chainId: 1672, name: "Pharos Mainnet", nativeSymbol: "PROS" });
+    // PROS is the network's own currency: an amount in wei, shown with 18 decimals, never an ERC-20 balance.
+    assert.deepEqual(body.state, { balance: { ok: true, wei: "1500000000000000000", display: "1.5 PROS" }, nonce: { ok: true, value: "37" } });
+    assert.deepEqual([body.message, body.retriedAtSameBlock, body.warnings], [null, [], []]);
+    assert.equal(body.source.toolCalls, 5);
+    assert.deepEqual(toolLog(server), ["get_block_number", "get_chain_info", `get_code@${BLOCK_HEX}`, `get_balance@${BLOCK_HEX}`, `get_transaction_count@${BLOCK_HEX}`]);
+    assert.deepEqual(ethCalls(server), [], "no ERC-20 read for a confirmed wallet-like address");
+    assert.ok(!("name" in body.state) && !("totalSupply" in body.state));
+  });
+
+  test("a zero balance and no transactions sent are values, not failures", async () => {
+    const { body } = await run(EMPTY);
+    assert.deepEqual([body.kind, body.status], ["wallet-like", "success"]);
+    assert.deepEqual(body.state, { balance: { ok: true, wei: "0", display: "0 PROS" }, nonce: { ok: true, value: "0" } });
+    assert.deepEqual(ethCalls(server), []);
+  });
+
+  test("contract code: the four ERC-20 reads follow at the same block, and no balance or nonce read", async () => {
+    const { body } = await run(USDC);
+    assert.deepEqual([body.kind, body.status], ["contract", "success"]);
+    assert.deepEqual(toolLog(server).filter((call) => !call.startsWith("eth_call")), ["get_block_number", "get_chain_info", `get_code@${BLOCK_HEX}`]);
+    assert.equal(ethCalls(server).length, 4);
+  });
+
+  test("the code check failing: the type is not determined, nothing is guessed, and nothing else is read", async () => {
+    const { status, body } = await run(NO_CODE_CHECK);
+    assert.equal(status, 200);
+    assert.deepEqual([body.ok, body.kind, body.status], [true, "address", "undetermined"]);
+    assert.equal(body.reason, "get_code failed: upstream unavailable.");
+    assert.equal(body.message, UNDETERMINED_MESSAGE);
+    assert.match(UNDETERMINED_MESSAGE, /does not say whether this is a contract or a wallet-like address/);
+    assert.ok(!("state" in body), "no balance, nonce or ERC-20 value");
+    // One retry of the code check at the same block, then nothing else.
+    assert.deepEqual(body.retriedAtSameBlock, ["code"]);
+    assert.deepEqual(toolLog(server), ["get_block_number", "get_chain_info", `get_code@${BLOCK_HEX}`, `get_code@${BLOCK_HEX}`]);
+  });
+
+  test("a code check that fails once is retried at the same block; a wallet read that fails once is too", async () => {
+    const { body } = await run(FLAKY_CODE);
+    assert.deepEqual([body.kind, body.status], ["wallet-like", "success"]);
+    assert.deepEqual(body.retriedAtSameBlock, ["code", "balance"]);
+    assert.equal(body.state.balance.display, "2 PROS");
+    assert.ok(server.calls.every((call) => !("block" in call.args) || call.args.block === BLOCK_HEX), "every read at the one block");
+  });
+
+  test("a wallet read that keeps failing leaves that value unavailable, with the reason; the rest stays", async () => {
+    const failing = await startFakeInspectorMcp({ ...chain, accounts: { [WALLET]: { balance: { rpcError: "balance backend down" }, nonce: 37n } } });
+    try {
+      const { body } = await inspect(WALLET, { endpoint: failing.url, retryDelayMs: 5 });
+      assert.deepEqual([body.kind, body.status], ["wallet-like", "partial"]);
+      assert.deepEqual(body.state, { balance: { ok: false, reason: "failed: balance backend down" }, nonce: { ok: true, value: "37" } });
+      assert.deepEqual(ethCalls(failing), []);
+    } finally {
+      await failing.close();
+    }
+  });
+
+  test("a server without get_code: the type is not determined, said plainly; without balance or nonce tools, those are unavailable", async () => {
+    const noCode = await startFakeInspectorMcp({ ...chain, tools: ALL_TOOLS.filter((tool) => tool !== "get_code") });
+    const noAccount = await startFakeInspectorMcp({ ...chain, tools: ALL_TOOLS.filter((tool) => tool !== "get_balance" && tool !== "get_transaction_count") });
+    try {
+      const undetermined = (await inspect(WALLET, { endpoint: noCode.url, retryDelayMs: 5 })).body;
+      assert.deepEqual([undetermined.kind, undetermined.status, undetermined.reason], ["address", "undetermined", "This Pharos Chain MCP server does not offer get_code."]);
+      // A tool the server does not offer will not appear on a retry: the note says so, and does not ask for one.
+      assert.equal(undetermined.message, NO_CODE_TOOL_MESSAGE);
+      assert.doesNotMatch(NO_CODE_TOOL_MESSAGE, /again/);
+      assert.deepEqual(noCode.calls.map((call) => call.tool), ["get_block_number", "get_chain_info", "get_code"]);
+      const partial = (await inspect(WALLET, { endpoint: noAccount.url, retryDelayMs: 5 })).body;
+      assert.deepEqual([partial.kind, partial.status], ["wallet-like", "partial"]);
+      assert.deepEqual(partial.state, { balance: { ok: false, reason: "not offered by this Pharos Chain MCP server" }, nonce: { ok: false, reason: "not offered by this Pharos Chain MCP server" } });
+      assert.deepEqual(ethCalls(noAccount), []);
+    } finally {
+      await noCode.close();
+      await noAccount.close();
+    }
+  });
+
+  test("a malformed code answer is not read as code or as no code", async () => {
+    for (const code of [42, "0xabc", "6080", null]) {
+      const odd = await startFakeInspectorMcp({ ...chain, code: { [WALLET]: code === null ? { rpcError: "x" } : code } });
+      try {
+        const { body } = await inspect(WALLET, { endpoint: odd.url, retryDelayMs: 5 });
+        assert.deepEqual([body.kind, body.status], ["address", "undetermined"], String(code));
+        if (code !== null) assert.equal(body.reason, "get_code failed: its answer was not bytecode.");
+        assert.deepEqual(ethCalls(odd), []);
+      } finally {
+        await odd.close();
+      }
+    }
+  });
+
+  test("without a confirmed network, a balance stays in wei rather than taking a guessed currency name", async () => {
+    const unconfirmed = await startFakeInspectorMcp({ ...chain, chainInfo: "fail" });
+    try {
+      const { body } = await inspect(WALLET, { endpoint: unconfirmed.url, retryDelayMs: 5 });
+      assert.equal(body.network, null);
+      assert.deepEqual(body.state.balance, { ok: true, wei: "1500000000000000000", display: "1500000000000000000 wei" });
+      assert.match(body.warnings.join(" "), /network is not confirmed/);
+    } finally {
+      await unconfirmed.close();
+    }
+  });
+
+  test("a connection lost during the code check is an error (502), never a guess", async () => {
+    const hanging = await startFakeInspectorMcp({ ...chain, code: { [WALLET]: { hang: true } } });
+    try {
+      const { status, body } = await inspect(WALLET, { endpoint: hanging.url, timeoutMs: 300, retryDelayMs: 5 });
+      assert.equal(status, 502);
+      assert.equal(body.error.kind, "MCP_CONNECTION");
+      assert.equal(body.kind, "address");
+      assert.equal(body.error.hint, "Pharos Chain MCP could not be reached or did not answer in time. Try again in a moment.");
+    } finally {
+      await hanging.close();
+    }
   });
 });
 
@@ -406,6 +572,26 @@ describe("GET /api/inspect", () => {
     }
     assert.equal((await call(createHandler(server.url), "/api/inspect")).status, 400);
     assert.equal(server.httpRequests(), before, "no MCP request was made for invalid input");
+  });
+
+  test("only a complete answer is cached: never an undetermined address or a result in which a read failed", async () => {
+    const shared = "public, s-maxage=15, stale-while-revalidate=45";
+    const { status, headers, body } = await call(createHandler(server.url), `/api/inspect?q=${NO_CODE_CHECK}`);
+    assert.deepEqual([status, body.status, headers["cache-control"]], [200, "undetermined", "no-store"]);
+    const wallet = await call(createHandler(server.url), `/api/inspect?q=${WALLET}`);
+    assert.deepEqual([wallet.body.kind, wallet.headers["cache-control"]], ["wallet-like", shared]);
+    // A contract's own answers (a revert, no data) are facts, and may be shared; a read that failed is not.
+    const partial = await call(createHandler(server.url), `/api/inspect?q=${PARTIAL}`);
+    assert.deepEqual([partial.body.status, partial.headers["cache-control"]], ["partial", shared]);
+    const failing = await startFakeInspectorMcp({ ...chain, accounts: { [WALLET]: { balance: { rpcError: "balance backend down" }, nonce: 37n } } });
+    try {
+      const unread = await call(createHandler(failing.url, { retryDelayMs: 5 }), `/api/inspect?q=${WALLET}`);
+      assert.deepEqual([unread.body.status, unread.headers["cache-control"]], ["partial", "no-store"]);
+      const receipt = await call(createHandler(server.url), `/api/inspect?q=${hash("c")}`);
+      assert.deepEqual([receipt.body.status, receipt.headers["cache-control"]], ["partial", "no-store"], "a receipt that failed to load");
+    } finally {
+      await failing.close();
+    }
   });
 
   test("a good read is JSON, shared briefly; a not-found is never cached", async () => {

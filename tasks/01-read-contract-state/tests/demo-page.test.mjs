@@ -87,13 +87,15 @@ describe("what the page loads and calls", () => {
     assert.match(script("lab.js"), /for \(const name of \["href", "target", "rel", "aria-label"\]\) link\.removeAttribute\(name\);/);
   });
 
-  test("the block explorer is named once, in a meta tag, and every link to it is built from a checked value", () => {
-    // The explorer's address and name share one line: switching explorers is a one-line change.
-    assert.deepEqual(html.match(/<meta name="explorer" content="([^"]+)" data-name="([^"]+)">/).slice(1), ["https://pharos.socialscan.io", "SocialScan"]);
+  test("the block explorer is set once, in a meta tag, its links say no provider's name, and each is built from a checked value", () => {
+    // The explorer's address is on one line: switching explorers is a one-line change. Its links read
+    // "View in Explorer", since the configured explorer may redirect to another.
+    assert.deepEqual(html.match(/<meta name="explorer" content="([^"]+)">/).slice(1), ["https://pharos.socialscan.io"]);
     assert.equal(html.match(/socialscan\.io/g).length, 1, "the explorer host appears only in its meta tag");
-    assert.equal(html.match(/SocialScan/g).length, 1, "the explorer name appears only in its meta tag");
-    for (const text of [html, ...scripts.map(({ text }) => text)]) assert.doesNotMatch(text, /pharosscan/i, "no trace of the earlier explorer");
-    assert.match(script("lab.js"), /const name = explorer\.dataset\.name\?\.trim\(\);\n {4}const slot = link\.querySelector\("\.explorer-name"\);\n {4}if \(name && slot\) slot\.textContent = name;/);
+    for (const text of [html, ...scripts.map(({ text }) => text)]) {
+      assert.doesNotMatch(text, /SocialScan|PharosScan|View on |explorer-name|data-name/, "no provider's name on screen");
+    }
+    assert.doesNotMatch(script("lab.js"), /dataset\.name/);
     assert.match(script("lab.js"), /const explorer = document\.querySelector\('meta\[name="explorer"\]'\);\n {2}const href = explorerUrl\(explorer\?\.content, kind, value\);/);
     for (const link of html.match(/<a class="action"[^>]*>/g)) {
       assert.doesNotMatch(link, /\shref=/, "no explorer link exists until a value is checked");
@@ -738,7 +740,7 @@ describe("design system", () => {
     assert.deepEqual(lines(Infinity), [66]);
   });
 
-  test("a value's actions are one group under it: Copy and View on the explorer, words that change in place", () => {
+  test("a value's actions are one group under it: Copy and View in Explorer, words that change in place", () => {
     assert.equal(html.match(/<div class="actions">/g).length, 3, "the snapshot's contract, the inspector's template and the proof's block");
     const buttons = html.match(/<button class="action copy"[^>]*>[\s\S]*?<\/button>/g);
     assert.equal(buttons.length, 2, "the snapshot's button and the inspector's template");
@@ -747,7 +749,7 @@ describe("design system", () => {
     }
     const links = html.match(/<a class="action"[^>]*>[\s\S]*?<\/a>/g);
     assert.equal(links.length, 3);
-    for (const link of links) assert.match(link, /^<a class="action"(?: id="[\w-]+")? hidden><span>View on <span class="explorer-name">the explorer<\/span><\/span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false">/);
+    for (const link of links) assert.match(link, /^<a class="action"(?: id="[\w-]+")? hidden><span>View in Explorer<\/span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false">/);
     assert.match(html, /<template id="actions-template"><div class="actions"><button class="action copy"/);
     assert.match(pageJs, /wireCopy\(\$\("copy"\), \{ value: /);
     assert.match(inspectorJs, /wireCopy\(button, \{ value: \(\) => hex, /);
@@ -811,7 +813,10 @@ describe("accessible structure", () => {
     assert.match(html, /<html lang="en">/);
     assert.match(html, /<a class="skip" href="#snapshot">Skip to the snapshot<\/a>/);
     assert.match(html, /<section class="panel" id="snapshot" aria-labelledby="snapshot-h" tabindex="-1">/);
-    assert.match(html, /<label class="field-label" for="inspect-input">Contract address or transaction hash<\/label>/);
+    // An address, not a contract address: the Inspector reads wallet-like addresses too.
+    assert.match(html, /<label class="field-label" for="inspect-input">Address or transaction hash<\/label>/);
+    assert.match(html, /aria-live="polite">Accepts an address \(42 characters\) or a transaction hash \(66\)\.<\/p>/);
+    assert.doesNotMatch(html, /contract address \(42|Inspect another contract|Read any contract/);
     // Show details says whether it is open, and what it opens.
     assert.match(html, /<button class="btn-quiet explain-more" id="explain-more" type="button" aria-expanded="false" aria-controls="explain-details" hidden>Show details<\/button>\n {12}<ul class="explain-list" id="explain-details" hidden><\/ul>/);
     assert.match(html, /<input class="input" id="inspect-input"[^>]* aria-describedby="inspect-detected">/);

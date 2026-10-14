@@ -11,11 +11,11 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { extname } from "node:path";
 import { after, before, describe, test } from "node:test";
-import { encodeAbiParameters } from "viem";
+import { encodeAbiParameters, getAddress } from "viem";
 import { createHandler as explainHandler } from "../api/explain.js";
 import { createHandler as inspectHandler } from "../api/inspect.js";
 import { createHandler as stateHandler, readState } from "../api/state.js";
-import { startFakeDeepSeek } from "./fake-deepseek.mjs";
+import { SAMPLE_WALLET_ANSWER, startFakeDeepSeek } from "./fake-deepseek.mjs";
 import { startFakeInspectorMcp } from "./fake-inspector-mcp.mjs";
 
 let chromium = null;
@@ -39,6 +39,13 @@ const PENDING = `0x${"cd".repeat(32)}`;
 const REVERTED = `0x${"be".repeat(32)}`;
 const UNKNOWN = `0x${"ef".repeat(32)}`;
 const SENDER = "0x5b3d0f4e9a2c7d1b8e6f0a4c2d9e7b1a3c5f8d02";
+/** Addresses with no contract code: one holding 1.5 PROS with 37 transactions sent, one holding nothing. */
+const WALLET = "0x8ba1f109551bd432803012645ac136ddd64dba72";
+const EMPTY_WALLET = "0x00000000000000000000000000000000000000e1";
+/** A contract that is not an ERC-20 token: it has code, and every standard call reverts. */
+const NOT_ERC20 = "0x00000000000000000000000000000000000000c7";
+/** An address whose code check keeps failing. */
+const CODE_FAILS = "0x00000000000000000000000000000000000000b0";
 /** A long unbroken run that is not an 0x value, so only the page's own wrapping keeps it in bounds. */
 const LONG_RUN = `a9059cbb${"0".repeat(24)}${USDC.slice(2).toLowerCase()}`;
 /**
@@ -69,7 +76,10 @@ const CHAIN = {
   contracts: {
     [USDC.toLowerCase()]: { [SEL.name]: str("USDC"), [SEL.symbol]: str("USDC"), [SEL.decimals]: uint(6n), [SEL.totalSupply]: uint(20_271_995_983_588n), [SEL.paused]: bool(false) },
     [PARTIAL]: { [SEL.name]: str("Partial Token"), [SEL.symbol]: { revert: "execution reverted" }, [SEL.decimals]: "0x", [SEL.totalSupply]: uint(1_000_000n) },
+    [NOT_ERC20]: {},
   },
+  code: { [CODE_FAILS]: { rpcError: "upstream unavailable" } },
+  accounts: { [WALLET]: { balance: 1_500_000_000_000_000_000n, nonce: 37n } },
   transactions: {
     [MINED]: {
       tx: { hash: MINED, blockNumber: "0x1370a5e", from: SENDER, to: USDC, value: "0x0", gas: "0x1d4c0", nonce: "0x2a", input: "0xa9059cbb" },
@@ -1023,6 +1033,108 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await context.close();
   });
 
+  test("inspector: an address reads as a contract, a wallet-like address, or one whose type could not be determined", async () => {
+    const { context, page, errors } = await open({ width: 390 });
+    const state = () =>
+      page.evaluate(() => ({
+        word: document.getElementById("inspect-word").textContent,
+        detail: document.getElementById("inspect-detail").textContent.replace(/read \d\d:\d\d:\d\d$/, "read"),
+        explain: !document.getElementById("explain").hidden,
+        messages: [...document.querySelectorAll("#inspect-result .inspect-message")].map((message) => message.textContent),
+      }));
+
+    // Contract code: its type, then the four ERC-20 values as before.
+    await inspect(page, USDC, "success");
+    const contract = await rows(page);
+    assert.deepEqual(Object.keys(contract), ["Address", "Address type", "Block", "name", "symbol", "decimals", "totalSupply"]);
+    assert.equal(contract["Address type"], "Contract, Contract code at this block");
+
+    // No code: a wallet-like address, its native balance and the transactions it has sent. Nothing
+    // about tokens: there is no code to ask.
+    await inspect(page, WALLET, "success");
+    assert.equal(await page.textContent("#inspect-detected"), "Detected: address");
+    const wallet = await rows(page);
+    assert.deepEqual(Object.keys(wallet), ["Address", "Address type", "Block", "Native balance", "Transactions sent"]);
+    assert.ok(wallet.Address.startsWith(getAddress(WALLET)));
+    assert.deepEqual(
+      [wallet["Address type"], wallet.Block, wallet["Native balance"], wallet["Transactions sent"]],
+      ["Wallet-like address, No contract code at this block", "20,384,112, Pharos Mainnet", "1.5 PROS", "37, account nonce"],
+    );
+    assert.deepEqual(await state(), { word: "Complete", detail: "Wallet-like address · read", explain: true, messages: [] });
+    assert.doesNotMatch(await page.textContent("#inspect-result"), /ERC-20|symbol|decimals|totalSupply|Unavailable/);
+
+    // Nothing held and nothing sent are values, not failures.
+    await inspect(page, EMPTY_WALLET, "success");
+    const empty = await rows(page);
+    assert.deepEqual([empty["Native balance"], empty["Transactions sent"]], ["0 PROS", "0, account nonce"]);
+
+    // Code, but not an ERC-20: one row says the metadata was not available, and that this is no fault.
+    await inspect(page, NOT_ERC20, "partial");
+    const other = await rows(page);
+    assert.deepEqual(Object.keys(other), ["Address", "Address type", "Block", "ERC-20 metadata"]);
+    assert.deepEqual([other["Address type"], other["ERC-20 metadata"]], ["Contract, Contract code at this block", "Not available"]);
+    const otherState = await state();
+    assert.deepEqual([otherState.word, otherState.detail, otherState.explain], ["Partial", "Contract · read", true]);
+    assert.match(otherState.messages.join(" "), /Many contracts are not ERC-20 tokens, so this does not mean anything is wrong with it\.$/);
+
+    // The code check failing: no guess, nothing else read, and nothing to explain.
+    await inspect(page, CODE_FAILS, "partial");
+    const unknown = await rows(page);
+    assert.deepEqual(Object.keys(unknown), ["Address", "Address type", "Block"]);
+    assert.equal(unknown["Address type"], "Could not be determined, get_code failed: upstream unavailable.");
+    const unknownState = await state();
+    assert.deepEqual([unknownState.word, unknownState.detail, unknownState.explain], ["Partial", "Address · read", false]);
+    assert.match(unknownState.messages.join(" "), /does not say whether this is a contract or a wallet-like address/);
+    assert.doesNotMatch(await page.textContent("#inspect-result"), /Wallet-like address|Native balance|ERC-20/);
+
+    // Copy copies the exact address shown, as it is shown.
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+    await inspect(page, WALLET, "success");
+    await page.click("#inspect-result .copy");
+    const copied = await page.evaluate(async () => [await navigator.clipboard.readText(), document.querySelector("#inspect-result .hex").textContent, document.getElementById("inspect-copy-state").textContent]);
+    assert.deepEqual(copied, [getAddress(WALLET), getAddress(WALLET), "Address copied"]);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  test("a wallet-like address, explained for what it is, fits every width in both themes, beside the result on a desktop", async () => {
+    const asked = ai.requests.length;
+    for (const theme of ["dark", "light"]) {
+      for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [1280, 860]]) {
+        const where = `${theme} ${width}`;
+        const { context, page, errors } = await open({ width, height, theme });
+        await inspect(page, WALLET, "success");
+        await explainResult(page);
+        await page.click("#explain-more");
+        const shown = await page.evaluate(() => ({
+          paragraphs: [...document.querySelectorAll("#explain-text p")].map((paragraph) => paragraph.textContent),
+          details: [...document.querySelectorAll("#explain-details li")].map((item) => item.textContent),
+        }));
+        assert.deepEqual(shown.paragraphs, SAMPLE_WALLET_ANSWER.split("\n\nDetails")[0].split("\n\n"), where);
+        assert.doesNotMatch([...shown.paragraphs, ...shown.details].join(" "), /ERC-20|decimals|total supply|symbol|token/i, where);
+        const room = await overflow(page);
+        assert.ok(room.scroll <= 0 && room.box <= 0.5, `${where}: ${JSON.stringify(room)}`);
+        for (const { text, lines } of await hexLines(page)) {
+          assert.doesNotMatch(text, /\s/, `${where}: no spaces in ${text}`);
+          assert.ok(BALANCED[text.length]?.includes(lines.join("/")), `${where}: ${text} sits as ${lines.join("/")}`);
+        }
+        const layout = await page.evaluate(() => {
+          const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+          const facts = [...document.querySelectorAll("#inspect-result dl > div")].map((row) => [row.querySelector("dt").textContent, Math.round(row.getBoundingClientRect().top)]);
+          return { result: box("#inspect-result"), explain: box("#explain"), tops: Object.fromEntries(facts) };
+        });
+        if (width === 1280) assert.ok(layout.explain.left >= layout.result.right + 20, `${where}: the explanation sits beside the result`);
+        else assert.ok(layout.explain.top >= layout.result.bottom, `${where}: the explanation follows the result`);
+        // Where the result has room (a tablet), short rows pair up, as in every other result.
+        const paired = layout.tops["Address type"] === layout.tops.Block && layout.tops["Native balance"] === layout.tops["Transactions sent"];
+        assert.equal(paired, width === 768, `${where}: rows paired ${JSON.stringify(layout.tops)}`);
+        assert.deepEqual(errors, [], where);
+        await context.close();
+      }
+    }
+    assert.ok(ai.requests.length - asked <= 1, "one provider call at most: every other width came from the cache");
+  });
+
   test("the contract address: one exact value, one line where it fits, two halves on phones, its actions in a row under it", async () => {
     for (const [width, expected] of [[320, "22/20"], [360, "22/20"], [390, "42"], [412, "42"], [430, "42"], [768, "42"], [1024, "42"], [1280, "42"]]) {
       const { context, page } = await open({ width, height: 900 });
@@ -1033,7 +1145,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
         const [value, copy, link] = [r("address"), r("copy"), r("contract-explorer")];
         return { gap: Math.round(copy.top - value.bottom), left: Math.round(copy.left - value.left), row: Math.round(link.top - copy.top), after: Math.round(link.left - copy.right), heights: [Math.round(copy.height), Math.round(link.height)] };
       });
-      assert.deepEqual(layout, { gap: 10, left: 0, row: 0, after: 8, heights: [32, 32] }, `${width}: Copy, then View on SocialScan, in one row under the value`);
+      assert.deepEqual(layout, { gap: 10, left: 0, row: 0, after: 8, heights: [32, 32] }, `${width}: Copy, then View in Explorer, in one row under the value`);
       await context.close();
     }
   });
@@ -1074,23 +1186,27 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await refused.close();
   });
 
-  test("View on SocialScan: made only from a checked value, for the contract, its block, and an inspected address or transaction", async () => {
+  test("View in Explorer: no provider's name, made only from a checked value, for the contract, its block, and an inspected address or transaction", async () => {
     const { context, page, errors } = await open({ width: 390 });
     const link = (selector) => page.evaluate((s) => {
       const a = document.querySelector(s);
       return { href: a.getAttribute("href"), name: a.getAttribute("aria-label"), target: a.target, rel: a.rel, words: a.innerText.trim() };
     }, selector);
-    const shape = { target: "_blank", rel: "noopener noreferrer", words: "View on SocialScan" };
-    assert.deepEqual(await link("#contract-explorer"), { href: `${EXPLORER}/address/${USDC}`, name: "View on SocialScan: contract address, opens in a new tab", ...shape });
-    assert.deepEqual({ ...(await link("#block-explorer")), words: "View on SocialScan" }, { href: `${EXPLORER}/block/20384112`, name: "View on SocialScan: block 20,384,112, opens in a new tab", ...shape });
+    const shape = { target: "_blank", rel: "noopener noreferrer", words: "View in Explorer" };
+    assert.deepEqual(await link("#contract-explorer"), { href: `${EXPLORER}/address/${USDC}`, name: "View in Explorer: contract address, opens in a new tab", ...shape });
+    assert.deepEqual({ ...(await link("#block-explorer")), words: "View in Explorer" }, { href: `${EXPLORER}/block/20384112`, name: "View in Explorer: block 20,384,112, opens in a new tab", ...shape });
 
     await inspect(page, USDC, "success");
-    assert.deepEqual(await link("#inspect-result a"), { href: `${EXPLORER}/address/${USDC}`, name: "View on SocialScan: address, opens in a new tab", ...shape });
+    assert.deepEqual(await link("#inspect-result a"), { href: `${EXPLORER}/address/${USDC}`, name: "View in Explorer: address, opens in a new tab", ...shape });
     await inspect(page, PARTIAL, "partial");
     assert.equal((await link("#inspect-result a")).href.toLowerCase(), `${EXPLORER}/address/${PARTIAL}`);
     await inspect(page, MINED, "success");
-    assert.deepEqual(await link("#inspect-result a"), { href: `${EXPLORER}/tx/${MINED}`, name: "View on SocialScan: transaction hash, opens in a new tab", ...shape });
+    assert.deepEqual(await link("#inspect-result a"), { href: `${EXPLORER}/tx/${MINED}`, name: "View in Explorer: transaction hash, opens in a new tab", ...shape });
     // One per result, on the hash itself: never on Block, From or To.
+    assert.equal(await page.locator("#inspect-result a").count(), 1);
+    // A wallet-like address links to its address page, the same way, once.
+    await inspect(page, WALLET, "success");
+    assert.deepEqual(await link("#inspect-result a"), { href: `${EXPLORER}/address/${getAddress(WALLET)}`, name: "View in Explorer: address, opens in a new tab", ...shape });
     assert.equal(await page.locator("#inspect-result a").count(), 1);
     // Not found: nothing to show on the explorer, so no link; Copy stays.
     await inspect(page, UNKNOWN, "not-found");

@@ -8,7 +8,7 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#EFF1F2" media="(prefers-color-scheme: light)">
-<meta name="explorer" content="https://pharos.socialscan.io" data-name="SocialScan">
+<meta name="explorer" content="https://pharos.socialscan.io">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20rx='3'%20fill='%230113B7'/%3E%3Crect%20x='3'%20y='7'%20width='10'%20height='2'%20fill='%23FFFFFF'/%3E%3C/svg%3E">
 <script src="/assets/theme.js"></script>
 <link rel="preload" href="/assets/fonts/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
@@ -69,31 +69,31 @@
         <p class="label">Contract</p>
         <div class="hex-cell"><p class="hex" id="address" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p></div>
         <p class="sr" id="address-sr">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
-        <div class="actions"><button class="action copy" type="button" id="copy" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"> contract address</span></button><a class="action" id="contract-explorer" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div>
+        <div class="actions"><button class="action copy" type="button" id="copy" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"> contract address</span></button><a class="action" id="contract-explorer" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div>
         <span class="sr" id="copy-state" aria-live="polite"></span>
       </div>
     </section>
 
     <div class="hero-about">
       <p class="task-about">Reads <code>name</code>, <code>symbol</code>, <code>decimals</code>, <code>totalSupply</code> and the pause flag <code>paused</code> from Circle's USDC contract on Pharos Mainnet, all at one explicit block.</p>
-      <p class="jump"><a href="#inspector">Inspect another contract or transaction</a><a href="#proof">Proof &amp; technical details</a></p>
+      <p class="jump"><a href="#inspector">Inspect another address or transaction</a><a href="#proof">Proof &amp; technical details</a></p>
     </div>
   </section>
 
   <section class="section" id="inspector" aria-labelledby="inspect-h" data-inspect-api="/api/inspect" data-explain-api="/api/explain" data-inspect-state="idle">
     <div class="section-head">
       <h2 class="section-title" id="inspect-h">Pharos Inspector</h2>
-      <p class="section-lede">Read any contract or transaction on Pharos Mainnet through Chain MCP, separately from the snapshot above.</p>
+      <p class="section-lede">Read any address or transaction on Pharos Mainnet through Chain MCP, separately from the snapshot above.</p>
     </div>
     <div class="panel" id="inspect-panel">
       <div class="beacon" aria-hidden="true"></div>
       <form id="inspect-form" novalidate>
-        <label class="field-label" for="inspect-input">Contract address or transaction hash</label>
+        <label class="field-label" for="inspect-input">Address or transaction hash</label>
         <div class="field">
           <input class="input" id="inspect-input" name="q" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="go" maxlength="100" placeholder="0x…" aria-describedby="inspect-detected">
           <button class="btn btn-primary" id="inspect-submit" type="submit"><span class="swap"><span>Inspect</span><span>Inspecting…</span></span></button>
         </div>
-        <p class="field-hint" id="inspect-detected" aria-live="polite">Accepts a contract address (42 characters) or a transaction hash (66).</p>
+        <p class="field-hint" id="inspect-detected" aria-live="polite">Accepts an address (42 characters) or a transaction hash (66).</p>
         <p><button class="btn-quiet" type="button" id="inspect-example">Try it with the Circle USDC Contract</button></p>
       </form>
       <p class="status inspect-status" id="inspect-status" role="status" hidden><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="inspect-word"></span><span class="status-detail" id="inspect-detail"></span></p>
@@ -115,7 +115,7 @@
         </div>
       </div>
       <span class="sr" id="inspect-copy-state" aria-live="polite"></span>
-      <template id="actions-template"><div class="actions"><button class="action copy" type="button" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"></span></button><a class="action" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></template>
+      <template id="actions-template"><div class="actions"><button class="action copy" type="button" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"></span></button><a class="action" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></template>
     </div>
   </section>
 
@@ -156,7 +156,7 @@
               <div><dt>MCP server</dt><dd id="t-server">—</dd></div>
               <div><dt>Transport</dt><dd class="kv-text">MCP over Streamable HTTP, from this site's server. Each tool result arrives on its own request's stream; the optional standalone GET stream is not opened (client fix 1.0.2).</dd></div>
               <div><dt>Tool calls</dt><dd id="t-calls">—</dd></div>
-              <div><dt>Block</dt><dd><span id="t-block">—</span><div class="actions"><a class="action" id="block-explorer" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></dd></div>
+              <div><dt>Block</dt><dd><span id="t-block">—</span><div class="actions"><a class="action" id="block-explorer" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></dd></div>
               <div><dt>Selectors</dt><dd>name() 0x06fdde03 · symbol() 0x95d89b41 · decimals() 0x313ce567 · totalSupply() 0x18160ddd · paused() 0x5c975abb</dd></div>
               <div><dt>Raw supply</dt><dd id="t-raw">—</dd></div>
               <div><dt>Label</dt><dd class="kv-text" id="t-label">—</dd></div>

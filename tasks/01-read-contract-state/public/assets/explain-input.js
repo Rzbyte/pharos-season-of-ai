@@ -2,17 +2,23 @@
 // Inspector's result) and /api/explain (it accepts nothing else). Pure functions: no DOM, no network.
 //
 // The request is never free text and never the Inspector's whole answer. It is a fixed set of facts
-// from one successful inspection, and every message the Inspector wrote (a reason, a note, a warning)
-// becomes a code from a fixed list. The only text from the chain that can reach it is a token's name
-// and symbol and the network's native symbol, and those are treated as untrusted data.
+// from one successful inspection (a contract, a wallet-like address or a transaction), and every
+// message the Inspector wrote (a reason, a note, a warning) becomes a code from a fixed list. The only
+// text from the chain that can reach it is a token's name and symbol and the network's native symbol,
+// and those are treated as untrusted data.
 
 /** No valid request comes near this; a larger body is refused before it is parsed. */
 export const MAX_BODY_BYTES = 4096;
 
 export const FIELDS = ["name", "symbol", "decimals", "totalSupply"];
 
-/** Why a contract value is unavailable, from the Inspector's reasons. */
-export const REASONS = ["no-data", "wrong-type", "reverted", "failed", "unexpected-response"];
+/** Why a value is unavailable, from the Inspector's reasons. */
+export const REASONS = ["no-data", "wrong-type", "reverted", "failed", "unexpected-response", "not-offered"];
+
+/** What a wallet-like address's inspection reads, and may have retried: its code check, balance and nonce. */
+export const WALLET_READS = ["code", "balance", "nonce"];
+/** The values a wallet-like address's result shows. */
+const WALLET_VALUES = ["balance", "nonce"];
 
 /** The Inspector's notes and warnings, as codes. Anything else it says is left out of the request. */
 export const CONTRACT_NOTES = ["checksum-case", "network-unconfirmed", "chain-id-mismatch"];
@@ -22,6 +28,7 @@ export const TRANSACTION_STATUSES = ["success", "failed", "pending"];
 
 const CONTRACT_KEYS = ["kind", "chainId", "address", "blockNumber", "name", "symbol", "decimals", "totalSupply", "retried", "notes"];
 const TRANSACTION_KEYS = ["kind", "chainId", "nativeSymbol", "hash", "status", "blockNumber", "from", "to", "contractCreation", "createdContract", "valueWei", "gasLimit", "gasUsed", "logs", "notes"];
+const WALLET_KEYS = ["kind", "chainId", "nativeSymbol", "address", "blockNumber", "balance", "nonce", "retried", "notes"];
 
 /** Longest text accepted (in UTF-16 units), and the longest kept once cleaned (in characters). */
 const TEXT_LIMITS = { name: [120, 80], symbol: [60, 32], nativeSymbol: [24, 12] };
@@ -59,24 +66,43 @@ export function cleanText(value, max) {
 /** A successful inspection's request; null for "not found", a failure or anything unexpected. */
 export function explainPayload(result) {
   if (!isRecord(result) || result.ok !== true) return null;
-  if (result.kind === "contract") return contractPayload(result);
+  // Only a result with something to explain: at least one value read, or a contract that answered
+  // every standard call, just not as a token would. Reads that all failed leave nothing to explain.
+  const read = (fields) => fields.some((field) => result.state?.[field]?.ok === true);
+  if (result.kind === "contract") return result.status === "none" || read(FIELDS) ? contractPayload(result) : null;
+  if (result.kind === "wallet-like") return read(WALLET_VALUES) ? walletPayload(result) : null;
   if (result.kind === "transaction" && result.status !== "not-found" && isRecord(result.transaction)) return transactionPayload(result);
+  // An address whose type could not be determined has nothing to explain: nothing about it was read.
   return null;
 }
 
 function contractPayload(result) {
   const state = isRecord(result.state) ? result.state : {};
-  const read = (field, pick) => (state[field]?.ok === true ? pick(state[field]) : { unavailable: reasonCode(state[field]?.reason) });
   return {
     kind: "contract",
     chainId: result.network?.chainId ?? null,
     address: result.address,
     blockNumber: result.blockNumber,
-    name: read("name", (entry) => ({ value: entry.value })),
-    symbol: read("symbol", (entry) => ({ value: entry.value })),
-    decimals: read("decimals", (entry) => ({ value: entry.value })),
-    totalSupply: read("totalSupply", (entry) => ({ raw: entry.raw })),
+    name: readEntry(state, "name", (entry) => ({ value: entry.value })),
+    symbol: readEntry(state, "symbol", (entry) => ({ value: entry.value })),
+    decimals: readEntry(state, "decimals", (entry) => ({ value: entry.value })),
+    totalSupply: readEntry(state, "totalSupply", (entry) => ({ raw: entry.raw })),
     retried: Array.isArray(result.retriedAtSameBlock) ? result.retriedAtSameBlock.filter((field) => FIELDS.includes(field)) : [],
+    notes: noteCodes(result.warnings, CONTRACT_NOTES),
+  };
+}
+
+function walletPayload(result) {
+  const state = isRecord(result.state) ? result.state : {};
+  return {
+    kind: "wallet-like",
+    chainId: result.network?.chainId ?? null,
+    nativeSymbol: result.network?.nativeSymbol ?? null,
+    address: result.address,
+    blockNumber: result.blockNumber,
+    balance: readEntry(state, "balance", (entry) => ({ raw: entry.wei })),
+    nonce: readEntry(state, "nonce", (entry) => ({ value: entry.value })),
+    retried: Array.isArray(result.retriedAtSameBlock) ? result.retriedAtSameBlock.filter((name) => WALLET_READS.includes(name)) : [],
     notes: noteCodes(result.warnings, CONTRACT_NOTES),
   };
 }
@@ -103,6 +129,11 @@ function transactionPayload(result) {
   };
 }
 
+/** A value of the Inspector's state as a request entry: picked when it was read, its reason as a code when not. */
+function readEntry(state, field, pick) {
+  return state[field]?.ok === true ? pick(state[field]) : { unavailable: reasonCode(state[field]?.reason) };
+}
+
 /** The Inspector's reason for an unavailable value, as a code. */
 function reasonCode(reason) {
   const text = String(reason ?? "");
@@ -110,6 +141,7 @@ function reasonCode(reason) {
   if (text === "returned data of the wrong type") return "wrong-type";
   if (text === "reverted") return "reverted";
   if (text === "unexpected MCP response") return "unexpected-response";
+  if (text === "not offered by this Pharos Chain MCP server") return "not-offered";
   return "failed";
 }
 
@@ -131,7 +163,7 @@ function noteCode(text) {
 }
 
 // ---------------------------------------------------------------------------
-// The server: accept exactly one of the two shapes above, and return it normalized.
+// The server: accept exactly one of the three shapes above, and return it normalized.
 
 /**
  * Check a parsed request body. Returns { ok: true, payload } with addresses and hashes in lowercase,
@@ -142,8 +174,9 @@ export function validateExplainPayload(body) {
   try {
     if (!isRecord(body)) fail("The request must be one inspection result, as a JSON object.");
     if (body.kind === "contract") return { ok: true, payload: contractRequest(body) };
+    if (body.kind === "wallet-like") return { ok: true, payload: walletRequest(body) };
     if (body.kind === "transaction") return { ok: true, payload: transactionRequest(body) };
-    fail("Only a contract or a transaction inspection result can be explained.");
+    fail("Only a contract, a wallet-like address or a transaction inspection result can be explained.");
   } catch (error) {
     if (error instanceof RequestError) return { ok: false, message: error.message };
     throw error;
@@ -163,8 +196,23 @@ function contractRequest(body) {
       if (!Number.isInteger(value) || value < 0 || value > 255) fail("decimals.value must be a whole number from 0 to 255.");
       return value;
     }),
-    totalSupply: supply(body.totalSupply),
+    totalSupply: amount(body.totalSupply, "totalSupply"),
     retried: codeList(body.retried, FIELDS, "retried"),
+    notes: codeList(body.notes, CONTRACT_NOTES, "notes"),
+  };
+}
+
+function walletRequest(body) {
+  exactKeys(body, WALLET_KEYS, "The request");
+  return {
+    kind: "wallet-like",
+    chainId: chainId(body.chainId),
+    nativeSymbol: body.nativeSymbol === null ? null : text(body.nativeSymbol, "nativeSymbol"),
+    address: hex(body.address, ADDRESS, "address", false),
+    blockNumber: decimal(body.blockNumber, BLOCK, "blockNumber", false),
+    balance: amount(body.balance, "balance"),
+    nonce: entry(body.nonce, "nonce", (value) => decimal(value, UINT, "nonce.value", false)),
+    retried: codeList(body.retried, WALLET_READS, "retried"),
     notes: codeList(body.notes, CONTRACT_NOTES, "notes"),
   };
 }
@@ -206,12 +254,13 @@ function entry(value, field, check) {
   return { value: check(value.value) };
 }
 
-function supply(value) {
+/** An amount in its smallest unit: { raw } when it was read, { unavailable: reason } when it was not. */
+function amount(value, field) {
   if (isRecord(value) && "raw" in value) {
-    exactKeys(value, ["raw"], "totalSupply");
-    return { raw: decimal(value.raw, UINT, "totalSupply.raw", false) };
+    exactKeys(value, ["raw"], field);
+    return { raw: decimal(value.raw, UINT, `${field}.raw`, false) };
   }
-  return entry(value, "totalSupply", () => fail("totalSupply must be { raw } or { unavailable }."));
+  return entry(value, field, () => fail(`${field} must be { raw } or { unavailable }.`));
 }
 
 function text(value, field) {

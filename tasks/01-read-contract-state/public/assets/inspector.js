@@ -1,4 +1,6 @@
-// Pharos Inspector: inspect another Pharos object, a contract address or a transaction hash.
+// Pharos Inspector: inspect another Pharos object, an address or a transaction hash. An address comes
+// back as a contract (it has code: its ERC-20 values), a wallet-like address (no code: its native
+// balance and nonce), or, when the code check failed, an address whose type is not determined.
 //
 // Independent of the Task 01 page script: its own state (data-inspect-state on #inspector, never on
 // <body>), its own elements, and its own endpoint, GET /api/inspect, which reads Pharos server-side
@@ -24,8 +26,10 @@ const EXAMPLE_ADDRESS = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
 const WORD = { inspecting: "Inspecting", success: "Complete", partial: "Partial", "not-found": "Not found", error: "Error" };
 // Green only for a full result, amber for a partial one, red for an error; not found is neutral.
 const TONE = { inspecting: "active", success: "success", partial: "warning", "not-found": "neutral", error: "error" };
-const KIND = { contract: "Contract", transaction: "Transaction" };
-const DETECTED = { contract: "contract address", transaction: "transaction hash" };
+const KIND = { address: "Address", contract: "Contract", "wallet-like": "Wallet-like address", transaction: "Transaction" };
+const DETECTED = { address: "address", transaction: "transaction hash" };
+/** What the code check found. A no-code address is "wallet-like": no code proves nothing about who controls it. */
+const ADDRESS_TYPE = { contract: ["Contract", "Contract code at this block"], "wallet-like": ["Wallet-like address", "No contract code at this block"] };
 const TX_STATUS = { success: "Success", failed: "Failed (reverted)", pending: "Pending" };
 /** A transaction status that needs attention says so in its words and its tone; success takes none. */
 const TX_TONE = { failed: "error", pending: "warning" };
@@ -55,7 +59,7 @@ function describeInput() {
   const typing = /^0x[0-9a-fA-F]*$/.test(value) && value.length < 66;
   input.removeAttribute("aria-invalid");
   detected.classList.remove("invalid");
-  if (value === "") setText(detected, "Accepts a contract address (42 characters) or a transaction hash (66).");
+  if (value === "") setText(detected, "Accepts an address (42 characters) or a transaction hash (66).");
   else if (check.ok) setText(detected, `Detected: ${DETECTED[check.kind]}`);
   else if (typing) setText(detected, `${value.length - 2} hex characters so far: 40 for an address, 64 for a transaction hash.`);
   else setText(detected, check.message);
@@ -94,7 +98,8 @@ async function run() {
     try {
       render(data);
       shown = data;
-      report(data.status === "none" ? "partial" : data.status, `${KIND[data.kind]} · read ${clockTime(data.fetchedAt)}`);
+      // No ERC-20 value at all, or an address whose type is not determined: a partial result.
+      report(data.status === "none" || data.status === "undetermined" ? "partial" : data.status, `${KIND[data.kind]} · read ${clockTime(data.fetchedAt)}`);
       announce(data);
     } catch {
       fail("The inspector sent a result this page could not read.");
@@ -152,25 +157,43 @@ function setBusy(on) {
 // Rendering: rows of text, built with createElement and textContent only.
 
 function render(data) {
-  const blocks = data.kind === "contract" ? contractBlocks(data) : transactionBlocks(data);
+  const blocks = data.kind === "transaction" ? transactionBlocks(data) : addressBlocks(data);
   const notes = [...(data.message ? [data.message] : []), ...(data.notes ?? []), ...(data.warnings ?? [])].map((text) => element("p", "inspect-message", text));
   result.replaceChildren(...blocks, ...notes);
   result.hidden = false;
 }
 
-function contractBlocks(data) {
-  const summary = rows("rows", [
+/** Any address: what it is and at which block, then what was read for that type. */
+function addressBlocks(data) {
+  const summary = rows("rows pairs", [
     ["Address", data.address, { hex: true, copy: "address", explorer: "address" }],
+    ["Address type", ADDRESS_TYPE[data.kind] ?? [{ unavailable: true, text: "Could not be determined" }, data.reason]],
     ["Block", [groupDigits(data.blockNumber), networkName(data.network)]],
   ]);
+  if (data.kind === "contract") return [summary, contractState(data)];
+  if (data.kind === "wallet-like") return [summary, walletState(data)];
+  return [summary];
+}
+
+function contractState(data) {
+  // Not one standard value: one row says so, instead of four "Unavailable" rows that look broken.
+  if (data.status === "none") return rows("rows", [["ERC-20 metadata", [{ unavailable: true, text: "Not available" }]]]);
   const { name, symbol, decimals, totalSupply } = data.state;
-  const state = rows("rows keys-code pairs", [
+  return rows("rows keys-code pairs", [
     ["name", name.ok ? name.value : missing(name)],
     ["symbol", symbol.ok ? symbol.value : missing(symbol)],
     ["decimals", decimals.ok ? String(decimals.value) : missing(decimals)],
     ["totalSupply", totalSupply.ok ? supplyText(totalSupply) : missing(totalSupply)],
   ]);
-  return [summary, state];
+}
+
+/** A wallet-like address: its native balance (PROS, not a token) and how many transactions it has sent. */
+function walletState(data) {
+  const { balance, nonce } = data.state;
+  return rows("rows pairs", [
+    ["Native balance", balance.ok ? balance.display : missing(balance)],
+    ["Transactions sent", nonce.ok ? [groupDigits(nonce.value), "account nonce"] : missing(nonce)],
+  ]);
 }
 
 function transactionBlocks(data) {
@@ -203,9 +226,9 @@ function gas(tx) {
 }
 
 /**
- * A ruled list of key/value rows. A value is text, or [text, secondary line]; with { hex: true }
+ * A ruled list of key/value rows. A value is text, or [text] or [text, secondary line]; with { hex: true }
  * the value (or the secondary line) is an address or hash, shown whole (renderHex); with { copy }
- * its actions follow it: Copy, and View on the explorer with { explorer }.
+ * its actions follow it: Copy, and View in Explorer with { explorer }.
  */
 function rows(className, entries) {
   const list = element("dl", className);
@@ -218,9 +241,11 @@ function rows(className, entries) {
       const [main, sub] = value;
       if (main.unavailable) dd.classList.add("unavailable");
       dd.append(element("span", "", main.unavailable ? main.text : main));
-      // Two values, read aloud with a pause between them ("20,384,350, Pharos Mainnet"); shown as two lines.
-      dd.append(element("span", "sr", ", "));
-      dd.append(options.hex ? hexValue(sub, "hex-sub") : element("span", "sub", sub));
+      if (sub !== undefined) {
+        // Two values, read aloud with a pause between them ("20,384,350, Pharos Mainnet"); shown as two lines.
+        dd.append(element("span", "sr", ", "));
+        dd.append(options.hex ? hexValue(sub, "hex-sub") : element("span", "sub", sub));
+      }
     } else if (options.hex) {
       dd.append(...(options.copy ? withActions(value, options) : [hexValue(value)]));
     } else {
@@ -267,7 +292,7 @@ function networkName(network) {
 }
 
 /**
- * The value, then its actions in one row under it: Copy, and View on the explorer when `explorer`
+ * The value, then its actions in one row under it: Copy, and View in Explorer when `explorer`
  * names the explorer page for it ("address" or "tx"). The explorer link is made only from the
  * well-formed value (linkExplorer); otherwise it is left out.
  */
@@ -301,7 +326,7 @@ function element(tag, className, text) {
 }
 
 function subjectOf(data) {
-  return data.kind === "contract" ? data.address : data.hash;
+  return data.kind === "transaction" ? data.hash : data.address;
 }
 
 /** "0xC879…1815": enough to recognise, short enough for one status line. */

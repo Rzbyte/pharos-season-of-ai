@@ -14,9 +14,10 @@ export function createHandler(endpoint = HOSTED_ENDPOINT, options = {}) {
       return;
     }
     const query = new URL(req.url ?? "/", "http://localhost").searchParams.get("q");
-    const { status, body } = await inspect(query, { ...options, endpoint });
-    // A good read may be shared briefly, as /api/state does; a miss or a failure is never cached.
-    const shareable = status === 200 && body.status !== "not-found";
+    const { status, body, shareable: complete } = await inspect(query, { ...options, endpoint });
+    // A complete read may be shared briefly, as /api/state does. A miss, an address whose type could
+    // not be determined, a result in which a read failed, or a failure is never cached.
+    const shareable = status === 200 && complete === true;
     res.writeHead(status, {
       "content-type": "application/json; charset=utf-8",
       "cache-control": shareable ? "public, s-maxage=15, stale-while-revalidate=45" : "no-store",

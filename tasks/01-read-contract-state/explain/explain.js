@@ -16,7 +16,7 @@ import { cleanText, FIELDS, HIDDEN, validateExplainPayload } from "../public/ass
 export const PROVIDER_URL = "https://api.deepseek.com/chat/completions";
 export const MODEL = "deepseek-flash";
 /** Changing the instructions changes every cache key, so no answer to old instructions is reused. */
-export const PROMPT_VERSION = "explain-2";
+export const PROMPT_VERSION = "explain-3";
 
 /** A short answer: about 200 words of output at most, and a stop after 12 s. */
 export const PROVIDER_TIMEOUT_MS = 12_000;
@@ -56,8 +56,10 @@ Get these right:
 - Gas used is how much computation the transaction consumed, and the gas limit is the most the sender allowed. Gas is not a fee: the fee also depends on the gas price, which the data does not include, so never state or estimate a fee.
 - The recipient ("to") may be a wallet or a contract; the data does not say which.
 - Whether the recipient is the sender is given as "recipientIsSender". Never judge it from the shortened addresses: two different addresses can look alike when shortened.
-- The native currency label (such as PROS) is network information used to show the value. It is not a token from a contract.
+- The native currency label (such as PROS) is network information used to show a value or a balance. It is not a token from a contract.
 - Log entries are records the transaction emitted; their contents are not in the data.
+- An address with no contract code at the inspected block is wallet-like: say "wallet-like", never who owns or controls it, and never call it a person's, a user's or an exchange's wallet. Token names, symbols, decimals and total supply do not apply to it.
+- "transactionsSent" is the address's nonce: how many transactions it has sent. Transactions it received are not counted.
 - Decimals tell where the decimal point goes: the total supply is stored in the smallest unit and divided by 10 to the power of decimals.
 
 How to write:
@@ -66,12 +68,16 @@ How to write:
 - Plain text only: no Markdown, no headings, no links.
 - Only if there is useful extra context that does not repeat the result, end with a line containing only "Details", then at most 3 short lines that start with "- ".`;
 
+/** Reasons that mean the contract itself answered the call, just not with a usable value. */
+const ANSWERED = ["no-data", "wrong-type", "reverted"];
+
 const REASON_TEXT = {
   "no-data": "the call returned no data",
   "wrong-type": "the call returned data of the wrong type",
   reverted: "the contract rejected the call (it reverted)",
   failed: "the read failed",
   "unexpected-response": "the server answered in an unexpected way",
+  "not-offered": "this Pharos Chain MCP server does not offer that read",
 };
 
 const NOTE_TEXT = {
@@ -97,21 +103,24 @@ const DECIMALS_OF_NATIVE_TOKEN = 18;
 
 /** The facts of one validated request, as the model reads them. Built only from that request. */
 export function inspectionFacts(payload) {
-  return payload.kind === "contract" ? contractFacts(payload) : transactionFacts(payload);
+  if (payload.kind === "contract") return contractFacts(payload);
+  return payload.kind === "wallet-like" ? walletFacts(payload) : transactionFacts(payload);
 }
 
 function contractFacts(p) {
   const read = FIELDS.filter((field) => !("unavailable" in p[field]));
   const decimals = "value" in p.decimals ? p.decimals.value : null;
   return {
-    inspection: "A contract address, asked the four standard token (ERC-20) questions: name, symbol, decimals and total supply.",
+    inspection: "A contract address (it has contract code at the inspected block), asked the four standard token (ERC-20) questions: name, symbol, decimals and total supply.",
     network: network(p.chainId),
     block: p.blockNumber,
     outcome:
       read.length === FIELDS.length
         ? "All four values were read at this block."
         : read.length === 0
-          ? "None of the four values could be read: this address did not answer the standard token questions at this block."
+          ? FIELDS.every((field) => ANSWERED.includes(p[field].unavailable))
+            ? "None of the four values could be read: this contract did not answer the standard token questions at this block. Many contracts are not tokens."
+            : "None of the four values could be read: the reads failed, so the data does not show whether this contract answers the standard token questions."
           : `${read.length} of the four values were read at this block.`,
     untrustedText: { name: "value" in p.name ? p.name.value : null, symbol: "value" in p.symbol ? p.symbol.value : null },
     decimals,
@@ -120,6 +129,19 @@ function contractFacts(p) {
         ? { inSmallestUnits: p.totalSupply.raw, withDecimalsApplied: decimals === null ? null : formatTokenAmount(BigInt(p.totalSupply.raw), decimals) }
         : null,
     unavailable: Object.fromEntries(FIELDS.filter((field) => "unavailable" in p[field]).map((field) => [field, REASON_TEXT[p[field].unavailable]])),
+    retriedOnceAtTheSameBlock: p.retried,
+    notes: p.notes.map((code) => NOTE_TEXT[code]),
+  };
+}
+
+function walletFacts(p) {
+  // No full address: the reader sees it in the result. Nothing about who controls it: no code does not show that.
+  return {
+    inspection: "An address checked for contract code at one block: it has none, so it is a wallet-like address. The data does not show who controls it.",
+    network: network(p.chainId, p.nativeSymbol),
+    block: p.blockNumber,
+    nativeBalance: "raw" in p.balance ? { inSmallestUnits: p.balance.raw, inNativeCurrency: formatTokenAmount(BigInt(p.balance.raw), DECIMALS_OF_NATIVE_TOKEN) } : { unavailable: REASON_TEXT[p.balance.unavailable] },
+    transactionsSent: "value" in p.nonce ? p.nonce.value : { unavailable: REASON_TEXT[p.nonce.unavailable] },
     retriedOnceAtTheSameBlock: p.retried,
     notes: p.notes.map((code) => NOTE_TEXT[code]),
   };
@@ -285,7 +307,7 @@ const DETAILS = /^(?:more )?details$/i;
  * quoted; `forbidden` is text that must never appear. Throws UnusableOutputError when nothing usable
  * is left or the answer repeats its instructions.
  */
-export function shapeExplanation(raw, { untrusted = [], forbidden = [], truncated = false, transaction = null } = {}) {
+export function shapeExplanation(raw, { untrusted = [], forbidden = [], truncated = false, transaction = null, wallet = null } = {}) {
   const lines = String(raw).replace(/\r\n?/g, "\n").split("\n").map((line) => line.replace(HIDDEN, ""));
   const flat = squash(lines.join("\n"));
   if (forbidden.some((piece) => piece && flat.includes(squash(piece)))) throw new UnusableOutputError("the answer repeats its instructions");
@@ -319,7 +341,7 @@ export function shapeExplanation(raw, { untrusted = [], forbidden = [], truncate
     blank = false;
     const content = line.replace(ITEM, "");
     if (restatesField(content)) continue;
-    const text = checkSentences(content.replace(LINK, "[link removed]").replace(LONG_HEX, shortHex), untrusted, transaction);
+    const text = checkSentences(content.replace(LINK, "[link removed]").replace(LONG_HEX, shortHex), untrusted, { transaction, wallet });
     if (text === "") continue;
     if (inDetails) details.push(text);
     else if (item) {
@@ -358,9 +380,10 @@ function restatesField(content) {
 
 /**
  * Each sentence that claims what the data cannot prove becomes the one sentence that says so; in a
- * transaction's explanation, wording the data cannot support is corrected too (checkTransaction).
+ * transaction's or a wallet-like address's explanation, wording its data cannot support is corrected
+ * too (checkTransaction, checkWallet).
  */
-function checkSentences(line, untrusted, transaction) {
+function checkSentences(line, untrusted, { transaction, wallet }) {
   const sentences = line.split(/(?<=[.!?])\s+/);
   const kept = [];
   for (const sentence of sentences) {
@@ -368,7 +391,7 @@ function checkSentences(line, untrusted, transaction) {
     let probe = sentence;
     for (const quote of untrusted) probe = probe.replace(new RegExp(escapeRegExp(quote), "gi"), " ");
     const claims = CLAIM.test(probe) && !(NEGATION.test(probe) && DETERMINATION.test(probe));
-    const next = claims ? UNDETERMINED : transaction ? checkTransaction(sentence.trim(), transaction) : sentence.trim();
+    const next = claims ? UNDETERMINED : transaction ? checkTransaction(sentence.trim(), transaction) : wallet ? checkWallet(sentence.trim(), wallet) : sentence.trim();
     if (next && kept.at(-1) !== next) kept.push(next);
   }
   return kept.join(" ");
@@ -388,7 +411,7 @@ function checkTransaction(sentence, { status, nativeSymbol, contractCreation = f
     return "Gas used shows how much computation the transaction consumed.";
   }
   const change = sentence.search(CHANGED);
-  if (change !== -1 && !/\b(?:not|never|whether|cannot)\b|n't\b/i.test(sentence.slice(0, change))) return STATUS_SENTENCE[status] ?? UNDETERMINED;
+  if (change !== -1 && !CLAUSE_HEDGE.test(clauseBefore(sentence, change))) return STATUS_SENTENCE[status] ?? UNDETERMINED;
   if (nativeSymbol && new RegExp(`\\b${escapeRegExp(nativeSymbol)}\\b`).test(sentence) && /\btokens?\b/i.test(sentence) && !negated(sentence, "tokens?")) {
     return `${nativeSymbol} is the network's native currency label, used to show the value.`;
   }
@@ -399,6 +422,44 @@ function checkTransaction(sentence, { status, nativeSymbol, contractCreation = f
     }
   }
   return sentence;
+}
+
+/**
+ * What a wallet-like address's data supports: no contract code at the block, a native balance and a
+ * count of sent transactions. Token metadata does not apply, so a sentence about it is dropped; the
+ * native currency is not a token; who owns, controls or uses the address, or who it is, is not in the
+ * data; and the address is wallet-like, never simply "a wallet". A rule stands down only when the
+ * claim's own clause negates or questions it ("the data does not show who it belongs to").
+ */
+function checkWallet(sentence, { nativeSymbol }) {
+  const text = sentence.replace(/[\u2018\u2019]/g, "'");
+  if (TOKEN_METADATA.test(text)) return "";
+  if (nativeSymbol && new RegExp(`\\b${escapeRegExp(nativeSymbol)}\\b`).test(text) && /\btokens?\b/i.test(text) && !negated(text, "tokens?")) {
+    return `${nativeSymbol} is the network's native currency, not a token from a contract.`;
+  }
+  for (const claim of [OWNERSHIP, IDENTITY]) {
+    const at = text.search(claim);
+    if (at !== -1 && !CLAUSE_HEDGE.test(clauseBefore(text, at))) return "The inspection does not show who controls this address.";
+  }
+  // "A wallet" says more than the data does: it is wallet-like. A hedged mention ("it could be a wallet") stays.
+  return sentence.replace(/\b(this|that|the|a)\s+wallet\b(?![-\u2010\u2011]like)/gi, (phrase, article, at) =>
+    CLAUSE_HEDGE.test(clauseBefore(sentence, at)) || /\b(?:may|might|could|either)\b/i.test(clauseBefore(sentence, at)) ? phrase : `${article} wallet-like address`,
+  );
+}
+
+/** Token metadata, which a wallet-like address does not have. The native currency's own decimals are fine. */
+const TOKEN_METADATA = /\b(?:total\s*supply|token\s+(?:name|symbol|metadata|decimals|standard)|erc-?20\s+(?:metadata|name|symbol|decimals|methods?|functions?|calls?)|name,?\s+symbol|name\s+(?:and|or)\s+symbol|symbol\s+(?:and|or)\s+decimals)\b/i;
+/** Who owns, controls or uses an address. "The 1.5 PROS belongs to this address" is a balance, not an owner. */
+const OWNERSHIP = /\b(?:owned|controlled|operated|managed|used)\s+by\b|\b(?:held\s+by|belongs?\s+to)\s+(?!(?:this|the)\s+address\b|it\b)|\b(?:its|the|an?)\s+owner\b|\bowner\s+of\b/i;
+/** Who an address is: someone's wallet, a kind of wallet that names its holder, or a kind of holder. */
+const IDENTITY =
+  /\b(?!(?:it|that|this|there|here|what|who)'s\b)\w+'s\s+(?:[\w-]+\s+)?wallet\b|\b(?:personal|hot|cold|exchange|user|custodial|team|treasury|deployer|whale|trading|company|individual|private)\s+wallet\b|\b(?:is|looks\s+like|appears\s+to\s+be|seems\s+to\s+be|probably|likely)\s+(?:a|an|the)\s+(?:exchange|whale|bot|person|individual|company|team|user|trader|scammer|hacker)\b/i;
+/** A negation or a question in a claim's own clause: "does not show which changes took effect". */
+const CLAUSE_HEDGE = /\b(?:not|never|cannot|whether)\b|n't\b/i;
+
+/** The clause a phrase at `at` belongs to, up to the phrase: back to the last , ; : or "and", "but", "while", "although". */
+function clauseBefore(sentence, at) {
+  return sentence.slice(0, at).split(/[,;:]|\s(?:and|but|while|although|though|yet|so)\s/i).at(-1);
 }
 
 /** Words that would say the data shows what the transaction changed. */
@@ -547,7 +608,8 @@ export function createExplainer(options = {}) {
     try {
       const { content, truncated } = await callProvider({ apiKey, url: providerUrl, model, messages: buildMessages(payload, tag), timeoutMs, fetchImpl });
       const transaction = payload.kind === "transaction" ? { status: payload.status, nativeSymbol: payload.nativeSymbol, contractCreation: payload.contractCreation } : null;
-      const shaped = shapeExplanation(content, { untrusted, forbidden: [...CANARIES, tag, apiKey], truncated, transaction });
+      const wallet = payload.kind === "wallet-like" ? { nativeSymbol: payload.nativeSymbol } : null;
+      const shaped = shapeExplanation(content, { untrusted, forbidden: [...CANARIES, tag, apiKey], truncated, transaction, wallet });
       const explanation = { ...shaped, words: wordCount(shaped) };
       remember(key, explanation);
       return reply(200, { ok: true, explanation, cached: false });

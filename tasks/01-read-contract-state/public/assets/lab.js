@@ -188,20 +188,17 @@ export function wireCopy(button, { value, shown, live, what }) {
 }
 
 /**
- * Point an explorer link at one value, on the explorer the page sets in <meta name="explorer">: its
- * address in `content`, its name in `data-name`, both on that one line. In the page the link is a
- * hidden placeholder <a> with no href. Once explorerUrl makes a valid link, the link says the
- * explorer's name, opens in a new tab with no handle on this page and no referrer, and its accessible
- * name is its visible words, then what it shows and that it opens a new tab. Otherwise it goes back
- * to a hidden placeholder.
+ * Point an explorer link at one value, on the explorer whose address the page sets in one place,
+ * <meta name="explorer" content>. In the page the link is a hidden placeholder <a> with no href,
+ * reading "View in Explorer": no explorer's name, since the configured one may redirect to another.
+ * Once explorerUrl makes a valid link, it opens in a new tab with no handle on this page and no
+ * referrer, and its accessible name is its visible words, then what it shows and that it opens a new
+ * tab. Otherwise it goes back to a hidden placeholder.
  */
 export function linkExplorer(link, kind, value, what) {
   const explorer = document.querySelector('meta[name="explorer"]');
   const href = explorerUrl(explorer?.content, kind, value);
   if (href) {
-    const name = explorer.dataset.name?.trim();
-    const slot = link.querySelector(".explorer-name");
-    if (name && slot) slot.textContent = name;
     link.href = href;
     link.target = "_blank";
     link.rel = "noopener noreferrer";

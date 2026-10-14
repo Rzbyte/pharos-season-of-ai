@@ -1,4 +1,7 @@
 // Pharos Inspector, server side: read one Pharos object a visitor pasted, through Pharos Chain MCP.
+// An address is first checked for contract code (get_code) at one explicit block, and that decides
+// what is read: a contract's four standard ERC-20 values, or a wallet-like address's native balance
+// and nonce. A transaction hash is looked up with its receipt.
 //
 // Deliberately separate from the Task 01 proof: /api/state and the CLI behind it are untouched,
 // and nothing here can change what they read or report. The proven pieces are reused as they are,
@@ -22,7 +25,12 @@ export const INSPECT_DEADLINE_MS = 45_000;
 /** Pause before re-reading a value whose first read failed transiently, at the same block. */
 export const RETRY_DELAY_MS = 750;
 
-export const NO_ERC20_MESSAGE = "Standard ERC-20 state methods were not available for this contract.";
+export const NO_ERC20_MESSAGE = "This contract's standard ERC-20 metadata (name, symbol, decimals and totalSupply) was not available. Many contracts are not ERC-20 tokens, so this does not mean anything is wrong with it.";
+export const UNDETERMINED_MESSAGE = "The contract-code check through Pharos Chain MCP failed, so this page does not say whether this is a contract or a wallet-like address, and nothing else was read. Inspect it again in a moment.";
+export const NO_CODE_TOOL_MESSAGE = "This Pharos Chain MCP server does not offer get_code, so this page cannot tell a contract from a wallet-like address, and nothing else was read.";
+
+/** Set on a result in which a read failed in a way a later try could fix: it is never shared from a cache. */
+const RETRYABLE = Symbol("a read failed and may succeed later");
 
 const FIELDS = ["name", "symbol", "decimals", "totalSupply"];
 const DECODERS = { name: decodeStringReturn, symbol: decodeStringReturn, decimals: decodeDecimalsReturn, totalSupply: decodeUint256Return };
@@ -42,11 +50,15 @@ export async function inspect(raw, options = {}) {
   try {
     const work = (async () => {
       await mcp.connect();
-      return input.kind === "contract" ? await inspectContract(mcp, input.value, { retryDelayMs }) : await inspectTransaction(mcp, input.value);
+      return input.kind === "address" ? await inspectAddress(mcp, input.value, { retryDelayMs }) : await inspectTransaction(mcp, input.value);
     })();
     const result = await withDeadline(work, deadlineMs);
     const source = { via: "Pharos Chain MCP", endpoint: new URL(endpoint).href, server: mcp.serverLabel ?? null, toolCalls: mcp.toolCalls };
-    return { status: 200, body: { ok: true, ...result, source, elapsedMs: Math.round(performance.now() - started), ...stamp() } };
+    // Only a complete answer may be shared from a cache: never a miss, an undetermined address or a
+    // result in which a read failed, so inspecting again really reads again.
+    const { [RETRYABLE]: retryable = false, ...facts } = result;
+    const shareable = !retryable && result.status !== "not-found" && result.status !== "undetermined";
+    return { status: 200, shareable, body: { ok: true, ...facts, source, elapsedMs: Math.round(performance.now() - started), ...stamp() } };
   } catch (error) {
     const failure = describeError(error, input.kind);
     return { status: failure.kind === "UNEXPECTED" ? 500 : 502, body: { ok: false, kind: input.kind, error: failure, ...stamp() } };
@@ -56,10 +68,19 @@ export async function inspect(raw, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Contract mode: the four standard ERC-20 reads, all pinned to one explicit block.
+// Address mode: whether the address has contract code at one explicit block decides what is read.
 
-/** Read name, symbol, decimals and totalSupply at one block. Any subset may succeed. */
-export async function inspectContract(mcp, value, { retryDelayMs = RETRY_DELAY_MS } = {}) {
+/**
+ * Inspect an address at one block. get_code decides, and nothing is guessed:
+ *   contract code  -> a contract: the four standard ERC-20 reads, as before
+ *   no code        -> a wallet-like address: its native balance and nonce, and no eth_call at all
+ *   check failed   -> the type is not determined, and nothing else is read: four ERC-20 reads of an
+ *                     address that may hold no code would only repeat the misleading "unavailable"
+ *                     rows this check exists to avoid, and the user can simply inspect again.
+ * Every read is pinned to the block from get_block_number; a transient failure gets one more try at
+ * that same block, never at "latest".
+ */
+export async function inspectAddress(mcp, value, { retryDelayMs = RETRY_DELAY_MS } = {}) {
   const address = getAddress(value);
   const warnings = [];
   const hex = value.slice(2);
@@ -70,15 +91,35 @@ export async function inspectContract(mcp, value, { retryDelayMs = RETRY_DELAY_M
   const [blockPayload, network] = await Promise.all([mcp.call("get_block_number", {}), readNetwork(mcp, warnings)]);
   const blockNumber = parseBlockNumber(blockPayload);
   const block = toHex(blockNumber);
+  const base = { address, blockNumber: blockNumber.toString(), network };
 
-  const outcomes = await readFields(mcp, address, block, FIELDS);
-  // A transient failure (a node a block behind, say) gets one more try at the SAME block, never at
-  // "latest", so every value shown belongs to the block shown.
-  const retry = FIELDS.filter((field) => isTransient(outcomes[field]));
-  if (retry.length > 0) {
-    await delay(retryDelayMs);
-    Object.assign(outcomes, await readFields(mcp, address, block, retry));
+  // Only a broken connection ends the inspection here: a server without get_code, or a failing one,
+  // leaves the type undetermined instead.
+  const code = await settle({ code: () => readCode(mcp, address, block) }, retryDelayMs, isConnectionLoss);
+  if (!code.outcomes.code.ok) {
+    const { error } = code.outcomes.code;
+    const message = isMissing(error) ? NO_CODE_TOOL_MESSAGE : UNDETERMINED_MESSAGE;
+    return { kind: "address", status: "undetermined", ...base, reason: toolProblem("get_code", error), retriedAtSameBlock: code.retried, message, warnings };
   }
+  return code.outcomes.code.value
+    ? await readContract(mcp, base, block, { retryDelayMs, retried: code.retried, warnings })
+    : await readWalletLike(mcp, base, block, { retryDelayMs, retried: code.retried, warnings });
+}
+
+/** get_code at the block: true when the address holds contract code, false for "0x". */
+async function readCode(mcp, address, block) {
+  const payload = await mcp.call("get_code", { address, block });
+  const code = isRecord(payload) ? payload.code : undefined;
+  if (typeof code !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(code)) throw new CliError("MCP_TOOL_ERROR", "its answer was not bytecode");
+  return code.length > 2;
+}
+
+/** A contract: name, symbol, decimals and totalSupply at the block. Any subset may succeed. */
+async function readContract(mcp, base, block, { retryDelayMs, retried, warnings }) {
+  const reads = Object.fromEntries(FIELDS.map((field) => [field, () => ethCall(mcp, base.address, CALLDATA[field], block).then((data) => DECODERS[field](data))]));
+  // A server without eth_call ends the inspection instead of reporting four "unavailable" methods
+  // that were never really asked.
+  const { outcomes, retried: again } = await settle(reads, retryDelayMs, isFatal);
 
   const symbol = outcomes.symbol.ok ? clean(outcomes.symbol.value, 32) : null;
   const decimals = outcomes.decimals.ok ? outcomes.decimals.value : null;
@@ -89,31 +130,71 @@ export async function inspectContract(mcp, value, { retryDelayMs = RETRY_DELAY_M
     totalSupply: outcomes.totalSupply.ok ? supplyEntry(outcomes.totalSupply.value, decimals, symbol) : unavailable(outcomes.totalSupply.error),
   };
   const succeeded = FIELDS.filter((field) => state[field].ok).length;
-  const status = succeeded === FIELDS.length ? "success" : succeeded === 0 ? "none" : "partial";
-
-  return {
-    kind: "contract",
-    status,
-    address,
-    blockNumber: blockNumber.toString(),
-    network,
-    state,
-    retriedAtSameBlock: retry,
-    message: status === "none" ? NO_ERC20_MESSAGE : null,
-    warnings,
-  };
+  // "None" only when the contract itself answered every call, just not as an ERC-20 token would
+  // (reverted, no data, data of another type). Reads that failed on the server say nothing about
+  // the contract: that is a partial result, each failure shown with its reason.
+  const answeredAll = FIELDS.every((field) => !outcomes[field].ok && contractAnswered(outcomes[field].error));
+  const status = succeeded === FIELDS.length ? "success" : succeeded === 0 && answeredAll ? "none" : "partial";
+  const result = { kind: "contract", status, ...base, state, retriedAtSameBlock: [...retried, ...again], message: status === "none" ? NO_ERC20_MESSAGE : null, warnings };
+  if (FIELDS.some((field) => !outcomes[field].ok && !contractAnswered(outcomes[field].error))) result[RETRYABLE] = true;
+  return result;
 }
 
-async function readFields(mcp, address, block, fields) {
-  const settled = await Promise.allSettled(
-    fields.map((field) => ethCall(mcp, address, CALLDATA[field], block).then((data) => DECODERS[field](data))),
-  );
-  // A broken connection or a server without eth_call ends the inspection instead of reporting
-  // four "unavailable" methods that were never really asked.
-  for (const outcome of settled) {
-    if (outcome.status === "rejected" && isFatal(outcome.reason)) throw outcome.reason;
+/** The contract answered the call itself: it reverted, returned nothing, or returned another type. */
+function contractAnswered(error) {
+  return error instanceof EmptyReturnError || error instanceof MalformedReturnError || (error instanceof ToolCallError && error.isRevert);
+}
+
+/**
+ * A wallet-like address (no contract code at the block): its native balance (get_balance) and its
+ * nonce, the number of transactions it has sent (get_transaction_count). No eth_call: there is no
+ * code to answer one. A read that fails, or a server without the tool, leaves that value unavailable.
+ */
+async function readWalletLike(mcp, base, block, { retryDelayMs, retried, warnings }) {
+  const reads = {
+    balance: () => readQuantity(mcp, "get_balance", base.address, block, ["balanceWei", "balanceHex"]),
+    nonce: () => readQuantity(mcp, "get_transaction_count", base.address, block, ["nonce", "nonceHex"]),
+  };
+  const { outcomes, retried: again } = await settle(reads, retryDelayMs, isConnectionLoss);
+  const state = {
+    balance: outcomes.balance.ok ? { ok: true, ...nativeAmount(outcomes.balance.value, base.network?.nativeSymbol ?? null) } : unavailable(outcomes.balance.error),
+    nonce: outcomes.nonce.ok ? { ok: true, value: outcomes.nonce.value } : unavailable(outcomes.nonce.error),
+  };
+  const status = state.balance.ok && state.nonce.ok ? "success" : "partial";
+  const result = { kind: "wallet-like", status, ...base, state, retriedAtSameBlock: [...retried, ...again], message: null, warnings };
+  if (status !== "success") result[RETRYABLE] = true;
+  return result;
+}
+
+/** A count or an amount from a Pharos MCP tool, as a decimal string: its decimal field, else its hex one. */
+async function readQuantity(mcp, tool, address, block, [decimalField, hexField]) {
+  const payload = await mcp.call(tool, { address, block });
+  const record = isRecord(payload) ? payload : {};
+  const value = typeof record[decimalField] === "string" && /^(?:0|[1-9]\d{0,77})$/.test(record[decimalField]) ? record[decimalField] : quantity(record[hexField]);
+  if (value === null) throw new CliError("MCP_TOOL_ERROR", `${tool} returned an unexpected payload`);
+  return value;
+}
+
+/**
+ * Run named reads together. A read that failed transiently (the server answered with an error that
+ * is not a revert or a rejected request) gets one more try after a pause; every read closes over the
+ * same block, so a retry reads that block again. An error `fatal` picks ends the inspection.
+ */
+async function settle(reads, retryDelayMs, fatal) {
+  const run = async (names) => {
+    const settled = await Promise.allSettled(names.map((name) => reads[name]()));
+    for (const outcome of settled) {
+      if (outcome.status === "rejected" && fatal(outcome.reason)) throw outcome.reason;
+    }
+    return Object.fromEntries(names.map((name, index) => [name, settled[index].status === "fulfilled" ? { ok: true, value: settled[index].value } : { ok: false, error: settled[index].reason }]));
+  };
+  const outcomes = await run(Object.keys(reads));
+  const retried = Object.keys(reads).filter((name) => isTransient(outcomes[name]));
+  if (retried.length > 0) {
+    await delay(retryDelayMs);
+    Object.assign(outcomes, await run(retried));
   }
-  return Object.fromEntries(fields.map((field, index) => [field, settled[index].status === "fulfilled" ? { ok: true, value: settled[index].value } : { ok: false, error: settled[index].reason }]));
+  return { outcomes, retried };
 }
 
 /** One MCP eth_call. The Pharos server answers with {"result": "0x..."}. */
@@ -140,6 +221,7 @@ function isTransient(outcome) {
 }
 
 function describeFailure(error) {
+  if (isMissing(error)) return "not offered by this Pharos Chain MCP server";
   if (error instanceof EmptyReturnError) return "no data returned";
   if (error instanceof MalformedReturnError) return "returned data of the wrong type";
   if (error instanceof ToolCallError) return error.isRevert ? "reverted" : `failed: ${clean(error.detail, 120)}`;
@@ -157,7 +239,7 @@ export async function inspectTransaction(mcp, hash) {
     mcp.call(tool, { hash }).then(
       (payload) => (payload === null || isRecord(payload) ? { ok: true, payload } : { ok: false, error: new CliError("MCP_TOOL_ERROR", `${tool} returned an unexpected payload`) }),
       (error) => {
-        if (error instanceof CliError && error.kind === "MCP_CONNECTION") throw error;
+        if (isConnectionLoss(error)) throw error;
         return { ok: false, error };
       },
     );
@@ -202,7 +284,9 @@ export async function inspectTransaction(mcp, hash) {
     logs: Array.isArray(r?.logs) ? r.logs.length : null,
   };
   const complete = tx.ok && receipt.ok && t !== null && r !== null;
-  return { kind: "transaction", status: complete ? "success" : "partial", hash, transaction, network, notes, warnings };
+  const result = { kind: "transaction", status: complete ? "success" : "partial", hash, transaction, network, notes, warnings };
+  if (!tx.ok || !receipt.ok) result[RETRYABLE] = true;
+  return result;
 }
 
 function receiptStatus(status) {
@@ -235,7 +319,7 @@ async function readNetwork(mcp, warnings) {
     const nativeSymbol = typeof payload.nativeSymbol === "string" ? clean(payload.nativeSymbol, 12) : null;
     return { chainId: payload.chainId, name: CHAIN_NAMES[payload.chainId] ?? null, nativeSymbol };
   } catch (error) {
-    if (error instanceof CliError && error.kind === "MCP_CONNECTION") throw error;
+    if (isConnectionLoss(error)) throw error;
     warnings.push(isMissing(error) ? "This MCP server does not offer get_chain_info, so the network is not confirmed." : "get_chain_info failed, so the network is not confirmed.");
     return null;
   }
@@ -278,6 +362,10 @@ function isFatal(error) {
   return error instanceof CliError && (error.kind === "MCP_CONNECTION" || error.kind === "MCP_TOOLS_MISSING");
 }
 
+function isConnectionLoss(error) {
+  return error instanceof CliError && error.kind === "MCP_CONNECTION";
+}
+
 /** A failure the page can show as is: a category and one plain sentence, never a stack. */
 function describeError(error, kind) {
   if (error instanceof CliError) {
@@ -285,7 +373,7 @@ function describeError(error, kind) {
       const message = /eth_call/.test(error.message)
         ? "Contract reads are not available: this Pharos Chain MCP server does not offer eth_call."
         : /get_block_number/.test(error.message)
-          ? "Contract reads are not available: this Pharos Chain MCP server does not offer get_block_number."
+          ? "Address reads are not available: this Pharos Chain MCP server does not offer get_block_number."
           : clean(error.message, 300);
       return { kind: "MCP_TOOLS_MISSING", message };
     }

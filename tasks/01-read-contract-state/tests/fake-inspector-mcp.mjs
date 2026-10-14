@@ -2,15 +2,19 @@
 // over Streamable HTTP and mirrors the payload shapes of PharosNetwork/pharos-mcp's server.ts:
 // success = text content holding JSON, failure = isError + {"error":{"message","code"}}, an unknown
 // tool = isError "MCP error -32602: Tool <name> not found", and get_transaction /
-// get_transaction_receipt answer null for a hash the chain does not know.
+// get_transaction_receipt answer null for a hash the chain does not know. A listed contract has code
+// (get_code answers non-empty bytecode); any other address has none ("0x"), and get_balance and
+// get_transaction_count answer in the real server's shapes ({ balanceWei, balance, symbol,
+// balanceHex } and { nonce, nonceHex }).
 // Test fixtures only: every value here is made up and never used as proof.
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { formatEther } from "viem";
 
-export const ALL_TOOLS = ["get_chain_info", "get_block_number", "eth_call", "get_transaction", "get_transaction_receipt"];
+export const ALL_TOOLS = ["get_chain_info", "get_block_number", "get_code", "get_balance", "get_transaction_count", "eth_call", "get_transaction", "get_transaction_receipt"];
 
 const ok = (data) => ({ content: [{ type: "text", text: JSON.stringify(data, null, 2) }] });
 const fail = (message, code) => ({ content: [{ type: "text", text: JSON.stringify({ error: code === undefined ? { message } : { message, code } }, null, 2) }], isError: true });
@@ -26,6 +30,8 @@ const never = () => new Promise(() => undefined);
  *   blockNumber: bigint, chainId?: number, nativeSymbol?: string, tools?: string[],
  *   chainInfo?: "fail" | "hang", blockNumber?: ..., blockNumberFails?: boolean,
  *   contracts: { [lowercaseAddress]: { [selector]: behavior } },
+ *   code?: { [lowercaseAddress]: behavior }          (get_code; default: listed contracts have code)
+ *   accounts?: { [lowercaseAddress]: { balance?: bigint | behavior, nonce?: bigint | behavior } },
  *   transactions: { [lowercaseHash]: { tx?: behavior, receipt?: behavior } },
  * }
  */
@@ -58,6 +64,23 @@ export async function startFakeInspectorMcp(chain) {
       case "get_block_number":
         if (chain.blockNumberFails) return fail("upstream unavailable", -32000);
         return ok({ blockNumber: chain.blockNumber.toString(), blockNumberHex: `0x${chain.blockNumber.toString(16)}` });
+      case "get_code": {
+        const address = String(args.address).toLowerCase();
+        const behavior = chain.code?.[address] ?? (chain.contracts?.[address] ? "0x6080604052348015600f57600080fd5b50" : "0x");
+        return behave(`code:${address}`, behavior, (code) => ({ code }));
+      }
+      case "get_balance": {
+        const address = String(args.address).toLowerCase();
+        const value = chain.accounts?.[address]?.balance ?? 0n;
+        if (typeof value !== "bigint") return behave(`balance:${address}`, value, (wei) => ({ address: args.address, balanceWei: String(wei), balanceHex: `0x${BigInt(wei).toString(16)}`, symbol: chain.nativeSymbol ?? "PROS" }));
+        return ok({ address: args.address, balanceWei: value.toString(), balance: formatEther(value), symbol: chain.nativeSymbol ?? "PROS", balanceHex: `0x${value.toString(16)}` });
+      }
+      case "get_transaction_count": {
+        const address = String(args.address).toLowerCase();
+        const value = chain.accounts?.[address]?.nonce ?? 0n;
+        if (typeof value !== "bigint") return behave(`nonce:${address}`, value, (nonce) => ({ nonce: String(nonce), nonceHex: `0x${BigInt(nonce).toString(16)}` }));
+        return ok({ nonce: value.toString(), nonceHex: `0x${value.toString(16)}` });
+      }
       case "eth_call": {
         const tx = args.transaction ?? {};
         const contract = chain.contracts?.[String(tx.to).toLowerCase()];
