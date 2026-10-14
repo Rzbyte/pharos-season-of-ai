@@ -2,7 +2,7 @@ Pharos Contract State Reader
 
   Contract          Circle USDC Contract
   Contract address  0xC879C018dB60520F4355C26eD1a6D572cdAC1815
-  Read at block     20175330
+  Read at block     20202384
   Network           Pharos Mainnet (chain ID 1672)
   Data source       Pharos Chain MCP (server: pharos-mcp-server 0.1.0)
                     https://mcp.pharos.xyz/mcp
@@ -10,13 +10,15 @@ Pharos Contract State Reader
   Token name        USDC
   Symbol            USDC
   Decimals          6
-  Total supply      18,158,765.247433 USDC
-                    raw value 18158765247433, divided by 10^6
+  Total supply      21,042,483.561526 USDC
+                    raw value 21042483561526, divided by 10^6
+  Paused            No
 
-  In plain words: At Pharos Mainnet block 20175330, the Circle USDC Contract
-  reports a total supply of 18,158,765.247433 USDC. The contract stores
-  amounts as whole numbers with 6 decimals, so its raw value 18158765247433 is
-  divided by 10^6 to get that figure.
+  In plain words: At Pharos Mainnet block 20202384, the Circle USDC Contract
+  reports a total supply of 21,042,483.561526 USDC. The contract stores
+  amounts as whole numbers with 6 decimals, so its raw value 21042483561526 is
+  divided by 10^6 to get that figure. paused() returned false, so the contract
+  is not paused.
 
-  Read with MCP eth_call at block 20175330: name(), symbol(), decimals(),
-  totalSupply(). 6 MCP tool calls in 3.18s.
+  Read with MCP eth_call at block 20202384: name(), symbol(), decimals(),
+  totalSupply(), paused(). 7 MCP tool calls in 4.64s.

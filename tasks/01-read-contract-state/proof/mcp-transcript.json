@@ -11,15 +11,15 @@
     "arch": "arm64"
   },
   "endpoint": "https://mcp.pharos.xyz/mcp",
-  "startedAt": "2026-10-13T23:01:31.712Z",
-  "finishedAt": "2026-10-13T23:01:35.015Z",
+  "startedAt": "2026-10-14T07:10:42.880Z",
+  "finishedAt": "2026-10-14T07:10:47.606Z",
   "server": {
     "name": "pharos-mcp-server",
     "version": "0.1.0"
   },
   "protocolVersion": "2025-11-25",
   "session": {
-    "idPrefix": "c717dbd9",
+    "idPrefix": "f5a44af8",
     "terminated": true
   },
   "outcome": {
@@ -31,7 +31,7 @@
         "label": "Circle USDC Contract",
         "labelSource": "known-address"
       },
-      "blockNumber": "20175330",
+      "blockNumber": "20202384",
       "network": {
         "chainId": 1672,
         "name": "Pharos Mainnet"
@@ -40,29 +40,41 @@
         "via": "Pharos Chain MCP",
         "endpoint": "https://mcp.pharos.xyz/mcp",
         "server": "pharos-mcp-server 0.1.0",
-        "toolCalls": 6
+        "toolCalls": 7,
+        "contextCalls": [
+          "get_chain_info",
+          "get_block_number"
+        ],
+        "contractReads": [
+          "name",
+          "symbol",
+          "decimals",
+          "totalSupply",
+          "paused"
+        ]
       },
       "values": {
         "name": "USDC",
         "symbol": "USDC",
         "decimals": 6,
         "totalSupply": {
-          "raw": "18158765247433",
-          "formatted": "18158765.247433"
-        }
+          "raw": "21042483561526",
+          "formatted": "21042483.561526"
+        },
+        "paused": false
       },
-      "summary": "At Pharos Mainnet block 20175330, the Circle USDC Contract reports a total supply of 18,158,765.247433 USDC. The contract stores amounts as whole numbers with 6 decimals, so its raw value 18158765247433 is divided by 10^6 to get that figure.",
+      "summary": "At Pharos Mainnet block 20202384, the Circle USDC Contract reports a total supply of 21,042,483.561526 USDC. The contract stores amounts as whole numbers with 6 decimals, so its raw value 21042483561526 is divided by 10^6 to get that figure. paused() returned false, so the contract is not paused.",
       "retriedAtSameBlock": [],
       "warnings": [],
-      "elapsedMs": 3178
+      "elapsedMs": 4636
     }
   },
-  "messageCount": 15,
+  "messageCount": 17,
   "messages": [
     {
       "seq": 1,
       "direction": "client->server",
-      "atMs": 55,
+      "atMs": 62,
       "message": {
         "method": "initialize",
         "params": {
@@ -80,7 +92,7 @@
     {
       "seq": 2,
       "direction": "server->client",
-      "atMs": 1181,
+      "atMs": 2637,
       "message": {
         "jsonrpc": "2.0",
         "id": 0,
@@ -102,7 +114,7 @@
     {
       "seq": 3,
       "direction": "client->server",
-      "atMs": 1205,
+      "atMs": 2663,
       "message": {
         "method": "notifications/initialized",
         "jsonrpc": "2.0"
@@ -111,7 +123,7 @@
     {
       "seq": 4,
       "direction": "client->server",
-      "atMs": 1358,
+      "atMs": 2775,
       "message": {
         "method": "tools/call",
         "params": {
@@ -125,7 +137,7 @@
     {
       "seq": 5,
       "direction": "client->server",
-      "atMs": 1359,
+      "atMs": 2776,
       "message": {
         "method": "tools/call",
         "params": {
@@ -139,7 +151,7 @@
     {
       "seq": 6,
       "direction": "server->client",
-      "atMs": 1520,
+      "atMs": 2948,
       "message": {
         "jsonrpc": "2.0",
         "id": 1,
@@ -147,7 +159,7 @@
           "content": [
             {
               "type": "text",
-              "text": "{\n  \"name\": \"Pharos\",\n  \"chainId\": 1672,\n  \"chainIdHex\": \"0x688\",\n  \"expectedChainId\": 1672,\n  \"chainIdMatches\": true,\n  \"latestBlock\": \"20175330\",\n  \"latestBlockHex\": \"0x133d9e2\",\n  \"nativeSymbol\": \"PROS\",\n  \"clientVersion\": \"portal/1.0.0\",\n  \"rpcUrl\": \"https://rpc.pharos.xyz\"\n}"
+              "text": "{\n  \"name\": \"Pharos\",\n  \"chainId\": 1672,\n  \"chainIdHex\": \"0x688\",\n  \"expectedChainId\": 1672,\n  \"chainIdMatches\": true,\n  \"latestBlock\": \"20202384\",\n  \"latestBlockHex\": \"0x1344390\",\n  \"nativeSymbol\": \"PROS\",\n  \"clientVersion\": \"portal/1.0.0\",\n  \"rpcUrl\": \"https://rpc.pharos.xyz\"\n}"
             }
           ]
         }
@@ -156,7 +168,7 @@
     {
       "seq": 7,
       "direction": "server->client",
-      "atMs": 1592,
+      "atMs": 3026,
       "message": {
         "jsonrpc": "2.0",
         "id": 2,
@@ -164,7 +176,7 @@
           "content": [
             {
               "type": "text",
-              "text": "{\n  \"blockNumber\": \"20175330\",\n  \"blockNumberHex\": \"0x133d9e2\"\n}"
+              "text": "{\n  \"blockNumber\": \"20202384\",\n  \"blockNumberHex\": \"0x1344390\"\n}"
             }
           ]
         }
@@ -173,7 +185,7 @@
     {
       "seq": 8,
       "direction": "client->server",
-      "atMs": 1599,
+      "atMs": 3032,
       "message": {
         "method": "tools/call",
         "params": {
@@ -183,7 +195,7 @@
               "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
               "data": "0x06fdde03"
             },
-            "block": "0x133d9e2"
+            "block": "0x1344390"
           }
         },
         "jsonrpc": "2.0",
@@ -193,7 +205,7 @@
     {
       "seq": 9,
       "direction": "client->server",
-      "atMs": 1600,
+      "atMs": 3033,
       "message": {
         "method": "tools/call",
         "params": {
@@ -203,7 +215,7 @@
               "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
               "data": "0x95d89b41"
             },
-            "block": "0x133d9e2"
+            "block": "0x1344390"
           }
         },
         "jsonrpc": "2.0",
@@ -213,7 +225,7 @@
     {
       "seq": 10,
       "direction": "client->server",
-      "atMs": 1601,
+      "atMs": 3034,
       "message": {
         "method": "tools/call",
         "params": {
@@ -223,7 +235,7 @@
               "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
               "data": "0x313ce567"
             },
-            "block": "0x133d9e2"
+            "block": "0x1344390"
           }
         },
         "jsonrpc": "2.0",
@@ -233,7 +245,7 @@
     {
       "seq": 11,
       "direction": "client->server",
-      "atMs": 1602,
+      "atMs": 3035,
       "message": {
         "method": "tools/call",
         "params": {
@@ -243,7 +255,7 @@
               "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
               "data": "0x18160ddd"
             },
-            "block": "0x133d9e2"
+            "block": "0x1344390"
           }
         },
         "jsonrpc": "2.0",
@@ -252,8 +264,28 @@
     },
     {
       "seq": 12,
+      "direction": "client->server",
+      "atMs": 3036,
+      "message": {
+        "method": "tools/call",
+        "params": {
+          "name": "eth_call",
+          "arguments": {
+            "transaction": {
+              "to": "0xC879C018dB60520F4355C26eD1a6D572cdAC1815",
+              "data": "0x5c975abb"
+            },
+            "block": "0x1344390"
+          }
+        },
+        "jsonrpc": "2.0",
+        "id": 7
+      }
+    },
+    {
+      "seq": 13,
       "direction": "server->client",
-      "atMs": 1956,
+      "atMs": 3444,
       "message": {
         "jsonrpc": "2.0",
         "id": 3,
@@ -268,9 +300,9 @@
       }
     },
     {
-      "seq": 13,
+      "seq": 14,
       "direction": "server->client",
-      "atMs": 2340,
+      "atMs": 3754,
       "message": {
         "jsonrpc": "2.0",
         "id": 4,
@@ -285,9 +317,9 @@
       }
     },
     {
-      "seq": 14,
+      "seq": 15,
       "direction": "server->client",
-      "atMs": 2760,
+      "atMs": 4154,
       "message": {
         "jsonrpc": "2.0",
         "id": 5,
@@ -302,9 +334,9 @@
       }
     },
     {
-      "seq": 15,
+      "seq": 16,
       "direction": "server->client",
-      "atMs": 3172,
+      "atMs": 4460,
       "message": {
         "jsonrpc": "2.0",
         "id": 6,
@@ -312,7 +344,24 @@
           "content": [
             {
               "type": "text",
-              "text": "{\n  \"result\": \"0x00000000000000000000000000000000000000000000000000001083eac08bc9\"\n}"
+              "text": "{\n  \"result\": \"0x0000000000000000000000000000000000000000000000000000132355c20436\"\n}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 17,
+      "direction": "server->client",
+      "atMs": 4631,
+      "message": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\n  \"result\": \"0x0000000000000000000000000000000000000000000000000000000000000000\"\n}"
             }
           ]
         }

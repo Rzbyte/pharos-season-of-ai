@@ -7,7 +7,7 @@ A TypeScript CLI that reads the **Circle USDC Contract** on Pharos Mainnet throu
 A small web demo shows the same read as an on-chain snapshot, next to the **Pharos Inspector**, which reads any contract address or transaction hash through the same server. See [Web Demo](#web-demo).
 
 <!-- live-status:start -->
-**Live run:** captured 2026-10-13T23:01:35Z against `https://mcp.pharos.xyz/mcp`, contract `0xC879C018dB60520F4355C26eD1a6D572cdAC1815`, block 20175330. Output in [Live Sample Output](#live-sample-output), raw MCP messages in [proof/mcp-transcript.json](proof/mcp-transcript.json).
+**Live run:** captured 2026-10-14T07:10:47Z against `https://mcp.pharos.xyz/mcp`, contract `0xC879C018dB60520F4355C26eD1a6D572cdAC1815`, block 20202384. Output in [Live Sample Output](#live-sample-output), raw MCP messages in [proof/mcp-transcript.json](proof/mcp-transcript.json).
 <!-- live-status:end -->
 
 ## Contract / Network
@@ -62,14 +62,14 @@ npm run proof      # live run that saves the proof files and fills in the sample
 ## Live Sample Output
 
 <!-- live-output:start -->
-Captured by `npm run proof` at 2026-10-13T23:01:35Z against `https://mcp.pharos.xyz/mcp`: block 20175330, 4 successful `eth_call` reads. Saved as [sample-output/live-run.txt](sample-output/live-run.txt); the raw MCP messages from the same run are in [proof/mcp-transcript.json](proof/mcp-transcript.json).
+Captured by `npm run proof` at 2026-10-14T07:10:47Z against `https://mcp.pharos.xyz/mcp`: block 20202384, 5 successful `eth_call` reads. Saved as [sample-output/live-run.txt](sample-output/live-run.txt); the raw MCP messages from the same run are in [proof/mcp-transcript.json](proof/mcp-transcript.json).
 
 ```text
 Pharos Contract State Reader
 
   Contract          Circle USDC Contract
   Contract address  0xC879C018dB60520F4355C26eD1a6D572cdAC1815
-  Read at block     20175330
+  Read at block     20202384
   Network           Pharos Mainnet (chain ID 1672)
   Data source       Pharos Chain MCP (server: pharos-mcp-server 0.1.0)
                     https://mcp.pharos.xyz/mcp
@@ -77,16 +77,18 @@ Pharos Contract State Reader
   Token name        USDC
   Symbol            USDC
   Decimals          6
-  Total supply      18,158,765.247433 USDC
-                    raw value 18158765247433, divided by 10^6
+  Total supply      21,042,483.561526 USDC
+                    raw value 21042483561526, divided by 10^6
+  Paused            No
 
-  In plain words: At Pharos Mainnet block 20175330, the Circle USDC Contract
-  reports a total supply of 18,158,765.247433 USDC. The contract stores
-  amounts as whole numbers with 6 decimals, so its raw value 18158765247433 is
-  divided by 10^6 to get that figure.
+  In plain words: At Pharos Mainnet block 20202384, the Circle USDC Contract
+  reports a total supply of 21,042,483.561526 USDC. The contract stores
+  amounts as whole numbers with 6 decimals, so its raw value 21042483561526 is
+  divided by 10^6 to get that figure. paused() returned false, so the contract
+  is not paused.
 
-  Read with MCP eth_call at block 20175330: name(), symbol(), decimals(),
-  totalSupply(). 6 MCP tool calls in 3.18s.
+  Read with MCP eth_call at block 20202384: name(), symbol(), decimals(),
+  totalSupply(), paused(). 7 MCP tool calls in 4.64s.
 ```
 <!-- live-output:end -->
 
