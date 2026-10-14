@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="/assets/lab.css">
 <script type="module" src="/assets/task-01.js"></script>
 <script type="module" src="/assets/inspector.js"></script>
+<script type="module" src="/assets/explain.js"></script>
 </head>
 <body data-state="reading">
 <a class="skip" href="#snapshot">Skip to the snapshot</a>
@@ -79,7 +80,7 @@
     </div>
   </section>
 
-  <section class="section" id="inspector" aria-labelledby="inspect-h" data-inspect-api="/api/inspect" data-inspect-state="idle">
+  <section class="section" id="inspector" aria-labelledby="inspect-h" data-inspect-api="/api/inspect" data-explain-api="/api/explain" data-inspect-state="idle">
     <div class="split">
       <div class="section-head">
         <h2 class="section-title" id="inspect-h">Pharos Inspector</h2>
@@ -100,6 +101,16 @@
         <p class="status inspect-status" id="inspect-status" role="status" hidden><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="inspect-word"></span><span class="status-detail" id="inspect-detail"></span></p>
         <p class="note" data-tone="error" id="inspect-note" aria-live="polite" hidden></p>
         <div class="inspect-result" id="inspect-result" hidden></div>
+        <div class="explain" id="explain" hidden>
+          <button class="btn btn-explain" id="explain-submit" type="button" aria-disabled="false"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2.5 3.5h11M2.5 6.5h11M2.5 9.5h7M2.5 12.5h4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="swap"><span>Explain this result</span><span>Explaining…</span></span></button>
+          <p class="note" data-tone="error" id="explain-note" hidden></p>
+          <div class="explain-body" id="explain-body" hidden>
+            <h3 class="label explain-title">Plain-language explanation</h3>
+            <div class="explain-text" id="explain-text"></div>
+            <p class="explain-meta" id="explain-meta"></p>
+          </div>
+          <span class="sr" id="explain-state" aria-live="polite"></span>
+        </div>
         <span class="sr" id="inspect-copy-state" aria-live="polite"></span>
         <template id="actions-template"><div class="actions"><button class="action copy" type="button" data-copy="idle"><span class="swap copy-icons" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.75 3.25A1.75 1.75 0 0 0 9 1.5H3.25A1.75 1.75 0 0 0 1.5 3.25V9a1.75 1.75 0 0 0 1.75 1.75" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><svg viewBox="0 0 16 16" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap copy-words"><span>Copy</span><span>Copied</span></span><span class="sr copy-what"></span></button><a class="action" hidden><span>View on <span class="explorer-name">the explorer</span></span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></template>
       </div>

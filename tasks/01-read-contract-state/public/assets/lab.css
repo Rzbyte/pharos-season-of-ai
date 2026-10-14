@@ -462,6 +462,21 @@
   .inspect-result .hex-sub { margin-top: 2px; }
   .inspect-message { margin-top: 12px; max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); }
 
+  /* Explain this result: one action for the whole result, after it, and the explanation under it.
+     A button, not a utility chip: full width on a phone, its own size on a wide panel. While a new
+     result is read, the old one's explanation dims with it. */
+  .explain { margin-top: 20px; }
+  .btn-explain { width: 100%; }
+  @container panel (min-width: 460px) { .btn-explain { width: auto; } }
+  .explain-body { margin-top: 18px; }
+  .explain-h { margin: 14px 0 0; color: var(--text); font-size: var(--fs-small); font-weight: 600; line-height: 1.4; }
+  .explain-text > :first-child { margin-top: 8px; }
+  .explain-text p, .explain-list { max-width: 62ch; margin-top: 6px; color: var(--text-2); font-size: var(--fs-small); }
+  .explain-list { padding-left: 1.2em; list-style: disc; }
+  .explain-list li + li { margin-top: 4px; }
+  .explain-meta { margin-top: 16px; max-width: 62ch; color: var(--text-3); font-size: var(--fs-meta); }
+  #inspector[data-inspect-state="inspecting"] .explain { opacity: .55; }
+
   /* Disclosure: the proof, collapsed by default. The summary row is the section heading. */
   .disclosure > summary {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 16px;

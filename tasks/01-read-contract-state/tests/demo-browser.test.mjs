@@ -2,8 +2,9 @@
 //   NODE_PATH="$(npm root -g)" node --test tests/demo-browser.test.mjs
 // Playwright with Chromium is used where it is installed globally; it is not a dependency of this
 // project, and without it the suite is skipped and says why. Needs dist/ (built by `npm ci`).
-// Nothing reaches the network: the real api/state.js and api/inspect.js handlers run against the
-// in-process fake Pharos Chain MCP from fake-inspector-mcp.mjs, and every value is made up.
+// Nothing reaches the network: the real api/state.js, api/inspect.js and api/explain.js handlers run
+// against the in-process fake Pharos Chain MCP from fake-inspector-mcp.mjs and the fake AI provider
+// from fake-deepseek.mjs, and every value is made up.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -11,8 +12,10 @@ import { createRequire } from "node:module";
 import { extname } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { encodeAbiParameters } from "viem";
+import { createHandler as explainHandler } from "../api/explain.js";
 import { createHandler as inspectHandler } from "../api/inspect.js";
 import { createHandler as stateHandler, readState } from "../api/state.js";
+import { startFakeDeepSeek } from "./fake-deepseek.mjs";
 import { startFakeInspectorMcp } from "./fake-inspector-mcp.mjs";
 
 let chromium = null;
@@ -59,12 +62,14 @@ describe("the Task 01 page in a browser", { skip }, () => {
   let fake;
   let pausedFake;
   let retryFake;
+  let ai;
   let server;
   let browser;
   let base;
-  const mode = { state: "fresh", inspect: "ok" };
+  const mode = { state: "fresh", inspect: "ok", explain: "ok" };
   const requests = [];
   const inspectQueries = [];
+  const explainRequests = [];
   let replay = null;
 
   before(async () => {
@@ -79,6 +84,13 @@ describe("the Task 01 page in a browser", { skip }, () => {
     const deadState = stateHandler("http://127.0.0.1:9/mcp");
     const inspect = inspectHandler(fake.url);
     const deadInspect = inspectHandler("http://127.0.0.1:9/mcp");
+    // Explain: the real handler on the fake provider; one that is always over its limit; one whose
+    // provider cannot be reached.
+    ai = await startFakeDeepSeek({});
+    const quiet = () => undefined;
+    const explain = explainHandler({ apiKey: "sk-browser-test", providerUrl: ai.url, log: quiet });
+    const limitedExplain = explainHandler({ apiKey: "sk-browser-test", providerUrl: ai.url, limits: { perClient: 0 }, log: quiet });
+    const downExplain = explainHandler({ apiKey: "sk-browser-test", providerUrl: "http://127.0.0.1:9/chat/completions", log: quiet });
     server = createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
       if (url.pathname === "/api/state") {
@@ -103,6 +115,12 @@ describe("the Task 01 page in a browser", { skip }, () => {
         if (mode.inspect === "slow") await new Promise((resolve) => setTimeout(resolve, 1500));
         return void (mode.inspect === "error" ? deadInspect : inspect)(req, res);
       }
+      if (url.pathname === "/api/explain") {
+        explainRequests.push(req.method);
+        if (mode.explain === "slow") await new Promise((resolve) => setTimeout(resolve, 1200));
+        if (mode.explain === "unreachable") return void req.socket.destroy();
+        return void (mode.explain === "limited" ? limitedExplain : mode.explain === "down" ? downExplain : explain)(req, res);
+      }
       const path = url.pathname === "/" ? "/index.html" : url.pathname;
       if (path.includes("..")) return void res.writeHead(404).end();
       try {
@@ -123,6 +141,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await fake?.close();
     await pausedFake?.close();
     await retryFake?.close();
+    await ai?.close();
   });
 
   /** A fresh page; resolves once the snapshot has settled (or failed). */
@@ -161,6 +180,30 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await page.waitForFunction((state) => document.getElementById("inspector").dataset.inspectState === state, expected, { timeout: 15_000 });
   }
   const rows = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#inspect-result dl > div")].map((row) => [row.querySelector("dt").textContent, row.querySelector("dd").textContent])));
+  /** Inspect again, even when the result before had the same state: wait for this request's answer. */
+  async function inspectAgain(page, value) {
+    const sent = inspectQueries.length;
+    await page.fill("#inspect-input", value);
+    await page.click("#inspect-submit");
+    for (let wait = 0; inspectQueries.length === sent; wait += 1) {
+      assert.ok(wait < 500, "the inspection was never sent");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await page.waitForFunction(() => document.getElementById("inspector").dataset.inspectState !== "inspecting", null, { timeout: 15_000 });
+  }
+  /** Click "Explain this result" and wait for the explanation or a failure note. */
+  async function explainResult(page) {
+    await page.click("#explain-submit");
+    await page.waitForFunction(() => document.getElementById("explain-submit").getAttribute("aria-disabled") === "false" && (!document.getElementById("explain-body").hidden || !document.getElementById("explain-note").hidden), null, { timeout: 15_000 });
+  }
+  const explainView = (page) =>
+    page.evaluate(() => ({
+      shown: !document.getElementById("explain").hidden,
+      busy: document.getElementById("explain-submit").getAttribute("aria-disabled"),
+      body: !document.getElementById("explain-body").hidden,
+      note: document.getElementById("explain-note").hidden ? "" : document.getElementById("explain-note").textContent,
+    }));
+  const pageFailures = (errors) => errors.filter((error) => !/Failed to load resource/.test(error));
   /** The words a control shows (innerText skips the words swapped out), and its box. */
   const words = (page, selector) => page.evaluate((s) => document.querySelector(s).innerText.trim(), selector);
   const box = (page, selector) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(" "); }, selector);
@@ -508,6 +551,163 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await context.close();
   });
 
+  test("explain: one button, only for a result, full width and within reach on a phone, unlike the utility actions", async () => {
+    const { context, page, errors } = await open({ width: 390 });
+    const sent = explainRequests.length;
+    const count = () => page.evaluate(() => [...document.querySelectorAll("button")].filter((button) => /Explain this result/.test(button.textContent)).length);
+    assert.deepEqual([(await explainView(page)).shown, await count()], [false, 1], "one button in the page, hidden before any result");
+    await inspect(page, USDC, "success");
+    assert.equal((await explainView(page)).shown, true);
+    assert.equal(await count(), 1, "one action for the whole result, not one per field");
+    const geometry = await page.evaluate(() => {
+      const button = document.getElementById("explain-submit");
+      const box = button.getBoundingClientRect();
+      const panel = document.getElementById("inspect-panel");
+      const style = getComputedStyle(panel);
+      const copy = document.querySelector("#inspect-result .action").getBoundingClientRect();
+      return {
+        width: Math.round(box.width),
+        content: Math.round(panel.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)),
+        height: box.height,
+        inView: box.left >= 0 && box.right <= innerWidth,
+        afterResult: box.top >= document.getElementById("inspect-result").getBoundingClientRect().bottom,
+        utility: button.classList.contains("action"),
+        taller: box.height > copy.height,
+      };
+    });
+    assert.deepEqual(geometry, { width: geometry.content, content: geometry.content, height: geometry.height, inView: true, afterResult: true, utility: false, taller: true });
+    assert.ok(geometry.height >= 44, `${geometry.height}px`);
+    // A partial result can be explained; "not found" cannot.
+    await inspect(page, PARTIAL, "partial");
+    assert.equal((await explainView(page)).shown, true);
+    await inspect(page, UNKNOWN, "not-found");
+    assert.equal((await explainView(page)).shown, false);
+    assert.equal(explainRequests.length, sent, "showing the button asks for nothing");
+    assert.deepEqual(errors, []);
+    await context.close();
+
+    // An inspection that fails before any result shows no button either.
+    mode.inspect = "error";
+    const failed = await open({ width: 390 });
+    await inspect(failed.page, USDC, "error");
+    assert.equal((await explainView(failed.page)).shown, false);
+    mode.inspect = "ok";
+    await failed.context.close();
+  });
+
+  test("explain: Explaining… while it waits, then the explanation under the button, asked once", async () => {
+    mode.explain = "slow";
+    const { context, page, errors } = await open({ width: 390 });
+    await inspect(page, MINED, "success");
+    const sent = explainRequests.length;
+    await page.click("#explain-submit");
+    await page.waitForFunction(() => document.getElementById("explain-submit").getAttribute("aria-disabled") === "true");
+    assert.equal(await words(page, "#explain-submit"), "Explaining…");
+    assert.equal(await page.getAttribute("#explain", "aria-busy"), "true");
+    const idle = await box(page, "#explain-submit");
+    await page.click("#explain-submit"); // a click while it waits does nothing
+    await page.waitForFunction(() => !document.getElementById("explain-body").hidden, null, { timeout: 15_000 });
+    mode.explain = "ok";
+    assert.equal(explainRequests.length - sent, 1, "two clicks, one request");
+    const shown = await page.evaluate(() => {
+      const button = document.getElementById("explain-submit").getBoundingClientRect();
+      return {
+        label: document.getElementById("explain-submit").innerText.trim(),
+        busy: document.getElementById("explain-submit").getAttribute("aria-disabled"),
+        title: document.querySelector("#explain-body h3").textContent,
+        headings: [...document.querySelectorAll("#explain-text h4")].map((heading) => heading.textContent),
+        items: [...document.querySelectorAll("#explain-text li")].map((item) => item.textContent),
+        meta: document.getElementById("explain-meta").textContent,
+        live: document.getElementById("explain-state").textContent,
+        below: document.getElementById("explain-body").getBoundingClientRect().top >= button.bottom,
+        result: document.querySelectorAll("#inspect-result dl > div").length,
+      };
+    });
+    assert.deepEqual(shown, {
+      label: "Explain this result",
+      busy: "false",
+      title: "Plain-language explanation",
+      headings: ["What this shows", "What it means", "Key details", "Anything to note"],
+      items: ["Name and symbol: USDC", "Decimals: 6, so one token is 1,000,000 of its smallest units"],
+      meta: shown.meta,
+      live: "Explanation ready, below the button.",
+      below: true,
+      result: shown.result,
+    });
+    assert.match(shown.meta, /^Written by an AI model from the result above\. The result above is the source of truth\./);
+    assert.ok(shown.result >= 8, "the inspection result is still there");
+    assert.equal((await box(page, "#explain-submit")).split(" ").slice(2).join(" "), idle.split(" ").slice(2).join(" "), "the button keeps its size while it waits");
+    // Explained already: a click shows it again without asking again.
+    await page.click("#explain-submit");
+    await page.waitForTimeout(250);
+    assert.equal(explainRequests.length - sent, 1);
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
+  test("explain: the same result again comes from the cache and shows the same", async () => {
+    const asked = ai.requests.length;
+    const seen = [];
+    for (let visit = 0; visit < 2; visit += 1) {
+      const { context, page } = await open({ width: 1280, height: 860 });
+      await inspect(page, USDC, "success");
+      await explainResult(page);
+      seen.push(await page.evaluate(() => ({ text: document.getElementById("explain-text").textContent, meta: document.getElementById("explain-meta").textContent })));
+      await context.close();
+    }
+    assert.ok(ai.requests.length - asked <= 1, "one provider call at most for the same result");
+    assert.equal(seen[1].text, seen[0].text);
+    assert.match(seen[1].meta, /Reused from an earlier explanation of this same result\.$/);
+  });
+
+  test("explain: a limit, a provider failure or no answer leaves the inspection result as it was", async () => {
+    const { context, page, errors } = await open({ width: 390 });
+    await inspect(page, USDC, "success");
+    const result = await page.textContent("#inspect-result");
+    for (const [name, message] of [
+      ["limited", "Explanation limit reached. Try again later. The inspection result above is unchanged."],
+      ["down", "The explanation is not available right now. Try again later. The inspection result above is unchanged."],
+      ["unreachable", "The explanation service could not be reached. The inspection result above is unchanged."],
+    ]) {
+      mode.explain = name;
+      await explainResult(page);
+      assert.deepEqual(await explainView(page), { shown: true, busy: "false", body: false, note: message }, name);
+      assert.equal(await page.evaluate(() => document.getElementById("inspector").dataset.inspectState), "success", name);
+      assert.equal(await page.textContent("#inspect-result"), result, `${name}: the result is untouched`);
+    }
+    mode.explain = "ok";
+    // The Inspector still works, and the button is ready for the new result.
+    await inspectAgain(page, MINED);
+    assert.equal(await page.evaluate(() => document.getElementById("inspector").dataset.inspectState), "success");
+    assert.deepEqual(await explainView(page), { shown: true, busy: "false", body: false, note: "" });
+    assert.deepEqual(pageFailures(errors), []);
+    await context.close();
+  });
+
+  test("explain: inspecting again and again never asks for an explanation", async () => {
+    const { context, page } = await open({ width: 1280, height: 860 });
+    const [sent, asked, seen] = [explainRequests.length, ai.requests.length, requests.length];
+    for (const value of [USDC, USDC, MINED, PARTIAL, USDC, MINED]) await inspectAgain(page, value);
+    assert.equal(explainRequests.length, sent);
+    assert.equal(ai.requests.length, asked);
+    assert.deepEqual(requests.slice(seen).filter((url) => url.includes("/api/explain")), []);
+    await context.close();
+  });
+
+  test("explain: a new result replaces the explanation, and a late answer for the old result is dropped", async () => {
+    mode.explain = "slow";
+    const { context, page, errors } = await open({ width: 390 });
+    await inspect(page, USDC, "success");
+    await page.click("#explain-submit");
+    await inspectAgain(page, MINED); // a new result while the old one is still being explained
+    await page.waitForTimeout(1600); // the old answer arrives
+    mode.explain = "ok";
+    assert.deepEqual(await explainView(page), { shown: true, busy: "false", body: false, note: "" });
+    assert.equal(await page.textContent("#explain-text"), "");
+    assert.deepEqual(errors, []);
+    await context.close();
+  });
+
   test("proof & technical details: collapsed, opened by keyboard or by the link to it, closed again", async () => {
     const { context, page } = await open({ width: 390 });
     const isOpen = () => page.evaluate(() => document.getElementById("proof").open);
@@ -850,6 +1050,6 @@ describe("the Task 01 page in a browser", { skip }, () => {
     const outside = requests.filter((url) => !url.startsWith(`${base}/`) && !url.startsWith("data:"));
     assert.deepEqual(outside, []);
     const paths = new Set(requests.filter((url) => url.startsWith(base)).map((url) => new URL(url).pathname.replace(/^\/assets\/.*/, "/assets/*")));
-    assert.deepEqual([...paths].sort(), ["/", "/api/inspect", "/api/state", "/assets/*"]);
+    assert.deepEqual([...paths].sort(), ["/", "/api/explain", "/api/inspect", "/api/state", "/assets/*"]);
   });
 });

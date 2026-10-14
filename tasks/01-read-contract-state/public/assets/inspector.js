@@ -92,6 +92,7 @@ async function run() {
       render(data);
       shown = data;
       report(data.status === "none" ? "partial" : data.status, `${KIND[data.kind]} · read ${clockTime(data.fetchedAt)}`);
+      announce(data);
     } catch {
       fail("The inspector sent a result this page could not read.");
     }
@@ -104,6 +105,18 @@ async function run() {
   }
   setBusy(false);
   busy = false;
+}
+
+/**
+ * Tell the rest of the page that a new result is on screen ("Explain this result" listens). It gets a
+ * copy, and nothing a listener does can reach this inspection: a listener's error stays its own.
+ */
+function announce(data) {
+  try {
+    root.dispatchEvent(new CustomEvent("inspect:result", { detail: JSON.parse(JSON.stringify(data)) }));
+  } catch {
+    // Not part of the inspection.
+  }
 }
 
 function fail(reason) {

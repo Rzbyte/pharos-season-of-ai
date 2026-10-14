@@ -6,6 +6,7 @@
   "outputDirectory": "public",
   "functions": {
     "api/state.js": { "maxDuration": 60 },
-    "api/inspect.js": { "maxDuration": 60 }
+    "api/inspect.js": { "maxDuration": 60 },
+    "api/explain.js": { "maxDuration": 30 }
   }
 }

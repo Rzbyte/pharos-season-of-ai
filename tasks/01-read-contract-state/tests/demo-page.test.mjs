@@ -19,10 +19,11 @@ const html = read("public/index.html");
 const css = read("public/assets/lab.css");
 /** The stylesheet without comments, for reading selectors. */
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
-const scripts = ["lab.js", "tasks.js", "theme.js", "task-01.js", "inspector.js", "inspect-input.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
+const scripts = ["lab.js", "tasks.js", "theme.js", "task-01.js", "inspector.js", "inspect-input.js", "explain.js", "explain-input.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
 const script = (name) => scripts.find((entry) => entry.name === name).text;
 const pageJs = script("task-01.js");
 const inspectorJs = script("inspector.js");
+const explainJs = script("explain.js");
 const themeJs = script("theme.js");
 const USDC = read("src/constants.ts").match(/export const DEFAULT_TOKEN = "(0x[0-9a-fA-F]{40})"/)[1];
 
@@ -38,14 +39,14 @@ const literals = scripts.flatMap(({ name, text }) =>
 );
 
 describe("what the page loads and calls", () => {
-  test("loads only its own assets: theme.js before the stylesheet, two module scripts, nothing inline", () => {
+  test("loads only its own assets: theme.js before the stylesheet, three module scripts, nothing inline", () => {
     const tags = html.match(/<(?:script|link)\b[^>]*>/g);
     const urls = tags.map((tag) => tag.match(/\s(?:src|href)="([^"]*)"/)?.[1]);
     assert.ok(urls.length >= 4);
     for (const url of urls) assert.match(url, /^(\/assets\/|data:)/, `unexpected asset URL ${url}`);
-    assert.equal(html.match(/<script\b/g).length, 3);
+    assert.equal(html.match(/<script\b/g).length, 4);
     // theme.js is a classic script so a saved theme applies before the first paint.
-    assert.match(html, /<script src="\/assets\/theme\.js"><\/script>\n<link rel="preload"[^>]*>\n<link rel="stylesheet" href="\/assets\/lab\.css">\n<script type="module" src="\/assets\/task-01\.js"><\/script>\n<script type="module" src="\/assets\/inspector\.js"><\/script>/);
+    assert.match(html, /<script src="\/assets\/theme\.js"><\/script>\n<link rel="preload"[^>]*>\n<link rel="stylesheet" href="\/assets\/lab\.css">\n<script type="module" src="\/assets\/task-01\.js"><\/script>\n<script type="module" src="\/assets\/inspector\.js"><\/script>\n<script type="module" src="\/assets\/explain\.js"><\/script>/);
     assert.doesNotMatch(html, /<script(?![^>]*\ssrc=)[^>]*>/, "an inline script");
     assert.doesNotMatch(html, /<style\b|\sstyle="/, "inline styles: everything lives in lab.css");
     assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
@@ -117,21 +118,27 @@ describe("what the page loads and calls", () => {
     }
   });
 
-  test("the browser calls only this site's /api/state and /api/inspect: no MCP, RPC or other client code", () => {
+  test("the browser calls only this site's /api/state, /api/inspect and /api/explain: no MCP, RPC, AI provider or other client code", () => {
     assert.match(html, /<main id="main"[^>]* data-api="\/api\/state"/);
     assert.match(html, /<section class="section" id="inspector"[^>]* data-inspect-api="\/api\/inspect"/);
     assert.match(pageJs, /const API = main\.dataset\.api;/);
     assert.match(inspectorJs, /const API = root\.dataset\.inspectApi;/);
+    assert.match(html, /<section class="section" id="inspector"[^>]* data-explain-api="\/api\/explain"/);
+    assert.match(explainJs, /const API = inspector\.dataset\.explainApi;/);
     for (const { name, text } of scripts) {
       assert.doesNotMatch(text, /https?:\/\//, `${name} contains a URL`);
       assert.doesNotMatch(text, /XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|navigator\.connection/, name);
       assert.doesNotMatch(text, /jsonrpc|@modelcontextprotocol|mcp\.pharos|rpc\.pharos/i, name);
+      assert.doesNotMatch(text, /deepseek|openai|anthropic|api[_-]?key|authorization|bearer/i, name);
       assert.doesNotMatch(text, /sessionStorage|indexedDB|document\.cookie/, name);
     }
     const fetches = Object.fromEntries(scripts.map(({ name, text }) => [name, (text.match(/\bfetch\(/g) ?? []).length]));
-    assert.deepEqual(fetches, { "lab.js": 0, "tasks.js": 0, "theme.js": 0, "task-01.js": 1, "inspector.js": 1, "inspect-input.js": 0 });
+    assert.deepEqual(fetches, { "lab.js": 0, "tasks.js": 0, "theme.js": 0, "task-01.js": 1, "inspector.js": 1, "inspect-input.js": 0, "explain.js": 1, "explain-input.js": 0 });
     assert.match(pageJs, /fetch\(API, \{ headers: \{ accept: "application\/json" \}, cache: "no-store" \}\)/);
     assert.match(inspectorJs, /fetch\(`\$\{API\}\?q=\$\{encodeURIComponent\(check\.value\)\}`, \{ headers: \{ accept: "application\/json" \}, cache: "no-store", signal: controller\.signal \}\)/);
+    // Explain posts the fixed request built from the result on screen, as JSON, and nothing else.
+    assert.match(explainJs, /response = await fetch\(API, \{\n {6}method: "POST",\n {6}headers: \{ "content-type": "application\/json", accept: "application\/json" \},\n {6}body: JSON\.stringify\(request\),\n {6}cache: "no-store",\n {6}signal: controller\.signal,\n {4}\}\);/);
+    assert.match(explainJs, /request = explainPayload\(event\.detail\);/);
   });
 
   test("only theme.js touches storage: one key, for the theme, on this device", () => {
@@ -161,6 +168,9 @@ describe("what the page loads and calls", () => {
     const inspectorIds = new Set([...inspectorJs.matchAll(/\$\("([\w-]+)"\)/g)].map((match) => match[1]));
     assert.ok(inspectorIds.size >= 10);
     for (const id of inspectorIds) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
+    const explainIds = new Set([...explainJs.matchAll(/\$\("([\w-]+)"\)/g)].map((match) => match[1]));
+    assert.deepEqual([...explainIds].sort(), ["explain", "explain-body", "explain-meta", "explain-note", "explain-state", "explain-submit", "explain-text", "inspector"]);
+    for (const id of explainIds) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
     assert.match(themeJs, /getElementById\("theme-toggle"\)/);
     assert.match(html, /<button class="theme-toggle" id="theme-toggle" type="button">/);
   });
@@ -781,12 +791,16 @@ describe("design system", () => {
 });
 
 describe("accessible structure", () => {
-  test("one h1, then h2 sections, then h3 only inside the proof", () => {
+  test("one h1, then h2 sections, then h3 only inside the proof and the Inspector's explanation", () => {
     const headings = [...html.matchAll(/<h([1-6])\b[^>]*>(.*?)<\/h\1>/g)].map(([, level, text]) => [Number(level), text.replace(/<[^>]+>/g, "")]);
     assert.deepEqual(headings.filter(([level]) => level === 1), [[1, "Circle USDC Contract"]]);
     assert.deepEqual(headings.filter(([level]) => level === 2).map(([, text]) => text), ["On-chain snapshot", "Pharos Inspector", "Proof &amp; technical details", "Sources"]);
     const proof = html.match(/<details[\s\S]*<\/details>/)[0];
-    assert.equal(html.match(/<h3\b/g).length, proof.match(/<h3\b/g).length);
+    const explanation = html.slice(html.indexOf('<div class="explain" id="explain"'), html.indexOf('<span class="sr" id="inspect-copy-state"'));
+    assert.equal(html.match(/<h3\b/g).length, proof.match(/<h3\b/g).length + 1);
+    assert.equal(explanation.match(/<h3\b[^>]*>(.*?)<\/h3>/)[1], "Plain-language explanation");
+    // The explanation's sections are h4, under that h3, inside the Inspector (h2).
+    assert.match(explainJs, /element\("h4", "explain-h", section\.heading\)/);
   });
 
   test("labels, names and live regions are in place", () => {
@@ -824,3 +838,55 @@ describe("accessible structure", () => {
     assert.doesNotMatch(pageJs, /\[data-refresh\][^;]*(?:textContent|setText)/);
   });
 });
+
+describe("Explain this result, as shipped", () => {
+  const block = html.slice(html.indexOf('<div class="explain" id="explain"'), html.indexOf('<span class="sr" id="inspect-copy-state"'));
+
+  test("one button for the whole result, right after it, hidden until there is a result; never in a menu", () => {
+    assert.equal(html.match(/Explain this result/g).length, 1, "one explanation action on the page");
+    assert.equal(html.match(/id="explain-submit"/g).length, 1);
+    assert.match(
+      block,
+      /^<div class="explain" id="explain" hidden>\n {10}<button class="btn btn-explain" id="explain-submit" type="button" aria-disabled="false"><svg [^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg><span class="swap"><span>Explain this result<\/span><span>Explaining…<\/span><\/span><\/button>/,
+    );
+    // Directly after the Inspector's result, inside its panel, and not behind a disclosure or menu.
+    assert.ok(html.indexOf('id="inspect-result"') < html.indexOf('id="explain"'));
+    const panel = html.slice(html.indexOf('<div class="panel" id="inspect-panel">'), html.indexOf("</section>", html.indexOf('id="inspect-panel"')));
+    assert.ok(panel.includes('id="explain-submit"'));
+    assert.doesNotMatch(panel, /<details|<summary|role="menu"|popover/);
+    // The explanation goes under the button; a failure note sits between them.
+    assert.ok(block.indexOf('id="explain-submit"') < block.indexOf('id="explain-note"'));
+    assert.ok(block.indexOf('id="explain-note"') < block.indexOf('id="explain-body"'));
+    assert.match(block, /<h3 class="label explain-title">Plain-language explanation<\/h3>/);
+    assert.match(block, /<span class="sr" id="explain-state" aria-live="polite"><\/span>/);
+  });
+
+  test("it asks only when clicked: one request per click, none for an inspection, and a late answer for an old result is dropped", () => {
+    const code = explainJs.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.equal([...code.matchAll(/(?<!function )\bexplain\(\)/g)].length, 1, "explain() is called from one place");
+    assert.match(code, /button\.addEventListener\("click", \(\) => void explain\(\)\);/);
+    assert.match(code, /inspector\.addEventListener\("inspect:result", \(event\) => \{/);
+    assert.match(code, /if \(request === null \|\| busy\) return;/);
+    assert.match(code, /if \(explained\) return void body\.scrollIntoView/);
+    assert.match(code, /if \(mine !== round\) return;/);
+    // The Inspector only announces a result; it never asks for an explanation.
+    assert.match(inspectorJs, /root\.dispatchEvent\(new CustomEvent\("inspect:result", \{ detail: JSON\.parse\(JSON\.stringify\(data\)\) \}\)\);/);
+    assert.doesNotMatch(inspectorJs, /explain-input|explain\.js|\/api\/explain/);
+  });
+
+  test("its words: no provider name, no claim, and the result stays the source of truth", () => {
+    const words = literals.filter(([name]) => name === "explain.js").map(([, text]) => text).join(" ");
+    assert.match(words, /Written by an AI model from the result above\. The result above is the source of truth\./);
+    assert.match(words, /The inspection result above is unchanged\./);
+    assert.match(words, /Reused from an earlier explanation of this same result\./);
+    assert.doesNotMatch(`${visibleText} ${words}`, /deepseek/i, "the page never names the provider");
+    assert.doesNotMatch(words, /\b(?:safe|secure|trusted|verified|legitimate)\b/i);
+  });
+
+  test("the button is full width on a phone's panel, and dims with the result while a new one is read", () => {
+    assert.match(rules, /\.btn-explain \{ width: 100%; \}\n {2}@container panel \(min-width: 460px\) \{ \.btn-explain \{ width: auto; \} \}/);
+    assert.match(rules, /#inspector\[data-inspect-state="inspecting"\] \.explain \{ opacity: \.55; \}/);
+    assert.match(rules, /\.explain-h \{ margin: 14px 0 0;/);
+  });
+});
+
