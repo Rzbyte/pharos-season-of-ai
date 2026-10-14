@@ -20,6 +20,7 @@ const BLOCK_HEX = "0x1092";
 const SEL = { name: "0x06fdde03", symbol: "0x95d89b41", decimals: "0x313ce567", totalSupply: "0x18160ddd" };
 const str = (value) => encodeAbiParameters([{ type: "string" }], [value]);
 const uint = (value) => encodeAbiParameters([{ type: "uint256" }], [value]);
+const bool = (value) => encodeAbiParameters([{ type: "bool" }], [value]);
 const addr = (digit) => `0x${digit.repeat(40)}`;
 const hash = (digit) => `0x${digit.repeat(64)}`;
 const erc20 = (overrides = {}) => ({
@@ -454,7 +455,8 @@ describe("regression: the Task 01 proof is untouched and cannot be broken by the
   test("an inspector failure does not affect a concurrent /api/state read", async () => {
     const task01 = await startFakePharosMcp({
       blockNumber: BLOCK,
-      contracts: { [USDC.toLowerCase()]: { [SEL.name]: str("USDC"), [SEL.symbol]: str("USDC"), [SEL.decimals]: uint(6n), [SEL.totalSupply]: uint(123_456_789_012_345n) } },
+      // /api/state also reads paused() (0x5c975abb) of the Task 01 contract; the Inspector never does.
+      contracts: { [USDC.toLowerCase()]: { [SEL.name]: str("USDC"), [SEL.symbol]: str("USDC"), [SEL.decimals]: uint(6n), [SEL.totalSupply]: uint(123_456_789_012_345n), "0x5c975abb": bool(false) } },
     });
     const hanging = await startFakeInspectorMcp({ ...chain, contracts: { [USDC.toLowerCase()]: erc20({ [SEL.name]: { hang: true } }) } });
     try {
@@ -467,6 +469,7 @@ describe("regression: the Task 01 proof is untouched and cannot be broken by the
       assert.equal(hangingInspect.status, 502);
       assert.equal(state.status, 200);
       assert.equal(state.body.display.totalSupply, "123,456,789.012345 USDC");
+      assert.equal(state.body.values.paused, false);
     } finally {
       await task01.close();
       await hanging.close();

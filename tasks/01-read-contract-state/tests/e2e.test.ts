@@ -6,13 +6,16 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { encodeAbiParameters, stringToHex, type Hex } from "viem";
 import { run, type Io } from "../src/run.js";
-import { startFakePharosMcp, type FakeChain, type FakeServer } from "./fake-pharos-mcp.js";
+import { startFakePharosMcp, type CallBehavior, type FakeChain, type FakeServer } from "./fake-pharos-mcp.js";
 
 // Test fixtures only: every value below is made up and never used as proof.
 const SEL = { name: "0x06fdde03", symbol: "0x95d89b41", decimals: "0x313ce567", totalSupply: "0x18160ddd" } as const;
+/** paused(): the fifth required read of the Task 01 contract only. */
+const PAUSED = "0x5c975abb";
 const OWNER_SELECTOR = "0x8da5cb5b";
 const str = (value: string): Hex => encodeAbiParameters([{ type: "string" }], [value]);
 const uint = (value: bigint): Hex => encodeAbiParameters([{ type: "uint256" }], [value]);
+const bool = (value: boolean): Hex => encodeAbiParameters([{ type: "bool" }], [value]);
 const bytes32 = (value: string): Hex => stringToHex(value, { size: 32 });
 
 const USDC = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
@@ -34,10 +37,14 @@ const erc20 = (name: string, symbol: string, decimals: bigint, supply: bigint) =
   [SEL.totalSupply]: uint(supply),
 });
 
+/** The Task 01 contract's selectors: the four ERC-20 reads and paused(). */
+const USDC_SELECTORS = [...Object.values(SEL), PAUSED].sort();
+const usdc = (paused: CallBehavior = bool(false)) => ({ ...erc20("USD Coin", "USDC", 6n, 987_654_321_000_000n), [PAUSED]: paused });
+
 const chain: FakeChain = {
   blockNumber: BLOCK,
   contracts: {
-    [USDC.toLowerCase()]: erc20("USD Coin", "USDC", 6n, 987_654_321_000_000n),
+    [USDC.toLowerCase()]: usdc(),
     [TOKEN]: erc20("Test USD", "TUSD", 6n, 123_456_789_012_345n),
     [BYTES32_TOKEN]: { [SEL.name]: bytes32("Maker"), [SEL.symbol]: bytes32("MKR"), [SEL.decimals]: uint(18n), [SEL.totalSupply]: uint(10n ** 24n) },
     [NO_DECIMALS]: { [SEL.name]: str("Bare"), [SEL.symbol]: str("BARE"), [SEL.totalSupply]: uint(500n) },
@@ -73,7 +80,7 @@ describe("against a fake Pharos MCP server", () => {
     await server.close();
   });
 
-  test("reads the four required values over MCP, all pinned to the block from get_block_number", async () => {
+  test("reads the five required values over MCP (the four ERC-20 values and paused()), all pinned to the block from get_block_number", async () => {
     server.calls.length = 0;
     const { code, report, stderr } = await runJson([USDC, "--endpoint", server.url]);
     assert.equal(code, 0, stderr);
@@ -87,15 +94,77 @@ describe("against a fake Pharos MCP server", () => {
       symbol: "USDC",
       decimals: 6,
       totalSupply: { raw: "987654321000000", formatted: "987654321" },
+      paused: false,
     });
-    assert.equal(report.source.toolCalls, 6);
+    // The call model is stated, so the count can be derived: 2 context calls + 5 contract reads = 7.
+    assert.deepEqual(report.source.contextCalls, ["get_chain_info", "get_block_number"]);
+    assert.deepEqual(report.source.contractReads, ["name", "symbol", "decimals", "totalSupply", "paused"]);
+    assert.equal(report.source.toolCalls, 7);
+    assert.equal(report.source.toolCalls, report.source.contextCalls.length + report.source.contractReads.length + report.retriedAtSameBlock.length);
     assert.deepEqual(report.retriedAtSameBlock, []);
     assert.deepEqual(report.warnings, []);
+    assert.equal(server.calls.length, 7);
 
     const ethCalls = server.calls.filter((call) => call.tool === "eth_call");
-    assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), Object.values(SEL).slice().sort());
+    assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), USDC_SELECTORS);
     for (const call of ethCalls) assert.equal(call.args.block, BLOCK_HEX);
     assert.equal(server.openSessions(), 0, "the CLI should terminate its MCP session");
+  });
+
+  test("paused() true is reported as such: Paused Yes, never coerced", async () => {
+    const paused = await startFakePharosMcp({ ...chain, contracts: { ...chain.contracts, [USDC.toLowerCase()]: usdc(bool(true)) } });
+    try {
+      const { code, report } = await runJson([USDC, "-e", paused.url]);
+      assert.equal(code, 0);
+      assert.equal(report.values.paused, true);
+      assert.match(report.summary, /paused\(\) returned true, so the contract is paused\.$/);
+      const c = capture();
+      assert.equal(await run([USDC, "-e", paused.url], c.io), 0);
+      assert.match(c.stdout(), /\n {2}Paused {12}Yes\n/);
+    } finally {
+      await paused.close();
+    }
+  });
+
+  test("the Task 01 contract needs paused(): an invalid ABI bool, an empty return or a revert exits 5 as a failed Task 01 state read, never as not ERC-20", async () => {
+    for (const [behavior, pattern] of [
+      [uint(2n), /paused\(\) returned invalid data \(returned a word that is neither 0 nor 1/],
+      [`0x${"0".repeat(60)}01`, /paused\(\) returned invalid data \(returned 31 bytes/],
+      ["0x", /paused\(\) returned no data/],
+      [{ revert: "execution reverted" }, /paused\(\) reverted/],
+    ] as const) {
+      const broken = await startFakePharosMcp({ ...chain, contracts: { ...chain.contracts, [USDC.toLowerCase()]: usdc(behavior as CallBehavior) } });
+      try {
+        const { code, report } = await runJson([USDC, "-e", broken.url]);
+        // Exit 5 as before, as the generic read failure: the four ERC-20 reads answered, and paused() is not ERC-20.
+        assert.equal(code, 5, String(pattern));
+        assert.equal(report.error.kind, "MCP_TOOL_ERROR");
+        assert.match(report.error.message, new RegExp(`^A required Task 01 state read failed for ${USDC} at block 4242: paused\\(\\) `));
+        assert.match(report.error.message, pattern);
+        assert.doesNotMatch(report.error.message, /ERC-?20/);
+        assert.match(report.error.hint, /^paused\(\) is not part of ERC-20: this tool requires it only of the verified Task 01 contract/);
+        assert.doesNotMatch(report.error.hint, /not an ERC-20 token|every required ERC-20 read/);
+        // Never retried: a revert, an empty return or invalid data is an answer, not a lagging node.
+        assert.equal(broken.calls.filter((call) => call.tool === "eth_call").length, 5);
+        // The words a person reads say the same.
+        const c = capture();
+        assert.equal(await run([USDC, "-e", broken.url], c.io), 5);
+        assert.match(c.stderr(), /^Error: A required Task 01 state read failed for 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 at block 4242: paused\(\) /);
+        assert.doesNotMatch(c.stderr(), /did not answer|not an ERC-20 token/);
+      } finally {
+        await broken.close();
+      }
+    }
+  });
+
+  test("any other ERC-20 keeps the four ERC-20 reads: no paused() call, 6 tool calls", async () => {
+    server.calls.length = 0;
+    const { code, report } = await runJson([TOKEN, "-e", server.url]);
+    assert.equal(code, 0);
+    assert.ok(!("paused" in report.values));
+    assert.deepEqual(report.source.contractReads, ["name", "symbol", "decimals", "totalSupply"]);
+    assert.equal(report.source.toolCalls, 6);
+    assert.ok(!server.calls.some((call) => (call.args.transaction as { data?: string } | undefined)?.data === PAUSED));
   });
 
   test("opens no standalone GET event stream: every request is an MCP POST to the endpoint, plus the closing DELETE", async () => {
@@ -127,12 +196,12 @@ describe("against a fake Pharos MCP server", () => {
     assert.deepEqual([...new Set(seen.map((entry) => entry.method))].sort(), ["DELETE", "POST"]);
     // Tool results still arrive on each POST's own SSE stream, all through MCP tools/call.
     const toolCalls = seen.filter((entry) => entry.rpc.startsWith("tools/call"));
-    assert.deepEqual(toolCalls.map((entry) => entry.rpc).sort(), ["tools/call eth_call", "tools/call eth_call", "tools/call eth_call", "tools/call eth_call", "tools/call get_block_number", "tools/call get_chain_info"]);
+    assert.deepEqual(toolCalls.map((entry) => entry.rpc).sort(), ["tools/call eth_call", "tools/call eth_call", "tools/call eth_call", "tools/call eth_call", "tools/call eth_call", "tools/call get_block_number", "tools/call get_chain_info"]);
     for (const entry of toolCalls) {
       assert.equal(entry.status, 200);
       assert.match(entry.contentType ?? "", /^text\/event-stream/);
     }
-    assert.deepEqual(server.calls.filter((call) => call.tool === "eth_call").map((call) => call.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
+    assert.deepEqual(server.calls.filter((call) => call.tool === "eth_call").map((call) => call.args.block), Array(5).fill(BLOCK_HEX));
   });
 
   test("never calls owner() or get_code", async () => {
@@ -150,12 +219,14 @@ describe("against a fake Pharos MCP server", () => {
     assert.match(out, /Contract\s+Circle USDC Contract\n\s+Contract address\s+0xC879C018dB60520F4355C26eD1a6D572cdAC1815/);
     assert.match(out, /Read at block\s+4242/);
     assert.match(out, /Total supply\s+987,654,321 USDC/);
-    assert.match(out, /raw value 987654321000000, divided by 10\^6/);
+    assert.match(out, /raw value 987654321000000, divided by 10\^6\n {2}Paused {12}No\n/);
     // The plain-language paragraph is word-wrapped, so match prose on whitespace-collapsed text.
     const prose = out.replace(/\s+/g, " ");
     assert.match(prose, /In plain words: At Pharos Mainnet block 4242, the Circle USDC Contract reports a total supply of 987,654,321 USDC\./);
-    assert.match(prose, /with 6 decimals, so its raw value 987654321000000 is divided by 10\^6/);
-    assert.match(prose, /Read with MCP eth_call at block 4242: name\(\), symbol\(\), decimals\(\), totalSupply\(\)\./);
+    assert.match(prose, /with 6 decimals, so its raw value 987654321000000 is divided by 10\^6 to get that figure\. paused\(\) returned false, so the contract is not paused\./);
+    assert.match(prose, /Read with MCP eth_call at block 4242: name\(\), symbol\(\), decimals\(\), totalSupply\(\), paused\(\)\. 7 MCP tool calls in/);
+    // Narrow and factual: the flag and nothing more.
+    assert.doesNotMatch(prose, /\b(?:safe|active|healthy)\b/i);
   });
 
   test("other contracts are labelled from their on-chain name, never as Circle USDC", async () => {
@@ -176,7 +247,8 @@ describe("against a fake Pharos MCP server", () => {
     assert.equal(code, 5);
     assert.equal(report.error.kind, "NOT_ERC20");
     assert.match(report.error.message, /decimals\(\) reverted/);
-    assert.doesNotMatch(report.error.message, /totalSupply\(\)/);
+    assert.doesNotMatch(report.error.message, /totalSupply\(\)|paused|Task 01/);
+    assert.equal(report.error.hint, "This tool needs name(), symbol(), decimals() and totalSupply() to all succeed. Double-check the address on a Pharos block explorer.");
   });
 
   test("an address without code exits 5 and says why", async () => {
@@ -224,7 +296,7 @@ describe("against a fake Pharos MCP server", () => {
       const ethCalls = transcript.messages.filter(
         (entry: { direction: string; message: { params?: { name?: string } } }) => entry.direction === "client->server" && entry.message.params?.name === "eth_call",
       );
-      assert.equal(ethCalls.length, 4);
+      assert.equal(ethCalls.length, 5);
       for (const entry of ethCalls) assert.equal(entry.message.params.arguments.block, BLOCK_HEX);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -312,7 +384,7 @@ describe("degraded servers", () => {
   });
 
   test("the Circle USDC label is withheld when symbol() does not say USDC", async () => {
-    const server = await startFakePharosMcp({ ...chain, contracts: { ...chain.contracts, [USDC.toLowerCase()]: erc20("Impostor", "FAKE", 6n, 1n) } });
+    const server = await startFakePharosMcp({ ...chain, contracts: { ...chain.contracts, [USDC.toLowerCase()]: { ...erc20("Impostor", "FAKE", 6n, 1n), [PAUSED]: bool(false) } } });
     try {
       const { report } = await runJson([USDC, "-e", server.url]);
       assert.equal(report.contract.label, "Impostor (FAKE) token contract");
@@ -331,8 +403,11 @@ describe("degraded servers", () => {
       assert.equal(report.retriedAtSameBlock.length, 2);
       assert.equal(report.values.totalSupply.formatted, "987654321");
       const blocks = server.calls.filter((call) => call.tool === "eth_call").map((call) => call.args.block);
-      assert.equal(blocks.length, 6);
+      assert.equal(blocks.length, 7);
       assert.ok(blocks.every((block) => block === BLOCK_HEX));
+      // Retries are counted on top of the stated model: 2 context + 5 reads + 2 retries = 9.
+      assert.equal(report.source.toolCalls, 9);
+      assert.equal(report.source.toolCalls, report.source.contextCalls.length + report.source.contractReads.length + report.retriedAtSameBlock.length);
     } finally {
       await server.close();
     }
@@ -363,7 +438,7 @@ describe("degraded servers", () => {
     }
   });
 
-  test("tools/list left unanswered, as seen live: the run never waits on it and reads all four values at one block", async () => {
+  test("tools/list left unanswered, as seen live: the run never waits on it and reads all five values at one block", async () => {
     const server = await startFakePharosMcp({ ...chain, toolsList: "hang" });
     try {
       // A short timeout, so a regression that waits on tools/list fails in 2 s instead of hanging.
@@ -373,10 +448,10 @@ describe("degraded servers", () => {
       assert.deepEqual(report.contract, { address: USDC, label: "Circle USDC Contract", labelSource: "known-address" });
       assert.deepEqual(report.network, { chainId: 1672, name: "Pharos Mainnet" });
       assert.deepEqual(report.values.totalSupply, { raw: "987654321000000", formatted: "987654321" });
-      assert.equal(report.source.toolCalls, 6);
+      assert.equal(report.source.toolCalls, 7);
       const ethCalls = server.calls.filter((call) => call.tool === "eth_call");
-      assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), Object.values(SEL).slice().sort());
-      assert.deepEqual(ethCalls.map((call) => call.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
+      assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), USDC_SELECTORS);
+      assert.deepEqual(ethCalls.map((call) => call.args.block), Array(5).fill(BLOCK_HEX));
     } finally {
       await server.close();
     }
@@ -406,8 +481,8 @@ describe("degraded servers", () => {
       assert.deepEqual(report.network, { chainId: 1672, name: "Pharos Mainnet" });
       assert.deepEqual(report.values.totalSupply, { raw: "987654321000000", formatted: "987654321" });
       const ethCalls = server.calls.filter((call) => call.tool === "eth_call");
-      assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), Object.values(SEL).slice().sort());
-      assert.deepEqual(ethCalls.map((call) => call.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
+      assert.deepEqual(ethCalls.map((call) => (call.args.transaction as { data: string }).data).sort(), USDC_SELECTORS);
+      assert.deepEqual(ethCalls.map((call) => call.args.block), Array(5).fill(BLOCK_HEX));
     } finally {
       await server.close();
     }
@@ -432,7 +507,7 @@ describe("degraded servers", () => {
       const { code, report } = await runJson([USDC, "-e", server.url]);
       assert.equal(code, 4);
       assert.equal(report.error.kind, "MCP_TOOLS_MISSING");
-      assert.equal(server.calls.filter((call) => call.tool === "eth_call").length, 4);
+      assert.equal(server.calls.filter((call) => call.tool === "eth_call").length, 5);
     } finally {
       await server.close();
     }

@@ -348,8 +348,13 @@
   .rows.keys-code dt { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-2); }
   .rows dd { min-width: 0; color: var(--text); font-size: .9375rem; overflow-wrap: anywhere; }
   .rows .sub { display: block; margin-top: 1px; color: var(--text-3); font-size: var(--fs-meta); }
+  /* A value that needs attention (paused: Yes) says so in its words and in the warning tone, never by
+     colour alone; its normal state takes no colour at all. */
+  .rows dd[data-tone="warning"] { color: var(--warning); font-weight: 600; }
   @container panel (min-width: 520px) {
     .rows.cols-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+    /* An odd last row takes the whole width, so its rule runs across the panel like the others. */
+    .rows.cols-2 > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
   }
   /* A long hex value takes the whole row on a narrow panel: key above, value below. */
   @container panel (max-width: 519px) {

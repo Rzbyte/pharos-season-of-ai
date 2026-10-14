@@ -193,6 +193,18 @@ describe("the words on the page", () => {
     assert.match(pageJs, /last \? "showing the last good snapshot" : "no snapshot yet", `\$\{problem\} Refresh to try again\.`\)/);
   });
 
+  test("paused reads Yes or No: Yes in the warning tone, No in none, and nothing claims more than the flag", () => {
+    // The fifth read sits last, so the four rows above it keep their place on the smallest screens.
+    assert.match(html, /<div><dt>network<\/dt><dd>[\s\S]*?<\/dd><\/div>\n {8}<div><dt>paused<\/dt><dd id="v-paused">—<\/dd><\/div>\n {6}<\/dl>/);
+    assert.match(pageJs, /setText\(paused, values\.paused === true \? "Yes" : values\.paused === false \? "No" : "—"\);/);
+    assert.match(pageJs, /if \(values\.paused === true\) paused\.dataset\.tone = "warning";\n {2}else delete paused\.dataset\.tone;/);
+    assert.match(rules, /\.rows dd\[data-tone="warning"\] \{ color: var\(--warning\); font-weight: 600; \}/);
+    assert.match(rules, /\.rows\.cols-2 > div:last-child:nth-child\(odd\) \{ grid-column: 1 \/ -1; \}/);
+    assert.match(visibleText, /and its pause flag, paused ?, all pinned to one explicit block/);
+    assert.doesNotMatch(visibleText, /\b(?:safe|healthy)\b/i);
+    for (const [name, text] of literals) assert.doesNotMatch(text, /\b(?:safe|healthy)\b/i, `${name}: "${text}"`);
+  });
+
   test("fresh or cached is decided by the response itself", () => {
     const at = "2026-10-14T09:34:03.000Z";
     const headers = (entries = {}) => new Headers(entries);
@@ -223,21 +235,27 @@ describe("the page reports evidence, not certification", () => {
     assert.doesNotMatch(everything, /verif|certif|guarantee|audited|trustless|100%/i);
   });
 
-  test("keeps the four contract reads apart from the two context calls", () => {
-    assert.match(visibleText, /Contract reads 4 name · symbol · decimals · totalSupply/);
+  test("keeps the contract reads apart from the context calls, and takes both counts from the report's call model", () => {
     assert.match(visibleText, /Explicit block 1/);
-    assert.match(visibleText, /Chain MCP tool calls — 2 context \+ 4 contract reads/);
     assert.match(visibleText, /get_chain_info Context: confirms chain ID/);
     assert.match(visibleText, /get_block_number Context: fixes block/);
-    assert.match(visibleText, /eth_call ×4 Contract reads: name, symbol, decimals, totalSupply/);
-    assert.match(pageJs, /"2 context \+ 4 contract reads"/);
+    // Placeholders until the first read: the page states the counts the report gives, never its own.
+    assert.match(html, /<div><dt>Contract reads<\/dt><dd class="count-n" id="proof-reads">—<\/dd><dd class="count-note" id="proof-reads-list">—<\/dd><\/div>/);
+    assert.match(html, /<dd class="count-n" id="proof-calls">—<\/dd><dd class="count-note" id="proof-calls-sub">—<\/dd>/);
+    assert.match(html, /<code class="step-k" id="step-reads">eth_call<\/code><span class="step-d">Contract reads: <span id="step-reads-list">—<\/span>, each at block <span data-block>—<\/span><\/span>/);
+    // One call per context tool and per contract read, from source.contextCalls and source.contractReads;
+    // anything beyond that is a same-block retry. No count is written into the page script.
+    assert.match(pageJs, /const reads = source\.contractReads;\n {2}const context = source\.contextCalls;\n {2}const calls = source\.toolCalls;\n {2}const retries = calls - context\.length - reads\.length;/);
+    assert.match(pageJs, /`\$\{context\.length\} context \+ \$\{reads\.length\} contract reads`/);
+    assert.match(pageJs, /setText\(\$\("t-calls"\), `\$\{calls\}: \$\{context\.join\(", "\)\}, eth_call ×\$\{calls - context\.length\}`\);/);
+    assert.doesNotMatch(pageJs, /calls - \d|toolCalls - \d|×\d|\d context|\d contract reads/);
   });
 
   test("shows the frozen contract and the real ERC-20 selectors", () => {
     assert.equal(USDC, "0xC879C018dB60520F4355C26eD1a6D572cdAC1815");
     assert.equal(html.match(new RegExp(USDC, "g")).length, 2);
     const selectors = Object.fromEntries([...visibleText.matchAll(/(\w+)\(\) (0x[0-9a-f]{8})/g)].map(([, fn, selector]) => [fn, selector]));
-    assert.deepEqual(Object.keys(selectors).sort(), ["decimals", "name", "symbol", "totalSupply"]);
+    assert.deepEqual(Object.keys(selectors).sort(), ["decimals", "name", "paused", "symbol", "totalSupply"]);
     for (const [fn, selector] of Object.entries(selectors)) assert.equal(selector, toFunctionSelector(`${fn}()`), fn);
   });
 

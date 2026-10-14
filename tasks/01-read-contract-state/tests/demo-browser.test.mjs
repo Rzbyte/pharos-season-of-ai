@@ -27,7 +27,8 @@ try {
 // Test fixtures only: made up, never used as proof.
 const str = (value) => encodeAbiParameters([{ type: "string" }], [value]);
 const uint = (value) => encodeAbiParameters([{ type: "uint256" }], [value]);
-const SEL = { name: "0x06fdde03", symbol: "0x95d89b41", decimals: "0x313ce567", totalSupply: "0x18160ddd" };
+const bool = (value) => encodeAbiParameters([{ type: "bool" }], [value]);
+const SEL = { name: "0x06fdde03", symbol: "0x95d89b41", decimals: "0x313ce567", totalSupply: "0x18160ddd", paused: "0x5c975abb" };
 const USDC = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
 const PARTIAL = "0x0000000000000000000000000000000000c0ffee";
 const MINED = `0x${"ab".repeat(32)}`;
@@ -37,7 +38,7 @@ const SENDER = "0x5b3d0f4e9a2c7d1b8e6f0a4c2d9e7b1a3c5f8d02";
 const CHAIN = {
   blockNumber: 20_384_112n,
   contracts: {
-    [USDC.toLowerCase()]: { [SEL.name]: str("USDC"), [SEL.symbol]: str("USDC"), [SEL.decimals]: uint(6n), [SEL.totalSupply]: uint(20_271_995_983_588n) },
+    [USDC.toLowerCase()]: { [SEL.name]: str("USDC"), [SEL.symbol]: str("USDC"), [SEL.decimals]: uint(6n), [SEL.totalSupply]: uint(20_271_995_983_588n), [SEL.paused]: bool(false) },
     [PARTIAL]: { [SEL.name]: str("Partial Token"), [SEL.symbol]: { revert: "execution reverted" }, [SEL.decimals]: "0x", [SEL.totalSupply]: uint(1_000_000n) },
   },
   transactions: {
@@ -56,6 +57,8 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": 
 
 describe("the Task 01 page in a browser", { skip }, () => {
   let fake;
+  let pausedFake;
+  let retryFake;
   let server;
   let browser;
   let base;
@@ -66,6 +69,12 @@ describe("the Task 01 page in a browser", { skip }, () => {
 
   before(async () => {
     fake = await startFakeInspectorMcp(CHAIN);
+    // The same chain with the contract paused, and with one transient paused() failure to retry.
+    const withPaused = (behavior) => ({ ...CHAIN, contracts: { ...CHAIN.contracts, [USDC.toLowerCase()]: { ...CHAIN.contracts[USDC.toLowerCase()], [SEL.paused]: behavior } } });
+    pausedFake = await startFakeInspectorMcp(withPaused(bool(true)));
+    retryFake = await startFakeInspectorMcp(withPaused({ failTimes: 1, then: bool(false) }));
+    const pausedState = stateHandler(pausedFake.url);
+    const retryState = stateHandler(retryFake.url);
     const state = stateHandler(fake.url);
     const deadState = stateHandler("http://127.0.0.1:9/mcp");
     const inspect = inspectHandler(fake.url);
@@ -75,6 +84,8 @@ describe("the Task 01 page in a browser", { skip }, () => {
       if (url.pathname === "/api/state") {
         if (mode.state === "slow") await new Promise((resolve) => setTimeout(resolve, 1500));
         if (mode.state === "error") return void deadState(req, res);
+        if (mode.state === "paused") return void pausedState(req, res);
+        if (mode.state === "retry") return void retryState(req, res);
         if (mode.state === "malformed") return void res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
         if (mode.state === "repeat") {
           // The same report twice, as an edge cache would serve it, with no cache headers at all.
@@ -110,6 +121,8 @@ describe("the Task 01 page in a browser", { skip }, () => {
     server?.closeAllConnections();
     await new Promise((resolve) => (server ? server.close(resolve) : resolve()));
     await fake?.close();
+    await pausedFake?.close();
+    await retryFake?.close();
   });
 
   /** A fresh page; resolves once the snapshot has settled (or failed). */
@@ -211,7 +224,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
   });
 
   test("the first screen holds the task, contract, tool, snapshot state, block, read time, supply and state rows", async () => {
-    for (const [width, height, extra] of [[320, 568, []], [390, 844, ["#address", "[data-refresh]", "#copy", "#contract-explorer"]], [1280, 860, ["#address", "[data-refresh]", "#copy", "#contract-explorer"]]]) {
+    for (const [width, height, extra] of [[320, 568, []], [390, 844, ["#v-paused", "#address", "[data-refresh]", "#copy", "#contract-explorer"]], [1280, 860, ["#v-paused", "#address", "[data-refresh]", "#copy", "#contract-explorer"]]]) {
       for (const theme of ["dark", "light"]) {
         const { context, page } = await open({ width, height, theme });
         const below = await page.evaluate((selectors) => selectors.filter((selector) => {
@@ -422,15 +435,17 @@ describe("the Task 01 page in a browser", { skip }, () => {
     mode.state = "fresh";
   });
 
-  test("the Task 01 proof is intact: the same read the API reports, four reads at one block, six tool calls", async () => {
+  test("the Task 01 proof is intact: the same read the API reports, five reads at one block, seven tool calls", async () => {
     const { context, page } = await open({ width: 1280, height: 860 });
     const api = await page.evaluate(async () => (await fetch("/api/state", { cache: "no-store" })).json());
     const shown = await page.evaluate(() => {
       const text = (selector) => document.querySelector(selector).textContent;
       return {
         supply: text("#supply-amount") + " " + text("#supply-unit"),
-        values: [text("#v-name"), text("#v-symbol"), text("#v-decimals"), text("#network"), text("#snapshot .rows [data-chain]")],
+        values: [text("#v-name"), text("#v-symbol"), text("#v-decimals"), text("#network"), text("#snapshot .rows [data-chain]"), text("#v-paused")],
         counts: [...document.querySelectorAll(".counts .count-n")].map((count) => count.textContent),
+        reads: [text("#proof-reads-list"), text("#proof-calls-sub"), text("#step-reads"), text("#step-reads-list")],
+        selectors: [...document.querySelectorAll(".kv dt")].find((dt) => dt.textContent === "Selectors").nextElementSibling.textContent,
         calls: text("#t-calls"),
         block: text("#t-block"),
         raw: text("#v-raw"),
@@ -439,13 +454,57 @@ describe("the Task 01 page in a browser", { skip }, () => {
       };
     });
     assert.equal(shown.supply, api.display.totalSupply);
-    assert.deepEqual(shown.values, [api.values.name, api.values.symbol, String(api.values.decimals), "Pharos Mainnet", "1672"]);
-    assert.deepEqual(shown.counts, ["4", "1", "6", "0"]);
-    assert.equal(shown.calls, "6: get_chain_info, get_block_number, eth_call ×4");
+    assert.deepEqual(shown.values, [api.values.name, api.values.symbol, String(api.values.decimals), "Pharos Mainnet", "1672", "No"]);
+    assert.equal(api.values.paused, false);
+    // Every count comes from the report's call model: 2 context calls + 5 contract reads = 7.
+    assert.deepEqual([api.source.contextCalls, api.source.contractReads, api.source.toolCalls], [["get_chain_info", "get_block_number"], ["name", "symbol", "decimals", "totalSupply", "paused"], 7]);
+    assert.deepEqual(shown.counts, ["5", "1", "7", "0"]);
+    assert.deepEqual(shown.reads, ["name · symbol · decimals · totalSupply · paused", "2 context + 5 contract reads", "eth_call ×5", "name, symbol, decimals, totalSupply, paused"]);
+    assert.match(shown.selectors, / · paused\(\) 0x5c975abb$/);
+    assert.equal(shown.calls, "7: get_chain_info, get_block_number, eth_call ×5");
     assert.equal(shown.block, `${api.blockNumber}, sent as 0x${BigInt(api.blockNumber).toString(16)} in every eth_call`);
     assert.equal(shown.raw, api.values.totalSupply.raw);
     assert.equal(shown.address, USDC);
     assert.equal(shown.transcript, "https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/01-read-contract-state/proof/mcp-transcript.json");
+    await context.close();
+  });
+
+  test("paused: No takes the text colour, Yes the warning tone in words; a same-block retry is counted on top of the model", async () => {
+    const tone = (page) => page.evaluate(() => {
+      const cell = document.getElementById("v-paused");
+      const style = getComputedStyle(cell);
+      return { text: cell.textContent, tone: cell.dataset.tone ?? null, color: style.color, weight: style.fontWeight, key: cell.previousElementSibling.textContent };
+    });
+    for (const theme of ["dark", "light"]) {
+      const { context, page, errors } = await open({ width: 390, theme });
+      const text = await page.evaluate(() => getComputedStyle(document.getElementById("v-name")).color);
+      assert.deepEqual(await tone(page), { text: "No", tone: null, color: text, weight: "400", key: "paused" }, `${theme} not paused`);
+
+      mode.state = "paused";
+      await page.click("[data-refresh]");
+      await page.waitForFunction(() => document.getElementById("v-paused").textContent === "Yes", null, { timeout: 15_000 });
+      await settled(page, ["fresh"]);
+      const warning = theme === "dark" ? "rgb(242, 179, 61)" : "rgb(154, 91, 0)";
+      assert.deepEqual(await tone(page), { text: "Yes", tone: "warning", color: warning, weight: "600", key: "paused" }, `${theme} paused`);
+      // A read fact, not a status: the snapshot itself is still a fresh read, and nothing says "safe".
+      assert.equal(await page.evaluate(() => document.querySelector("[data-status-word]").textContent), "Fresh snapshot");
+      assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /\bsafe\b/i);
+
+      mode.state = "fresh";
+      await page.click("[data-refresh]");
+      await page.waitForFunction(() => document.getElementById("v-paused").textContent === "No", null, { timeout: 15_000 });
+      assert.equal((await tone(page)).tone, null, `${theme} back to not paused`);
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+
+    // One transient paused() failure, retried at the same block: 2 + 5 + 1 = 8 tool calls, said as a retry.
+    mode.state = "retry";
+    const { context, page } = await open({ width: 1280, height: 860 });
+    const counts = await page.evaluate(() => [document.getElementById("proof-calls").textContent, document.getElementById("proof-calls-sub").textContent, document.getElementById("t-calls").textContent, document.getElementById("t-retries").textContent]);
+    assert.deepEqual(counts, ["8", "includes 1 same-block retry", "8: get_chain_info, get_block_number, eth_call ×6", "paused() retried once at the same block"]);
+    assert.equal(await page.evaluate(() => document.getElementById("v-paused").textContent), "No");
+    mode.state = "fresh";
     await context.close();
   });
 

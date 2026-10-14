@@ -83,8 +83,12 @@ function render(data) {
   const supply = splitAmount(data.display?.totalSupply ?? `${values.totalSupply.formatted} ${values.symbol}`);
   const block = groupDigits(data.blockNumber);
   const changed = !last || last.blockNumber !== data.blockNumber || last.values.totalSupply.raw !== values.totalSupply.raw;
+  // The call model behind the count, from the report itself: one call per context tool and per
+  // contract read; anything beyond that is a same-block retry. Nothing here assumes how many reads.
+  const reads = source.contractReads;
+  const context = source.contextCalls;
   const calls = source.toolCalls;
-  const retries = calls - 6;
+  const retries = calls - context.length - reads.length;
 
   // The snapshot: what contract, which block and when, the supply, then the other three reads.
   setText($("subject"), contract.label);
@@ -96,6 +100,11 @@ function render(data) {
   setText($("v-name"), values.name);
   setText($("v-symbol"), values.symbol);
   setText($("v-decimals"), String(values.decimals));
+  // paused() as read, in words: Yes takes the warning tone, No takes none. Nothing more is claimed.
+  const paused = $("v-paused");
+  setText(paused, values.paused === true ? "Yes" : values.paused === false ? "No" : "—");
+  if (values.paused === true) paused.dataset.tone = "warning";
+  else delete paused.dataset.tone;
   setText($("network"), network?.name ?? "Not confirmed");
   setText("[data-chain]", network ? String(network.chainId) : "not confirmed");
   setText("[data-block]", `#${block}`);
@@ -107,12 +116,16 @@ function render(data) {
   warnings.hidden = data.warnings.length === 0;
 
   // Proof and technical details: the "how", collapsed by default.
+  setText($("proof-reads"), String(reads.length));
+  setText($("proof-reads-list"), reads.join(" · "));
+  setText($("step-reads"), `eth_call ×${reads.length}`);
+  setText($("step-reads-list"), reads.join(", "));
   setText($("proof-calls"), String(calls));
-  setText($("proof-calls-sub"), retries > 0 ? `includes ${retries} same-block retr${retries === 1 ? "y" : "ies"}` : "2 context + 4 contract reads");
+  setText($("proof-calls-sub"), retries > 0 ? `includes ${retries} same-block retr${retries === 1 ? "y" : "ies"}` : `${context.length} context + ${reads.length} contract reads`);
   setText($("v-raw"), values.totalSupply.raw);
   setText($("t-endpoint"), source.endpoint);
   setText($("t-server"), source.server ?? "not reported");
-  setText($("t-calls"), `${calls}: get_chain_info, get_block_number, eth_call ×${calls - 2}`);
+  setText($("t-calls"), `${calls}: ${context.join(", ")}, eth_call ×${calls - context.length}`);
   setText($("t-block"), `${data.blockNumber}, sent as ${toHexBlock(data.blockNumber)} in every eth_call`);
   linkExplorer($("block-explorer"), "block", data.blockNumber, `block ${block}`);
   setText($("t-raw"), `${values.totalSupply.raw} with ${values.decimals} decimals`);

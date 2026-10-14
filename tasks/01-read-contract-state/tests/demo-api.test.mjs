@@ -15,10 +15,12 @@ const USDC = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
 const BLOCK_HEX = "0x1092"; // 4242
 const str = (value) => encodeAbiParameters([{ type: "string" }], [value]);
 const uint = (value) => encodeAbiParameters([{ type: "uint256" }], [value]);
+const bool = (value) => encodeAbiParameters([{ type: "bool" }], [value]);
 const chain = {
   blockNumber: 4242n,
   contracts: {
-    [USDC.toLowerCase()]: { "0x06fdde03": str("USDC"), "0x95d89b41": str("USDC"), "0x313ce567": uint(6n), "0x18160ddd": uint(123_456_789_012_345n) },
+    // name, symbol, decimals, totalSupply and paused(): the Task 01 contract's five reads.
+    [USDC.toLowerCase()]: { "0x06fdde03": str("USDC"), "0x95d89b41": str("USDC"), "0x313ce567": uint(6n), "0x18160ddd": uint(123_456_789_012_345n), "0x5c975abb": bool(false) },
   },
 };
 
@@ -76,15 +78,23 @@ describe("demo API against a fake Pharos MCP server", () => {
     assert.deepEqual(body.contract, { address: USDC, label: "Circle USDC Contract", labelSource: "known-address" });
     assert.deepEqual(body.network, { chainId: 1672, name: "Pharos Mainnet" });
     assert.equal(body.blockNumber, "4242");
-    assert.deepEqual(body.values, { name: "USDC", symbol: "USDC", decimals: 6, totalSupply: { raw: "123456789012345", formatted: "123456789.012345" } });
+    assert.deepEqual(body.values, { name: "USDC", symbol: "USDC", decimals: 6, totalSupply: { raw: "123456789012345", formatted: "123456789.012345" }, paused: false });
     assert.deepEqual(body.display, { totalSupply: "123,456,789.012345 USDC" });
-    assert.deepEqual(body.source, { via: "Pharos Chain MCP", endpoint: server.url, server: "fake-pharos-mcp 0.0.0", toolCalls: 6 });
+    // The call model the page derives its counts from: 2 context calls + 5 contract reads = 7 tool calls.
+    assert.deepEqual(body.source, {
+      via: "Pharos Chain MCP",
+      endpoint: server.url,
+      server: "fake-pharos-mcp 0.0.0",
+      toolCalls: 7,
+      contextCalls: ["get_chain_info", "get_block_number"],
+      contractReads: ["name", "symbol", "decimals", "totalSupply", "paused"],
+    });
     assert.deepEqual(body.tool, { name: "read-contract-state", version: "1.0.2" });
     assert.match(body.summary, /At Pharos Mainnet block 4242, the Circle USDC Contract reports a total supply of 123,456,789\.012345 USDC\./);
     assert.ok(!Number.isNaN(Date.parse(body.fetchedAt)));
   });
 
-  test("reads only through MCP: every request goes to the MCP endpoint, no standalone GET, four eth_calls on one block", async () => {
+  test("reads only through MCP: every request goes to the MCP endpoint, no standalone GET, five eth_calls on one block", async () => {
     server.calls.length = 0;
     server.requests.length = 0;
     const { result, sent } = await withFetchSpy(() => readState(server.url));
@@ -94,10 +104,10 @@ describe("demo API against a fake Pharos MCP server", () => {
     assert.ok(!server.requests.some((method) => method.startsWith("GET")));
     assert.ok(!server.methods.includes("tools/list"));
     const tools = sent.filter((request) => request.body?.method === "tools/call").map((request) => request.body.params.name);
-    assert.deepEqual(tools.sort(), ["eth_call", "eth_call", "eth_call", "eth_call", "get_block_number", "get_chain_info"]);
+    assert.deepEqual(tools.sort(), ["eth_call", "eth_call", "eth_call", "eth_call", "eth_call", "get_block_number", "get_chain_info"]);
     const ethCalls = server.calls.filter((entry) => entry.tool === "eth_call");
-    assert.deepEqual(ethCalls.map((entry) => entry.args.block), [BLOCK_HEX, BLOCK_HEX, BLOCK_HEX, BLOCK_HEX]);
-    assert.deepEqual(ethCalls.map((entry) => entry.args.transaction.data).sort(), ["0x06fdde03", "0x18160ddd", "0x313ce567", "0x95d89b41"]);
+    assert.deepEqual(ethCalls.map((entry) => entry.args.block), Array(5).fill(BLOCK_HEX));
+    assert.deepEqual(ethCalls.map((entry) => entry.args.transaction.data).sort(), ["0x06fdde03", "0x18160ddd", "0x313ce567", "0x5c975abb", "0x95d89b41"]);
   });
 
   test("keeps the 1.0.2 transport fix: a server that stalls once a GET stream is open still gives a full read", async () => {

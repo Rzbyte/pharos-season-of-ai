@@ -3,13 +3,17 @@ import { describe, test } from "node:test";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { encodeAbiParameters, stringToHex, type Hex } from "viem";
-import { HOSTED_ENDPOINT } from "../src/constants.js";
+import { DEFAULT_TOKEN, HOSTED_ENDPOINT } from "../src/constants.js";
 import {
   CALLDATA,
+  decodeBoolReturn,
   decodeDecimalsReturn,
   decodeStringReturn,
   decodeUint256Return,
   EmptyReturnError,
+  ERC20_FIELDS,
+  fieldsFor,
+  FIELDS,
   MalformedReturnError,
   readTokenState,
 } from "../src/erc20.js";
@@ -23,6 +27,7 @@ import { buildTranscript } from "../src/transcript.js";
 const ENDPOINT = new URL(HOSTED_ENDPOINT);
 const uint = (value: bigint) => encodeAbiParameters([{ type: "uint256" }], [value]);
 const str = (value: string) => encodeAbiParameters([{ type: "string" }], [value]);
+const bool = (value: boolean) => encodeAbiParameters([{ type: "bool" }], [value]);
 
 describe("formatting", () => {
   test("groups digits without float rounding", () => {
@@ -55,8 +60,27 @@ describe("formatting", () => {
 });
 
 describe("ABI decoding", () => {
-  test("calldata is exactly the four ERC-20 selectors", () => {
-    assert.deepEqual(CALLDATA, { name: "0x06fdde03", symbol: "0x95d89b41", decimals: "0x313ce567", totalSupply: "0x18160ddd" });
+  test("calldata is exactly the four ERC-20 selectors and paused()", () => {
+    assert.deepEqual(CALLDATA, { name: "0x06fdde03", symbol: "0x95d89b41", decimals: "0x313ce567", totalSupply: "0x18160ddd", paused: "0x5c975abb" });
+  });
+
+  test("the Task 01 contract has five required reads; any other address keeps the four ERC-20 reads", () => {
+    assert.deepEqual(fieldsFor(DEFAULT_TOKEN), ["name", "symbol", "decimals", "totalSupply", "paused"]);
+    assert.deepEqual(fieldsFor(DEFAULT_TOKEN.toLowerCase() as `0x${string}`), FIELDS);
+    assert.deepEqual(fieldsFor("0x1111111111111111111111111111111111111111"), ["name", "symbol", "decimals", "totalSupply"]);
+    assert.deepEqual(ERC20_FIELDS, ["name", "symbol", "decimals", "totalSupply"]);
+  });
+
+  test("decodes an ABI bool only from exactly one 32-byte word holding 0 or 1", () => {
+    assert.equal(decodeBoolReturn(bool(false)), false);
+    assert.equal(decodeBoolReturn(bool(true)), true);
+    assert.equal(decodeBoolReturn(`0x${"0".repeat(64)}`), false);
+    assert.equal(decodeBoolReturn(`0x${"0".repeat(63)}1`), true);
+    assert.throws(() => decodeBoolReturn("0x"), EmptyReturnError);
+    // Never coerced: another value, a short or long return, or an odd-length word is not a bool.
+    for (const data of [uint(2n), uint(2n ** 255n), `0x${"0".repeat(60)}01` as Hex, `0x${"0".repeat(65)}1` as Hex, `0x${"0".repeat(63)}` as Hex, `${bool(false)}${"0".repeat(64)}` as Hex, "0x01"]) {
+      assert.throws(() => decodeBoolReturn(data as Hex), MalformedReturnError, data);
+    }
   });
 
   test("decodes ABI strings and bytes32 fallbacks", () => {
@@ -253,7 +277,12 @@ describe("readTokenState with a stub MCP caller", () => {
       (args.transaction as { data: string }).data === CALLDATA.symbol ? new ToolCallError("eth_call", "execution reverted", 3) : answer(args),
     );
     await assert.rejects(readTokenState(mcp, token, 7n, { retryDelayMs: 1 }), (error: unknown) => {
-      return error instanceof CliError && error.kind === "NOT_ERC20" && /symbol\(\) reverted/.test(error.message);
+      // Any other ERC-20: the four standard reads only, in the same words as before paused() existed.
+      assert.ok(error instanceof CliError);
+      assert.equal(error.kind, "NOT_ERC20");
+      assert.equal(error.message, `${token} did not answer every required ERC-20 read at block 7: symbol() reverted (execution reverted).`);
+      assert.equal(error.hint, "This tool needs name(), symbol(), decimals() and totalSupply() to all succeed. Double-check the address on a Pharos block explorer.");
+      return true;
     });
     assert.equal(mcp.log.length, 4);
   });
@@ -262,6 +291,83 @@ describe("readTokenState with a stub MCP caller", () => {
     const mcp = stub(() => new CliError("MCP_CONNECTION", "socket hang up"));
     await assert.rejects(readTokenState(mcp, token, 1n, { retryDelayMs: 1 }), (error: unknown) => {
       return error instanceof CliError && error.kind === "MCP_CONNECTION";
+    });
+  });
+
+  describe("the Task 01 contract: paused() as the fifth required read", () => {
+    const usdc = DEFAULT_TOKEN as `0x${string}`;
+    const withPaused = (paused: Hex | Error) => (args: Record<string, unknown>) =>
+      (args.transaction as { data: string }).data === CALLDATA.paused ? (paused instanceof Error ? paused : { result: paused }) : answer(args);
+
+    test("reads all five values, every eth_call pinned to the same block", async () => {
+      for (const paused of [false, true]) {
+        const mcp = stub((_, args) => withPaused(bool(paused))(args));
+        const state = await readTokenState(mcp, usdc, 255n, { retryDelayMs: 1 });
+        assert.equal(state.paused, paused);
+        assert.deepEqual(state.reads, ["name", "symbol", "decimals", "totalSupply", "paused"]);
+        assert.equal(mcp.log.length, 5);
+        assert.ok(mcp.log.every((entry) => entry.startsWith("eth_call:") && entry.endsWith(":0xff")));
+        assert.deepEqual(mcp.log.map((entry) => entry.split(":")[1]).sort(), Object.values(CALLDATA).sort());
+      }
+    });
+
+    test("a contract outside the known list is never asked for paused()", async () => {
+      const mcp = stub((_, args) => answer(args));
+      const state = await readTokenState(mcp, token, 255n, { retryDelayMs: 1 });
+      assert.equal(state.paused, undefined);
+      assert.ok(!("paused" in state));
+      assert.ok(!mcp.log.some((entry) => entry.includes(CALLDATA.paused)));
+    });
+
+    test("an invalid ABI bool, an empty return or a revert fails the run as a Task 01 state read, never as not ERC-20", async () => {
+      for (const [paused, pattern] of [
+        [uint(2n), /paused\(\) returned invalid data \(returned a word that is neither 0 nor 1/],
+        [`0x${"0".repeat(60)}01` as Hex, /paused\(\) returned invalid data \(returned 31 bytes/],
+        ["0x" as Hex, /paused\(\) returned no data/],
+        [new ToolCallError("eth_call", "execution reverted", 3), /paused\(\) reverted/],
+      ] as const) {
+        const mcp = stub((_, args) => withPaused(paused)(args));
+        await assert.rejects(readTokenState(mcp, usdc, 7n, { retryDelayMs: 1 }), (error: unknown) => {
+          // The four ERC-20 reads answered: paused() is not part of ERC-20, so this is the generic read
+          // failure (exit 5, as before), and nothing in it calls the contract anything but what it is.
+          assert.ok(error instanceof CliError);
+          assert.equal(error.kind, "MCP_TOOL_ERROR");
+          assert.equal(error.exitCode, 5);
+          assert.match(error.message, new RegExp(`^A required Task 01 state read failed for ${usdc} at block 7: paused\\(\\) `));
+          assert.match(error.message, pattern);
+          assert.doesNotMatch(error.message, /ERC-?20/);
+          assert.match(error.hint ?? "", /^paused\(\) is not part of ERC-20: this tool requires it only of the verified Task 01 contract, and its four ERC-20 reads succeeded at the same block\./);
+          assert.doesNotMatch(error.hint ?? "", /not an ERC-20 token|every required ERC-20 read/);
+          return true;
+        }, String(pattern));
+        assert.equal(mcp.log.length, 5, "a revert, an empty return or invalid data is never retried");
+      }
+    });
+
+    test("an ERC-20 read that fails is NOT_ERC20 for that read alone; a paused() failure beside it is named as a Task 01 state read", async () => {
+      const mcp = stub((_, args) =>
+        (args.transaction as { data: string }).data === CALLDATA.symbol ? new ToolCallError("eth_call", "execution reverted", 3) : withPaused("0x")(args),
+      );
+      await assert.rejects(readTokenState(mcp, usdc, 7n, { retryDelayMs: 1 }), (error: unknown) => {
+        assert.ok(error instanceof CliError);
+        assert.equal(error.kind, "NOT_ERC20");
+        assert.equal(
+          error.message,
+          `${usdc} did not answer every required ERC-20 read at block 7: symbol() reverted (execution reverted). The required Task 01 state read failed too: paused() returned no data.`,
+        );
+        assert.equal(error.hint, "This tool needs name(), symbol(), decimals() and totalSupply() to all succeed. Double-check the address on a Pharos block explorer.");
+        return true;
+      });
+    });
+
+    test("a transient paused() failure is retried once, at the same block", async () => {
+      let failures = 1;
+      const mcp = stub((_, args) =>
+        (args.transaction as { data: string }).data === CALLDATA.paused && failures-- > 0 ? new ToolCallError("eth_call", "header not found", -32000) : withPaused(bool(false))(args),
+      );
+      const state = await readTokenState(mcp, usdc, 7n, { retryDelayMs: 1 });
+      assert.deepEqual([state.retried, state.paused, mcp.log.length], [["paused"], false, 6]);
+      assert.ok(mcp.log.every((entry) => entry.endsWith(":0x7")));
     });
   });
 });
@@ -305,7 +411,7 @@ describe("README proof update", () => {
   test("fills the marked sections from a valid hosted run and ticks requirement 4", () => {
     const evidence = evidenceFromRun(transcript(), output);
     assert.equal(evidence.blockNumber, "4242");
-    assert.equal(evidence.ethCalls, 4);
+    assert.equal(evidence.ethCalls, 5);
     const next = applyLiveRun(readme, evidence, { transcript: "proof/mcp-transcript.json", output: "sample-output/live-run.txt" });
     assert.match(next, /- \[x\] Short README/);
     assert.match(next, /\[Live Sample Output\]\(#live-sample-output\)/, "the status line must link to the README's real section");
@@ -320,6 +426,8 @@ describe("README proof update", () => {
     assert.throws(() => evidenceFromRun(transcript({ ok: false }), output), /the run failed/);
     assert.throws(() => evidenceFromRun(transcript({ block: "latest" }), output), /not pinned to block 4242/);
     assert.throws(() => evidenceFromRun(transcript({ failSelector: CALLDATA.decimals }), output), /without a successful eth_call response: decimals\(\)/);
+    // The Task 01 contract's proof needs paused() too, whatever the report says about itself.
+    assert.throws(() => evidenceFromRun(transcript({ failSelector: CALLDATA.paused }), output), /without a successful eth_call response: paused\(\)/);
     assert.throws(() => evidenceFromRun(transcript(), output.replace("4242", "9999")), /does not show the block number/);
     assert.throws(() => evidenceFromRun(transcript(), output.replace(HOSTED_ENDPOINT, "http://127.0.0.1:3001/mcp")), /not produced against the hosted endpoint/);
   });

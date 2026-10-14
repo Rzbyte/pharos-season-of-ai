@@ -1,6 +1,6 @@
-import { toHex } from "viem";
+import { getAddress, isAddress, toHex } from "viem";
 import { HOSTED_ENDPOINT } from "./constants.js";
-import { CALLDATA, FIELDS } from "./erc20.js";
+import { CALLDATA, fieldsFor } from "./erc20.js";
 import { TRANSCRIPT_FORMAT } from "./transcript.js";
 
 // The README's live sections are written only by `npm run proof`, from a run that succeeded
@@ -39,7 +39,7 @@ export function evidenceFromRun(transcript: unknown, output: string): LiveRunEvi
   const blockNumber = report.blockNumber;
   if (typeof blockNumber !== "string" || !/^\d+$/.test(blockNumber)) throw new Error("the report has no block number");
   const contract = asObject(report.contract, "outcome.report.contract").address;
-  if (typeof contract !== "string") throw new Error("the report has no contract address");
+  if (typeof contract !== "string" || !isAddress(contract, { strict: false })) throw new Error("the report has no contract address");
 
   // Every eth_call request must carry the block the report claims, and enough of them must have succeeded.
   const messages = Array.isArray(t.messages) ? (t.messages as Json[]) : [];
@@ -50,8 +50,9 @@ export function evidenceFromRun(transcript: unknown, output: string): LiveRunEvi
   if (unpinned.length > 0) throw new Error(`${unpinned.length} eth_call request(s) were not pinned to block ${blockNumber}`);
   if (!requests.some((m) => asOptionalObject(m.params)?.name === "get_block_number")) throw new Error("the transcript has no get_block_number call");
 
-  // Each of the four required reads needs at least one successful response. A failed first
-  // attempt that was retried at the same block is fine; a read that never succeeded is not.
+  // Each required read of this contract (fieldsFor: the four ERC-20 reads, and paused() for the Task 01
+  // contract) needs at least one successful response, whatever the report says about itself. A failed
+  // first attempt that was retried at the same block is fine; a read that never succeeded is not.
   const ethCallIds = new Set(ethCallRequests.map((m) => m.id));
   const succeededIds = new Set(
     messages
@@ -64,7 +65,7 @@ export function evidenceFromRun(transcript: unknown, output: string): LiveRunEvi
       .filter((m) => succeededIds.has(m.id))
       .map((m) => String(asOptionalObject(asOptionalObject(asOptionalObject(m.params)?.arguments)?.transaction)?.data ?? "").slice(0, 10).toLowerCase()),
   );
-  const missing = FIELDS.filter((field) => !readSelectors.has(CALLDATA[field])).map((field) => `${field}()`);
+  const missing = fieldsFor(getAddress(contract.toLowerCase())).filter((field) => !readSelectors.has(CALLDATA[field])).map((field) => `${field}()`);
   if (missing.length > 0) throw new Error(`required read(s) without a successful eth_call response: ${missing.join(", ")}`);
   const okResponses = [...succeededIds];
 

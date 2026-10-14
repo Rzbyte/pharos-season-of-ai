@@ -15,11 +15,14 @@ export const DEFAULT_TOKEN = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
  * Human labels for addresses we have verified from official sources, keyed by lowercase address.
  * A label is only applied when the endpoint reports the same chain and symbol() matches, so the
  * CLI never puts a wrong name on a contract. Every other address is labelled from its on-chain name.
+ * `pausable` marks a contract whose paused() was checked live through Chain MCP: for it, paused()
+ * is a fifth required read. Any other address keeps the four ERC-20 reads.
  */
-export const KNOWN_CONTRACTS: Readonly<Record<string, { label: string; chainId: number; symbol: string }>> = {
+export const KNOWN_CONTRACTS: Readonly<Record<string, { label: string; chainId: number; symbol: string; pausable?: boolean }>> = {
   // Sources: developers.circle.com/stablecoins/usdc-contract-addresses and
-  // docs.chain.link/ccip/directory/mainnet/chain/pharos-mainnet
-  "0xc879c018db60520f4355c26ed1a6d572cdac1815": { label: "Circle USDC Contract", chainId: 1672, symbol: "USDC" },
+  // docs.chain.link/ccip/directory/mainnet/chain/pharos-mainnet. paused() (Circle's FiatToken)
+  // answered false through the hosted Chain MCP at block 20200229.
+  "0xc879c018db60520f4355c26ed1a6d572cdac1815": { label: "Circle USDC Contract", chainId: 1672, symbol: "USDC", pausable: true },
 };
 
 export const DEFAULT_TIMEOUT_MS = 20_000;

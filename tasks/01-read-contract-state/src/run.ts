@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { formatUnits, getAddress, isAddress, type Address } from "viem";
 import { CHAIN_NAMES, DEFAULT_TIMEOUT_MS, DEFAULT_TOKEN, HOSTED_ENDPOINT, KNOWN_CONTRACTS, TOOL_NAME, VERSION } from "./constants.js";
-import { FIELDS, readTokenState, type TokenState } from "./erc20.js";
+import { readTokenState, type TokenState } from "./erc20.js";
 import { CliError, errorMessage, shorten, toCliError, ToolCallError } from "./errors.js";
 import { createStyle, formatTokenAmount, renderRows, sanitizeForTerminal, wrapText, type Style } from "./format.js";
 import { McpRecorder, PharosMcp } from "./mcp-client.js";
@@ -49,6 +49,13 @@ interface Report {
   elapsedMs: number;
   warnings: string[];
 }
+
+/**
+ * The context calls every run makes besides its contract reads: one each. A run's tool calls are
+ * these, plus one eth_call per required read, plus any same-block retries; the JSON report states
+ * both lists, so a reader can derive the count instead of assuming it.
+ */
+const CONTEXT_CALLS = ["get_chain_info", "get_block_number"] as const;
 
 const HELP_TEXT = `${TOOL_NAME} ${VERSION}
 Pharos Agent Arena Task 01: read a contract's state through the Pharos Chain MCP server.
@@ -362,9 +369,10 @@ function renderReport(report: Report, style: Style): string {
     ["Decimals", String(token.decimals)],
     ["Total supply", `${style.bold(formatTokenAmount(token.totalSupply, token.decimals))} ${symbol}`],
     ["", style.dim(`raw value ${token.totalSupply}, divided by 10^${token.decimals}`)],
+    ...(token.paused === undefined ? [] : [["Paused", token.paused ? style.yellow("Yes") : "No"] as const]),
   ];
 
-  const calls = FIELDS.map((field) => `${field}()`).join(", ");
+  const calls = token.reads.map((field) => `${field}()`).join(", ");
   const seconds = (report.elapsedMs / 1000).toFixed(2);
   const lines = [
     style.bold("Pharos Contract State Reader"),
@@ -385,7 +393,7 @@ function renderReport(report: Report, style: Style): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** Two sentences a non-developer can read, built only from values read in this run. */
+/** A few sentences a non-developer can read, built only from values read in this run. */
 function plainSummary(report: Report): string {
   const { token, label } = report;
   const symbol = sanitizeForTerminal(token.symbol, 32);
@@ -395,7 +403,9 @@ function plainSummary(report: Report): string {
     token.decimals === 0
       ? "The contract uses 0 decimals, so its raw value is already the token amount."
       : `The contract stores amounts as whole numbers with ${token.decimals} decimals, so its raw value ${token.totalSupply} is divided by 10^${token.decimals} to get that figure.`;
-  return `At ${where}, the ${label.text} reports a total supply of ${supply}. ${decimals}`;
+  // Only what paused() returned: not a claim about the contract beyond that flag.
+  const paused = token.paused === undefined ? "" : ` paused() returned ${token.paused}, so the contract is ${token.paused ? "paused" : "not paused"}.`;
+  return `At ${where}, the ${label.text} reports a total supply of ${supply}. ${decimals}${paused}`;
 }
 
 function renderFailure(error: CliError, style: Style, verbose: boolean): string {
@@ -425,12 +435,21 @@ function toJsonReport(report: Report) {
     contract: { address: token.address, label: report.label.text, labelSource: report.label.source },
     blockNumber: token.blockNumber.toString(),
     network: report.network ? { chainId: report.network.chainId, name: report.network.name ?? null } : null,
-    source: { via: "Pharos Chain MCP", endpoint: report.endpoint, server: report.server ?? null, toolCalls: report.toolCalls },
+    source: {
+      via: "Pharos Chain MCP",
+      endpoint: report.endpoint,
+      server: report.server ?? null,
+      toolCalls: report.toolCalls,
+      // The call model behind toolCalls: one call per context tool and per contract read, plus retries.
+      contextCalls: [...CONTEXT_CALLS],
+      contractReads: [...token.reads],
+    },
     values: {
       name: token.name,
       symbol: token.symbol,
       decimals: token.decimals,
       totalSupply: { raw: token.totalSupply.toString(), formatted: formatUnits(token.totalSupply, token.decimals) },
+      ...(token.paused === undefined ? {} : { paused: token.paused }),
     },
     summary: plainSummary(report),
     retriedAtSameBlock: token.retried,
