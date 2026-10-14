@@ -254,9 +254,10 @@ describe("applyProof", () => {
     assert.doesNotMatch(next, /_pending_/);
   });
 
-  test("the real README has every marker and starts with requirement 4 open", async () => {
+  test("the real README has every marker, and a verified proof ticks requirement 4", async () => {
     const real = await readFile(new URL("../../README.md", import.meta.url), "utf8");
-    assert.match(real, /- \[ \] \*\*Demonstrates catching at least one live event\.\*\* <!-- req-4 -->/);
+    // Open before the live proof, ticked after it: both are valid committed states.
+    assert.match(real, /- \[[ x]\] \*\*Demonstrates catching at least one live event\.\*\* <!-- req-4 -->/);
     const next = applyProof(real, verify(baseline), baseline.output, links);
     assert.match(next, /- \[x\] \*\*Demonstrates catching at least one live event\.\*\*/);
     assert.doesNotMatch(next, /Live proof:\*\* pending/);
