@@ -8,7 +8,8 @@ import { after, before, describe, test } from "node:test";
 import { encodeAbiParameters, getAddress } from "viem";
 import handler, { createHandler } from "../api/inspect.js";
 import { readState } from "../api/state.js";
-import { NO_CODE_TOOL_MESSAGE, NO_ERC20_MESSAGE, UNDETERMINED_MESSAGE, inspect } from "../inspector/inspect.js";
+import { DISPLAY_DECIMALS, NO_CODE_TOOL_MESSAGE, NO_ERC20_MESSAGE, UNDETERMINED_MESSAGE, displayAmount, inspect } from "../inspector/inspect.js";
+import { explainPayload } from "../public/assets/explain-input.js";
 import { classifyInput, MAX_INPUT_LENGTH } from "../public/assets/inspect-input.js";
 import { startFakePharosMcp } from "../dist/tests/fake-pharos-mcp.js";
 import { ALL_TOOLS, startFakeInspectorMcp } from "./fake-inspector-mcp.mjs";
@@ -394,6 +395,46 @@ describe("address classification: get_code at the block decides what is read", (
       assert.equal(body.error.hint, "Pharos Chain MCP could not be reached or did not answer in time. Try again in a moment.");
     } finally {
       await hanging.close();
+    }
+  });
+});
+
+describe("amounts on the page: readable, while the exact value is kept", () => {
+  test("at most 6 decimals, cut and never rounded up; trailing zeros dropped; whole numbers unchanged", () => {
+    for (const [exact, shown] of [
+      ["82.919315921481639197", "82.919315"],
+      ["23,266,526.88486588379297004", "23,266,526.884865"],
+      ["20,262,168.134328", "20,262,168.134328"],
+      ["1.5", "1.5"],
+      ["2.999999999", "2.999999"],
+      ["7.000000123", "7"],
+      ["1,000,000", "1,000,000"],
+      ["0", "0"],
+      ["0.000000000000000001", "< 0.000001"],
+      ["0.000001", "0.000001"],
+    ]) {
+      assert.equal(displayAmount(exact), shown, exact);
+    }
+    assert.equal(DISPLAY_DECIMALS, 6);
+  });
+
+  test("a long native balance and a long total supply: shortened on the page, exact in the API", async () => {
+    const LONG = addr("c");
+    const server = await startFakeInspectorMcp({
+      ...chain,
+      contracts: { ...chain.contracts, [LONG]: erc20({ [SEL.symbol]: str("WPROS"), [SEL.decimals]: uint(18n), [SEL.totalSupply]: uint(23_266_526_884_865_883_792_970_040n) }) },
+      accounts: { [WALLET]: { balance: 82_919_315_921_481_639_197n, nonce: 1n } },
+    });
+    try {
+      const wallet = (await inspect(WALLET, { endpoint: server.url, retryDelayMs: 5 })).body;
+      assert.deepEqual(wallet.state.balance, { ok: true, wei: "82919315921481639197", display: "82.919315 PROS" });
+      const token = (await inspect(LONG, { endpoint: server.url, retryDelayMs: 5 })).body;
+      assert.deepEqual(token.state.totalSupply, { ok: true, raw: "23266526884865883792970040", formatted: "23,266,526.88486588379297004", display: "23,266,526.884865 WPROS" });
+      // Explain is built from the exact values, never from the shortened ones.
+      const request = explainPayload(token);
+      assert.deepEqual([request.totalSupply, explainPayload(wallet).balance], [{ raw: "23266526884865883792970040" }, { raw: "82919315921481639197" }]);
+    } finally {
+      await server.close();
     }
   });
 });

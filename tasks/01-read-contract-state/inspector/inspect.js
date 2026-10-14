@@ -208,7 +208,24 @@ async function ethCall(mcp, to, data, block) {
 function supplyEntry(raw, decimals, symbol) {
   if (decimals === null) return { ok: true, raw: raw.toString(), formatted: null, display: null };
   const formatted = formatTokenAmount(raw, decimals);
-  return { ok: true, raw: raw.toString(), formatted, display: symbol ? `${formatted} ${symbol}` : formatted };
+  const shown = displayAmount(formatted);
+  return { ok: true, raw: raw.toString(), formatted, display: symbol ? `${shown} ${symbol}` : shown };
+}
+
+/** The most decimals an amount shows on the page. The exact value stays in `raw`, `wei` and `formatted`. */
+export const DISPLAY_DECIMALS = 6;
+
+/**
+ * An exact amount ("82.919315921481639197") as a person reads it: at most DISPLAY_DECIMALS decimals,
+ * cut, never rounded up, so it never shows more than there is; trailing zeros dropped; whole numbers
+ * and their thousands separators unchanged. A non-zero amount too small to show reads "< 0.000001".
+ */
+export function displayAmount(formatted, max = DISPLAY_DECIMALS) {
+  const [whole, fraction = ""] = formatted.split(".");
+  const kept = fraction.slice(0, max).replace(/0+$/, "");
+  if (kept !== "") return `${whole}.${kept}`;
+  if (/^0+$/.test(whole) && /[1-9]/.test(fraction)) return `< 0.${"0".repeat(max - 1)}1`;
+  return whole;
 }
 
 function unavailable(error) {
@@ -297,7 +314,7 @@ function receiptStatus(status) {
 
 function nativeAmount(wei, symbol) {
   if (wei === null) return null;
-  return { wei, display: symbol ? `${formatTokenAmount(BigInt(wei), DECIMALS_OF_NATIVE_TOKEN)} ${symbol}` : `${wei} wei` };
+  return { wei, display: symbol ? `${displayAmount(formatTokenAmount(BigInt(wei), DECIMALS_OF_NATIVE_TOKEN))} ${symbol}` : `${wei} wei` };
 }
 
 function toolProblem(tool, error) {
