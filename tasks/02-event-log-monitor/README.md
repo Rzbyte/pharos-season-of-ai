@@ -14,10 +14,27 @@ Watches **Circle USDC Transfer events on Pharos Mainnet** through the **Pharos C
 - [x] **Chain MCP log queries filtered by contract address and event signature.** Every `get_logs` call carries the exact USDC address, `topics: [Transfer topic0]` and an explicit hex `fromBlock`/`toBlock` of at most 1,000 blocks. See [Tool-call model](#tool-call-model).
 - [x] **Runs continuously and reports only new events, with no duplicates.** `--watch` polls every 5 s (configurable). A cursor and a dedup key of `transactionHash` + `logIndex` keep every event to one report. See [Cursor, paging and retries](#cursor-paging-and-retries).
 - [x] **Decodes each event into readable fields.** Each event has from, to, amount (with 6 decimals applied), tx hash and block, plus its log index. See [Decoding](#decoding).
-- [ ] **Demonstrates catching at least one live event.** <!-- req-4 --> Ticked by `npm run proof`, only after the verifier has checked a real run against the hosted endpoint. See [Live proof](#live-proof).
+- [x] **Demonstrates catching at least one live event.** <!-- req-4 --> Ticked by `npm run proof`, only after the verifier has checked a real run against the hosted endpoint. See [Live proof](#live-proof).
 
 <!-- proof-status:start -->
-**Live proof:** pending. This development environment cannot reach `mcp.pharos.xyz` (its proxy answers 403), so no live run has been captured yet, and none is faked. Run `npm run proof` on a machine with internet access (see [Live proof](#live-proof)); it fills this section from the verified run.
+**Live proof:** captured 2026-10-14T20:47:42Z against `https://mcp.pharos.xyz/mcp` (pharos-mcp-server 0.1.0, chain ID 1672). 6 polls checked blocks 20250885..20251004 with 6 `get_logs` calls and reported **19 Transfer events** (3 mined after the monitor started).
+
+Verified by `npm run verify-proof` from the raw MCP messages in [proof/mcp-transcript.json](proof/mcp-transcript.json) and [proof/report.json](proof/report.json):
+
+- [x] transcript format: pharos-mcp-transcript/1, written by event-log-monitor
+- [x] hosted endpoint: transcript https://mcp.pharos.xyz/mcp, report https://mcp.pharos.xyz/mcp
+- [x] MCP server answered: pharos-mcp-server 0.1.0
+- [x] run succeeded: transcript outcome ok=true, report ok=true
+- [x] report matches transcript: report.json events and polls are the ones recorded in the transcript outcome
+- [x] only Chain MCP tool calls: 13 tools/call requests, all of get_chain_info, get_block_number, get_logs; no other JSON-RPC methods
+- [x] chain ID 1672: get_chain_info reported chainId 1672 before any other tool call
+- [x] exact address and Transfer topic filter: all 6 get_logs calls: address 0xC879C018dB60520F4355C26eD1a6D572cdAC1815, topics [0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef]
+- [x] explicit ranges of at most 1,000 blocks, contiguous: 6 hex ranges, each within the resolved head, no gaps or overlaps; a failed range repeated with the same fromBlock and toBlock
+- [x] decoded fields match raw topics and data: 19 events: from = topic1, to = topic2, amount = data (uint256, 6 decimals), tx hash, block and log index as in the log
+- [x] dedup by transactionHash + logIndex, nothing missed: 19 events, one per well-formed Transfer log returned (a key again only after its retraction)
+- [x] removed logs never reported, retracted when shown before: 0 removed log(s) in the responses; 0 retraction(s) expected, 0 in the report
+- [x] no duplicate event output: 19 events printed in the saved output, in the report's order, 19 distinct
+- [x] caught at least one real Transfer event: 19 events (3 in blocks mined after the monitor started)
 <!-- proof-status:end -->
 
 ## Quick start
@@ -45,24 +62,160 @@ Ctrl+C in watch mode lets the current poll finish, prints a summary, closes the 
 ## Sample output
 
 <!-- live-output:start -->
-_Pending the live proof run._ The shape, from a test run against the in-process fake MCP server (made-up values):
+Saved as [sample-output/live-run.txt](sample-output/live-run.txt), from the same run.
 
 ```text
-Transfer  1,250 USDC transferred from 0x1234…0AbC to 0xAbcd…1234
-  From     0x1234000000000000000000000000000000000AbC
-  To       0xAbcd000000000000000000000000000000001234
-  Amount   1,250 USDC (raw 1250000000)
-  Tx hash  0x0000000000000000000000000134f75000000000000000000000000000000002
-  Block    20248400 (log index 2)
+Pharos Event / Log Monitor
 
-Mint      5 USDC minted to 0xAbcd…1234
-  ...
+  Watching     Circle USDC · Transfer
+  Contract     0xC879C018dB60520F4355C26eD1a6D572cdAC1815
+  Event        Transfer(address,address,uint256)
+  Topic0       0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
+  Network      Pharos Mainnet (chain ID 1672)
+  Data source  Pharos Chain MCP (server: pharos-mcp-server 0.1.0)
+               https://mcp.pharos.xyz/mcp
+  Mode         Watch, polling every 5s, first poll covers the last 100 blocks, 6 polls
 
-Stopped after 3 polls.
-  Checked blocks  20248380..20248485 (106 blocks)
-  Reported        4 events (2 Transfer, 1 Mint, 1 Burn)
+Started at head 20250984. Watching blocks from 20250885 on.
+Transfer  58.261364 USDC transferred from 0x1F35…c85C to 0x912c…f647
+  From     0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   58.261364 USDC (raw 58261364)
+  Tx hash  0x67db15c83c8821ee537c9c63ba869c08f3d0741efc8948fb151d72b070ab65e2
+  Block    20250889 (log index 1)
+
+Transfer  155.28187 USDC transferred from 0x9365…b470 to 0x912c…f647
+  From     0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   155.28187 USDC (raw 155281870)
+  Tx hash  0x63821182b500fad59e34558a37968255dc9526b3cb0eb0ae7ed45f18cb45632d
+  Block    20250889 (log index 4)
+
+Transfer  38.820484 USDC transferred from 0x9365…b470 to 0x912c…f647
+  From     0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   38.820484 USDC (raw 38820484)
+  Tx hash  0xfe2f915bc0671ce867fd114a90d026dd552324f95971214d1b84a6b3700629e3
+  Block    20250899 (log index 1)
+
+Transfer  58.309448 USDC transferred from 0x1F35…c85C to 0x912c…f647
+  From     0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   58.309448 USDC (raw 58309448)
+  Tx hash  0xe81c9d90b4d03bec4e1ec0a7f9c5dd94bacff9e503f95e849dbd5b78e91c9ae3
+  Block    20250925 (log index 1)
+
+Transfer  70.71 USDC transferred from 0x0018…E28D to 0x768B…dE54
+  From     0x0018b46177c611fc1EfBca63c845c2a69045E28D
+  To       0x768B959191cE5876cabBbC014a08D72615BDdE54
+  Amount   70.71 USDC (raw 70710000)
+  Tx hash  0xd73f8e2f3263422221f6688af67e45584064920ad30ef8b090c8f5211626cd4c
+  Block    20250941 (log index 0)
+
+Transfer  310.564339 USDC transferred from 0x9365…b470 to 0x912c…f647
+  From     0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   310.564339 USDC (raw 310564339)
+  Tx hash  0x6652038136c54e7b33770189c04e96ebe9036ecf9e5ee201fcaa6e6ae0f735bf
+  Block    20250950 (log index 1)
+
+Transfer  58.379769 USDC transferred from 0x1F35…c85C to 0x912c…f647
+  From     0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   58.379769 USDC (raw 58379769)
+  Tx hash  0x36d59154c2ccb04034a5c31868a8839fcf9c57a1a6b863ceaa149ef6876a7d47
+  Block    20250951 (log index 1)
+
+Transfer  38.820953 USDC transferred from 0x9365…b470 to 0x912c…f647
+  From     0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   38.820953 USDC (raw 38820953)
+  Tx hash  0x69144e8d2f61081f4ffb5bdb48244b1c7fdf1fab98a671c6db464960c36f6fbf
+  Block    20250956 (log index 1)
+
+Transfer  58.398307 USDC transferred from 0x1F35…c85C to 0x912c…f647
+  From     0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   58.398307 USDC (raw 58398307)
+  Tx hash  0x6c2328bd52b527145e9c568702874e98d998c8e44ae8468ac3b653e82f7f0ef0
+  Block    20250957 (log index 1)
+
+Transfer  58.409445 USDC transferred from 0x1F35…c85C to 0x912c…f647
+  From     0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   58.409445 USDC (raw 58409445)
+  Tx hash  0xcac453f6bd529b6386458c7f1dbaa857fefbc34fd065e674a7f9a3b324831538
+  Block    20250961 (log index 1)
+
+Transfer  77.669607 USDC transferred from 0x912c…f647 to 0x9365…b470
+  From     0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  To       0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  Amount   77.669607 USDC (raw 77669607)
+  Tx hash  0x8622dd84220f9207c4fb44344f272ab97e371b2334d2bfe68fff4c8041f1ffbc
+  Block    20250964 (log index 0)
+
+Transfer  70.71 USDC transferred from 0x768B…dE54 to 0x0018…E28D
+  From     0x768B959191cE5876cabBbC014a08D72615BDdE54
+  To       0x0018b46177c611fc1EfBca63c845c2a69045E28D
+  Amount   70.71 USDC (raw 70710000)
+  Tx hash  0x9f7f1ab5cec42bf2afa094cc4da92dbe78dbf3e96bbfce2c14af6142e7872ea6
+  Block    20250966 (log index 0)
+
+Transfer  58.382954 USDC transferred from 0x912c…f647 to 0x1F35…c85C
+  From     0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  To       0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  Amount   58.382954 USDC (raw 58382954)
+  Tx hash  0xb9715a6803ab229dc00d9e8349d396ca60c6aec67007c87fdce9e565f82d30a3
+  Block    20250969 (log index 0)
+
+Transfer  600 USDC transferred from 0x0018…E28D to 0xB274…9553
+  From     0x0018b46177c611fc1EfBca63c845c2a69045E28D
+  To       0xB2749BD12f19C24a2244176658F3dF3e48e79553
+  Amount   600 USDC (raw 600000000)
+  Tx hash  0x968810950de8d8fa80d17a9e1d03b72e8806a0d11d89579459bceaee45ce510c
+  Block    20250972 (log index 0)
+
+Transfer  38.821104 USDC transferred from 0x9365…b470 to 0x912c…f647
+  From     0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   38.821104 USDC (raw 38821104)
+  Tx hash  0x1c46c279c81ddc9bcd14a2b7b9b9c947dd71ca952789c58ea828cc51648089da
+  Block    20250972 (log index 5)
+
+Transfer  58.402038 USDC transferred from 0x1F35…c85C to 0x912c…f647
+  From     0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   58.402038 USDC (raw 58402038)
+  Tx hash  0x2c3fb79923193ff3ce2c80684fc4bc29279e30a3e1fa0cb1688cdc0cf058a15a
+  Block    20250973 (log index 1)
+
+Transfer  77.642602 USDC transferred from 0x9365…b470 to 0x912c…f647
+  From     0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   77.642602 USDC (raw 77642602)
+  Tx hash  0x8972406a9cf2267dc69e2a2113af3ffd11d4e89a58e23727dc08c8011535064f
+  Block    20250989 (log index 1)
+
+Transfer  38.82164 USDC transferred from 0x9365…b470 to 0x912c…f647
+  From     0x936564245B69f5a293b42cbd752E0eE3bb68b470
+  To       0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  Amount   38.82164 USDC (raw 38821640)
+  Tx hash  0x59f3c5d1aaae094ae38b80cc425acb43b57ce5d09454dad208617541e838fd8e
+  Block    20250994 (log index 1)
+
+Transfer  58.412564 USDC transferred from 0x912c…f647 to 0x1F35…c85C
+  From     0x912c9aDe24D44d8922f0866D8Dcb079f1363f647
+  To       0x1F3546a29EeC2102c8d52E21a45114124014c85C
+  Amount   58.412564 USDC (raw 58412564)
+  Tx hash  0x2fa247d86407506721f4d127b2c8ceb7342b60c5270ea4215be3d9f4b19f6ac2
+  Block    20251001 (log index 0)
+
+Stopped after 6 polls.
+  Checked blocks  20250885..20251004 (120 blocks)
+  Reported        19 events (19 Transfer, 0 Mint, 0 Burn)
   Skipped         0 duplicate, 0 removed, 0 malformed
-  MCP tool calls  7 (get_chain_info 1, get_block_number 3, get_logs 3)
+  MCP tool calls  13 (get_chain_info 1, get_block_number 6, get_logs 6)
+  Elapsed         29.3s
 ```
 <!-- live-output:end -->
 
