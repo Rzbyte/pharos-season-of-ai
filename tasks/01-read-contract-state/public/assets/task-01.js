@@ -1,15 +1,22 @@
-// Task 01 page: a live measurement of the Circle USDC Contract on Pharos Mainnet.
+// Task 01 page: an on-chain snapshot of the Circle USDC Contract on Pharos Mainnet.
 //
 // The browser only ever calls this site's own GET /api/state, the frozen Task 01 function that
 // reads Pharos server-side through Chain MCP. Every value is written as text. The last good
-// measurement stays on screen while a new one is taken (READING) and after a failed one (ERROR).
-import { clockTime, duration, fitFigure, groupDigits, renderAddress, renderTaskContext, reducedMotion, setState, setText, settle, splitAmount, toHexBlock } from "./lab.js";
+// snapshot stays on screen while a new one is read (READING) and after a failed read (ERROR).
+//
+// FRESH or CACHED: /api/state lets the edge keep a good read for up to a minute
+// (s-maxage=15, stale-while-revalidate=45), so a response can be an earlier read served again.
+// The page says which. CACHED when the edge reports its own copy (x-vercel-cache HIT or STALE,
+// or an Age), or when the read is the one already on screen; FRESH otherwise.
+import { clockTime, duration, fitFigure, groupDigits, renderAddress, renderTaskContext, reducedMotion, setState, setText, settle, snapshotSource, splitAmount, toHexBlock } from "./lab.js";
 import { TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
 const main = $("main");
+const panel = $("snapshot");
 const API = main.dataset.api;
-const STATUS_WORD = { reading: "Reading", live: "Live", error: "Error" };
+const STATUS_WORD = { reading: "Reading", fresh: "Fresh snapshot", cached: "Cached snapshot", error: "Read failed" };
+const TONE = { reading: "active", fresh: "success", cached: "neutral", error: "error" };
 const FIGURE_MIN_PX = 22;
 
 let last = null;
@@ -21,20 +28,20 @@ renderTaskContext(TASKS, main.dataset.task, { counter: $("task-count"), previous
 renderAddress($("address"), $("address-sr").textContent.trim());
 for (const button of document.querySelectorAll("[data-refresh]")) button.addEventListener("click", measure);
 $("copy").addEventListener("click", copyAddress);
+// A link to the proof opens it, so it never lands on a closed section.
+for (const link of document.querySelectorAll('a[href="#proof"]')) link.addEventListener("click", () => void ($("proof").open = true));
 addEventListener("resize", fitSupply);
 // The fit is measured in the real faces, so measure again whenever webfonts finish loading.
 document.fonts?.addEventListener?.("loadingdone", fitSupply);
 document.fonts?.ready.then(fitSupply);
-showBarWhenReadoutLeaves();
 measure();
 
-/** LIVE -> READING -> LIVE, or ERROR with the last good measurement kept. */
+/** FRESH or CACHED -> READING -> FRESH or CACHED, or ERROR with the last good snapshot kept. */
 async function measure() {
   if (busy) return;
   busy = true;
-  setButtons(true);
-  const lastRead = last ? clockTime(last.fetchedAt) : "";
-  report("reading", last ? `last read ${lastRead}` : "calling Pharos Chain MCP", lastRead);
+  setBusy(true);
+  report("reading", last ? "taking a new snapshot" : "through Pharos Chain MCP");
 
   let response;
   let data = null;
@@ -46,16 +53,14 @@ async function measure() {
     // The request itself failed; reported below as an error with no data.
   }
 
-  const fail = (problem) => report("error", last ? `last good read ${lastRead}` : "no data yet", lastRead, problem);
+  const fail = (problem) => report("error", last ? "showing the last good snapshot" : "no snapshot yet", problem);
   if (data?.ok === true) {
     try {
-      // The server caches a good read briefly, so a quick Refresh can return the same one. Say so.
-      const repeat = last?.fetchedAt === data.fetchedAt;
+      const served = snapshotSource(response.headers, data.fetchedAt, last?.fetchedAt);
       render(data);
       last = data;
       main.dataset.measured = "";
-      const read = clockTime(data.fetchedAt);
-      report("live", `${repeat ? "cached read" : "read"} ${read}`, read);
+      report(served.cached ? "cached" : "fresh", served.detail);
     } catch {
       // Never left stuck in READING: a report this page cannot use is an error like any other.
       fail("The state endpoint sent a report this page could not read.");
@@ -67,7 +72,7 @@ async function measure() {
         : response ? `The state endpoint answered HTTP ${response.status}.` : "Could not reach the state endpoint.",
     );
   }
-  setButtons(false);
+  setBusy(false);
   busy = false;
 }
 
@@ -79,32 +84,29 @@ function render(data) {
   const calls = source.toolCalls;
   const retries = calls - 6;
 
-  // First screen: what contract, what state, which block.
+  // The snapshot: what contract, which block and when, the supply, then the other three reads.
   setText($("subject"), contract.label);
-  // The decimal point keeps the whole number's size, so it reads clearly; only the digits after it are smaller.
-  setText($("supply-major"), supply.major + supply.minor.slice(0, 1));
-  setText($("supply-minor"), supply.minor.slice(1));
-  setText($("supply-unit"), supply.unit);
   setText($("block"), block);
-  setText("[data-block]", `#${block}`);
+  setText($("read-at"), clockTime(data.fetchedAt));
+  // One continuous value: the whole number, digits and punctuation untouched, then the unit.
+  setText($("supply-amount"), supply.major + supply.minor);
+  setText($("supply-unit"), supply.unit);
+  setText($("v-name"), values.name);
+  setText($("v-symbol"), values.symbol);
+  setText($("v-decimals"), String(values.decimals));
   setText($("network"), network?.name ?? "Not confirmed");
   setText("[data-chain]", network ? String(network.chainId) : "not confirmed");
+  setText("[data-block]", `#${block}`);
+  renderAddress($("address"), contract.address);
+  setText($("address-sr"), contract.address);
   const warnings = $("warnings");
   setText(warnings, data.warnings.join(" "));
   warnings.hidden = data.warnings.length === 0;
 
-  // The four contract reads and the address.
-  setText($("v-name"), values.name);
-  setText($("v-symbol"), values.symbol);
-  setText($("v-decimals"), String(values.decimals));
-  setText($("v-supply"), `${supply.major}${supply.minor}`);
-  setText($("v-raw"), `raw ${values.totalSupply.raw}`);
-  renderAddress($("address"), contract.address);
-  setText($("address-sr"), contract.address);
+  // Proof and technical details: the "how", collapsed by default.
   setText($("proof-calls"), String(calls));
   setText($("proof-calls-sub"), retries > 0 ? `includes ${retries} same-block retr${retries === 1 ? "y" : "ies"}` : "2 context + 4 contract reads");
-
-  // Technical details: the "how", collapsed by default.
+  setText($("v-raw"), values.totalSupply.raw);
   setText($("t-endpoint"), source.endpoint);
   setText($("t-server"), source.server ?? "not reported");
   setText($("t-calls"), `${calls}: get_chain_info, get_block_number, eth_call ×${calls - 2}`);
@@ -127,40 +129,33 @@ function render(data) {
   if (changed) for (const element of [$("supply"), $("block")]) settle(element);
 }
 
-/**
- * One state for the whole page: the hero's status line, the phone status bar, and the error
- * note. `time` is always the time of the read on screen.
- */
-function report(state, detail, time, problem = "") {
+/** One state for the snapshot: the status line, its tone, and the error note. */
+function report(state, detail, problem = "") {
   setState(state);
+  $("status").dataset.tone = TONE[state];
   setText("[data-status-word]", STATUS_WORD[state]);
   setText("[data-status-detail]", detail);
-  setText("[data-status-time]", time);
+  // Screen readers hear which snapshot is on screen with the state, not only the state.
+  setText($("status-sr"), last ? `, block ${groupDigits(last.blockNumber)}, read at ${clockTime(last.fetchedAt)}` : "");
   const note = $("status-note");
   setText(note, problem);
   note.hidden = !problem;
 }
 
-function setButtons(disabled) {
-  for (const button of document.querySelectorAll("[data-refresh]")) button.disabled = disabled;
+/** While a read is in flight the panel is busy; Refresh keeps focus and simply waits. */
+function setBusy(on) {
+  panel.setAttribute("aria-busy", String(on));
+  for (const button of document.querySelectorAll("[data-refresh]")) button.setAttribute("aria-disabled", String(on));
 }
 
-/** Keep the supply on one line, as large as its box allows, on any screen and with any value. */
+/** Keep the supply on one line, as large as its panel allows, on any screen and with any value. */
 function fitSupply() {
   if (fitQueued) return;
   fitQueued = true;
   requestAnimationFrame(() => {
     fitQueued = false;
-    fitFigure($("supply"), $("supply").firstElementChild, FIGURE_MIN_PX);
+    fitFigure($("supply"), $("supply-amount"), FIGURE_MIN_PX);
   });
-}
-
-/** Phones: show the slim status bar only while the readout's own Refresh is out of view. */
-function showBarWhenReadoutLeaves() {
-  if (typeof IntersectionObserver !== "function") return;
-  new IntersectionObserver(([entry]) => {
-    document.body.dataset.bar = entry.isIntersecting ? "" : "show";
-  }).observe(document.querySelector(".readout-head"));
 }
 
 async function copyAddress() {

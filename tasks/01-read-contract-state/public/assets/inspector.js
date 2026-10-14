@@ -11,14 +11,18 @@ import { clockTime, groupDigits, reducedMotion, setText } from "./lab.js";
 const $ = (id) => document.getElementById(id);
 const root = $("inspector");
 const API = root.dataset.inspectApi;
+const panel = $("inspect-panel");
 const input = $("inspect-input");
 const submit = $("inspect-submit");
+const example = $("inspect-example");
 const detected = $("inspect-detected");
 const note = $("inspect-note");
 const result = $("inspect-result");
 const CLIENT_TIMEOUT_MS = 55_000;
 const EXAMPLE_ADDRESS = "0xC879C018dB60520F4355C26eD1a6D572cdAC1815";
 const WORD = { inspecting: "Inspecting", success: "Success", partial: "Partial", "not-found": "Not found", error: "Error" };
+// Green only for a full result, amber for a partial one, red for an error; not found is neutral.
+const TONE = { inspecting: "active", success: "success", partial: "warning", "not-found": "neutral", error: "error" };
 const KIND = { contract: "Contract", transaction: "Transaction" };
 const TX_STATUS = { success: "Success", failed: "Failed (reverted)", pending: "Pending" };
 
@@ -31,7 +35,8 @@ $("inspect-form").addEventListener("submit", (event) => {
   event.preventDefault();
   void run();
 });
-$("inspect-example").addEventListener("click", () => {
+example.addEventListener("click", () => {
+  if (busy) return;
   input.value = EXAMPLE_ADDRESS;
   describeInput();
   void run();
@@ -107,15 +112,19 @@ function fail(reason) {
 
 function report(state, detail) {
   root.dataset.inspectState = state;
+  const status = $("inspect-status");
+  status.dataset.tone = TONE[state];
   setText($("inspect-word"), WORD[state]);
   setText($("inspect-detail"), detail);
-  $("inspect-status").hidden = false;
+  status.hidden = false;
   if (state !== "error") note.hidden = true;
 }
 
+/** While inspecting, the panel is busy and its buttons wait; they keep focus (aria-disabled). */
 function setBusy(on) {
-  submit.disabled = on;
-  $("inspect-example").disabled = on;
+  panel.setAttribute("aria-busy", String(on));
+  submit.setAttribute("aria-disabled", String(on));
+  example.setAttribute("aria-disabled", String(on));
   setText(submit, on ? "Inspecting" : "Inspect");
 }
 
@@ -130,13 +139,13 @@ function render(data) {
 }
 
 function contractBlocks(data) {
-  const summary = rows("spec", [
+  const summary = rows("rows", [
     ["Address", data.address, { hex: true, copy: "address" }],
     ["Block", groupDigits(data.blockNumber)],
     ["Network", networkName(data.network)],
   ]);
   const { name, symbol, decimals, totalSupply } = data.state;
-  const state = rows("table", [
+  const state = rows("rows keys-code", [
     ["name", name.ok ? name.value : missing(name)],
     ["symbol", symbol.ok ? symbol.value : missing(symbol)],
     ["decimals", decimals.ok ? String(decimals.value) : missing(decimals)],
@@ -147,40 +156,42 @@ function contractBlocks(data) {
 
 function transactionBlocks(data) {
   if (data.status === "not-found" || !data.transaction) {
-    return [rows("spec", [["Hash", data.hash, { hex: true, copy: "hash" }], ["Result", "Not found through Pharos Chain MCP"]])];
+    return [rows("rows", [["Hash", data.hash, { hex: true, copy: "hash" }], ["Result", "Not found through Pharos Chain MCP"]])];
   }
   const tx = data.transaction;
+  const created = tx.contractCreation;
   const entries = [
     ["Hash", tx.hash, { hex: true, copy: "hash" }],
     tx.status && ["Status", TX_STATUS[tx.status] ?? tx.status],
     tx.blockNumber && ["Block", groupDigits(tx.blockNumber)],
     tx.from && ["From", tx.from, { hex: true }],
     tx.to && ["To", tx.to, { hex: true }],
-    tx.contractCreation && ["To", tx.contractCreation.address ? ["Contract creation", tx.contractCreation.address, "row-sub hex"] : "Contract creation"],
+    created && (created.address ? ["To", ["Contract creation", created.address], { hex: true }] : ["To", "Contract creation"]),
     tx.value && ["Value", tx.value.display],
     tx.gasLimit && ["Gas limit", groupDigits(tx.gasLimit)],
     tx.gasUsed && ["Gas used", groupDigits(tx.gasUsed)],
     tx.logs !== null && tx.logs !== undefined && ["Logs", String(tx.logs)],
     ["Network", networkName(data.network)],
   ];
-  return [rows("spec", entries.filter(Boolean))];
+  return [rows("rows", entries.filter(Boolean))];
 }
 
-/** A ruled list of key/value rows. A value is text, or [text, secondary line]. */
-function rows(kind, entries) {
-  const list = element("dl", kind);
+/**
+ * A ruled list of key/value rows. A value is text, or [text, secondary line]; with { hex: true }
+ * the value (or the secondary line) is an address or hash, set in groups of four.
+ */
+function rows(className, entries) {
+  const list = element("dl", className);
   for (const [key, value, options = {}] of entries) {
-    const row = element("div", options.hex ? "wide" : "");
-    const dd = element("dd", options.hex ? "hex" : "");
+    const row = element("div", options.hex ? "hex-row" : "");
+    const dd = element("dd");
     if (Array.isArray(value)) {
-      const [main, sub, subClass = "row-sub"] = value;
+      const [main, sub] = value;
       if (main.unavailable) dd.classList.add("unavailable");
-      const secondary = element("span", subClass);
-      if (subClass.includes("hex")) appendGrouped(secondary, sub);
-      else secondary.textContent = sub;
-      dd.append(element("span", "", main.unavailable ? main.text : main), secondary);
+      dd.append(element("span", "", main.unavailable ? main.text : main));
+      dd.append(options.hex ? hexValue(sub, "hex-sub") : element("span", "sub", sub));
     } else if (options.hex) {
-      appendGrouped(dd, value);
+      dd.append(hexValue(value));
     } else {
       dd.append(value);
     }
@@ -207,7 +218,7 @@ function networkName(network) {
 }
 
 function copyButton(what, value) {
-  const button = element("button", "text-btn inspect-copy", `Copy ${what}`);
+  const button = element("button", "btn-quiet copy", `Copy ${what}`);
   button.type = "button";
   button.addEventListener("click", async () => {
     let copied = false;
@@ -222,6 +233,15 @@ function copyButton(what, value) {
     copyTimer = setTimeout(() => setText(button, `Copy ${what}`), reducedMotion() ? 2400 : 1600);
   });
   return button;
+}
+
+/** An address or hash as a block of groups; lab.css keeps every line to whole, equal runs. */
+function hexValue(hex, extra = "") {
+  const cell = element("div", ["hex-cell", extra].filter(Boolean).join(" "));
+  const value = element("span", ["hex", hex.length === 66 ? "hex-hash" : hex.length === 42 ? "hex-address" : ""].filter(Boolean).join(" "));
+  appendGrouped(value, hex);
+  cell.append(value);
+  return cell;
 }
 
 /** Hex in groups of four with break points between them, like the address above; the text is unchanged. */

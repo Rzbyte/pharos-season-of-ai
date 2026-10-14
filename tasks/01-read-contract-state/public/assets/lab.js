@@ -42,6 +42,20 @@ export function duration(ms) {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
+/**
+ * A new read, or an earlier one served again: { cached, detail }. The edge marks its own copies
+ * (x-vercel-cache HIT or STALE, and an Age in seconds); a read whose fetchedAt is the one already
+ * on screen is the same read, whatever the headers say. `headers` is a fetch Headers object.
+ */
+export function snapshotSource(headers, fetchedAt, shownFetchedAt) {
+  const edge = (headers.get("x-vercel-cache") ?? "").toUpperCase();
+  const age = Number.parseInt(headers.get("age") ?? "", 10);
+  const aged = Number.isFinite(age) && age > 0;
+  const repeat = shownFetchedAt !== undefined && shownFetchedAt === fetchedAt;
+  if (!repeat && !aged && edge !== "HIT" && edge !== "STALE") return { cached: false, detail: "" };
+  return { cached: true, detail: aged ? `${age} s old` : repeat ? "same read as before" : "served from the edge cache" };
+}
+
 export function reducedMotion() {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -54,7 +68,7 @@ export function setText(target, text) {
   for (const element of elements) element.textContent = text;
 }
 
-/** Page state, read by the CSS from <body data-state>: "reading", "live" or "error". */
+/** Page state, read by the CSS from <body data-state>: "reading", "fresh", "cached" or "error". */
 export function setState(state) {
   document.body.dataset.state = state;
 }
@@ -112,7 +126,7 @@ export function renderAddress(element, address) {
 
 /**
  * Fill the shell counter ("01 / 28") and the previous/next context from the manifest.
- * Only a task with status "live" and a path becomes a link; planned tasks are plain text.
+ * Only a task with status "available" and a path becomes a link; planned tasks are plain text.
  */
 export function renderTaskContext(tasks, current, { counter, previous, next } = {}) {
   const index = tasks.findIndex((task) => task.n === current);
@@ -130,10 +144,10 @@ export function renderTaskContext(tasks, current, { counter, previous, next } = 
     }
     const caption = Object.assign(document.createElement("span"), { className: "lab", textContent: label });
     const n = Object.assign(document.createElement("span"), { className: "num", textContent: task.n });
-    const linked = task.status === "live" && typeof task.path === "string";
+    const linked = task.status === "available" && typeof task.path === "string";
     const title = Object.assign(document.createElement(linked ? "a" : "span"), { className: "t", textContent: task.title });
     if (linked) title.href = task.path;
-    const tag = Object.assign(document.createElement("span"), { className: `tag tag-${task.status}`, textContent: task.status === "live" ? "Live" : "Planned" });
+    const tag = Object.assign(document.createElement("span"), { className: `tag tag-${task.status}`, textContent: task.status === "available" ? "Available" : "Planned" });
     element.replaceChildren(caption, n, title, tag);
     element.hidden = false;
   }

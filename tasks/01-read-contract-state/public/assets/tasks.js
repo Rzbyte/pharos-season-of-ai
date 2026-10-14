@@ -1,12 +1,12 @@
 // Agent Arena Lab task manifest. Metadata only: Task 01 is the one page that exists.
-// status: "live" (a page and a committed proof exist) or "planned" (nothing built yet).
-// path is set only for live tasks, so nothing can ever link to a page that does not exist.
+// status: "available" (a page and a committed proof exist) or "planned" (nothing built yet).
+// path is set only for available tasks, so nothing can ever link to a page that does not exist.
 // tool is filled in only where it is already known; null means not stated yet.
 
 const task = (n, title, tool = null, status = "planned", path = null) => Object.freeze({ n, title, tool, status, path });
 
 export const TASKS = Object.freeze([
-  task("01", "Read Contract State", "Chain MCP", "live", "/"),
+  task("01", "Read Contract State", "Chain MCP", "available", "/"),
   task("02", "Event / Log Monitor", "Chain MCP"),
   task("03", "Docs MCP Onboarding", "Docs MCP"),
   task("04", "Doc-Search CLI", "Docs MCP"),

@@ -1,14 +1,16 @@
 // Tests for the Task 01 page in public/. No browser, no build and no network:
 //   node --test tests/demo-page.test.mjs
-// They read the shipped files, import the page's plain ES modules, and drive the DOM helpers
-// through a minimal fake document. Layout, motion and the LIVE / READING / ERROR states are
-// checked in a real browser; these tests pin what must never drift: what the page may load and
-// call, the claims it makes, the task manifest, and how chain data is formatted and written.
+// They read the shipped files, import the page's plain ES modules, run theme.js against a fake
+// document, and drive the DOM helpers through a minimal fake document. Layout, motion, focus and
+// the snapshot and inspector states in a real browser are in demo-browser.test.mjs; these tests pin
+// what must never drift: what the page may load and call, the words it uses, the claims it makes,
+// the two themes, the task manifest, and how chain data is formatted and written.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { describe, test } from "node:test";
+import vm from "node:vm";
 import { toFunctionSelector } from "viem";
-import { chunkAddress, clockTime, duration, groupDigits, renderAddress, renderTaskContext, splitAmount, toHexBlock } from "../public/assets/lab.js";
+import { chunkAddress, clockTime, duration, groupDigits, renderAddress, renderTaskContext, snapshotSource, splitAmount, toHexBlock } from "../public/assets/lab.js";
 import { TASKS } from "../public/assets/tasks.js";
 
 const file = (path) => new URL(`../${path}`, import.meta.url);
@@ -17,26 +19,35 @@ const html = read("public/index.html");
 const css = read("public/assets/lab.css");
 /** The stylesheet without comments, for reading selectors. */
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
-const scripts = ["lab.js", "tasks.js", "task-01.js", "inspector.js", "inspect-input.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
-const pageJs = scripts.find((script) => script.name === "task-01.js").text;
-const inspectorJs = scripts.find((script) => script.name === "inspector.js").text;
+const scripts = ["lab.js", "tasks.js", "theme.js", "task-01.js", "inspector.js", "inspect-input.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
+const script = (name) => scripts.find((entry) => entry.name === name).text;
+const pageJs = script("task-01.js");
+const inspectorJs = script("inspector.js");
+const themeJs = script("theme.js");
 const USDC = read("src/constants.ts").match(/export const DEFAULT_TOKEN = "(0x[0-9a-fA-F]{40})"/)[1];
 
-/** Visible text of the page, roughly: tags, the inline style block and entities removed. */
+/** Visible text of the page, roughly: tags and entities removed. */
 const visibleText = html
-  .replace(/<style>[\s\S]*?<\/style>/g, " ")
   .replace(/<[^>]+>/g, " ")
+  .replace(/&amp;/g, "&")
   .replace(/&[a-z]+;/g, " ")
   .replace(/\s+/g, " ");
+/** Every string literal in the page scripts (comments excluded): what the scripts can write. */
+const literals = scripts.flatMap(({ name, text }) =>
+  [...text.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/"([^"\n]*)"|`([^`]*)`/g)].map((match) => [name, match[1] ?? match[2]]),
+);
 
 describe("what the page loads and calls", () => {
-  test("loads only its own assets: two module scripts, no inline script or handlers", () => {
+  test("loads only its own assets: theme.js before the stylesheet, two module scripts, nothing inline", () => {
     const tags = html.match(/<(?:script|link)\b[^>]*>/g);
     const urls = tags.map((tag) => tag.match(/\s(?:src|href)="([^"]*)"/)?.[1]);
-    assert.ok(urls.length >= 3);
+    assert.ok(urls.length >= 4);
     for (const url of urls) assert.match(url, /^(\/assets\/|data:)/, `unexpected asset URL ${url}`);
-    assert.equal(html.match(/<script\b/g).length, 2);
-    assert.match(html, /<script type="module" src="\/assets\/task-01\.js"><\/script>\n<script type="module" src="\/assets\/inspector\.js"><\/script>/);
+    assert.equal(html.match(/<script\b/g).length, 3);
+    // theme.js is a classic script so a saved theme applies before the first paint.
+    assert.match(html, /<script src="\/assets\/theme\.js"><\/script>\n<link rel="preload"[^>]*>\n<link rel="stylesheet" href="\/assets\/lab\.css">\n<script type="module" src="\/assets\/task-01\.js"><\/script>\n<script type="module" src="\/assets\/inspector\.js"><\/script>/);
+    assert.doesNotMatch(html, /<script(?![^>]*\ssrc=)[^>]*>/, "an inline script");
+    assert.doesNotMatch(html, /<style\b|\sstyle="/, "inline styles: everything lives in lab.css");
     assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
     assert.doesNotMatch(css, /@import/);
     for (const [, url] of css.matchAll(/url\("([^"]+)"\)/g)) assert.match(url, /^\/assets\/fonts\/[\w-]+\.woff2$/);
@@ -44,25 +55,32 @@ describe("what the page loads and calls", () => {
 
   test("links out only to this project's GitHub repository", () => {
     const external = [...html.matchAll(/href="(https?:[^"]+)"/g)].map((match) => match[1]);
-    assert.ok(external.length >= 2);
+    assert.ok(external.length >= 3);
     for (const url of external) assert.ok(url.startsWith("https://github.com/Rzbyte/pharos-season-of-ai"), url);
   });
 
   test("the browser calls only this site's /api/state and /api/inspect: no MCP, RPC or other client code", () => {
     assert.match(html, /<main id="main"[^>]* data-api="\/api\/state"/);
-    assert.match(html, /<section class="band band-grid" id="inspector"[^>]* data-inspect-api="\/api\/inspect"/);
+    assert.match(html, /<section class="section" id="inspector"[^>]* data-inspect-api="\/api\/inspect"/);
     assert.match(pageJs, /const API = main\.dataset\.api;/);
     assert.match(inspectorJs, /const API = root\.dataset\.inspectApi;/);
     for (const { name, text } of scripts) {
       assert.doesNotMatch(text, /https?:\/\//, `${name} contains a URL`);
       assert.doesNotMatch(text, /XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|navigator\.connection/, name);
       assert.doesNotMatch(text, /jsonrpc|@modelcontextprotocol|mcp\.pharos|rpc\.pharos/i, name);
-      assert.doesNotMatch(text, /localStorage|sessionStorage|indexedDB|document\.cookie/, name);
+      assert.doesNotMatch(text, /sessionStorage|indexedDB|document\.cookie/, name);
     }
     const fetches = Object.fromEntries(scripts.map(({ name, text }) => [name, (text.match(/\bfetch\(/g) ?? []).length]));
-    assert.deepEqual(fetches, { "lab.js": 0, "tasks.js": 0, "task-01.js": 1, "inspector.js": 1, "inspect-input.js": 0 });
+    assert.deepEqual(fetches, { "lab.js": 0, "tasks.js": 0, "theme.js": 0, "task-01.js": 1, "inspector.js": 1, "inspect-input.js": 0 });
     assert.match(pageJs, /fetch\(API, \{ headers: \{ accept: "application\/json" \}, cache: "no-store" \}\)/);
     assert.match(inspectorJs, /fetch\(`\$\{API\}\?q=\$\{encodeURIComponent\(check\.value\)\}`, \{ headers: \{ accept: "application\/json" \}, cache: "no-store", signal: controller\.signal \}\)/);
+  });
+
+  test("only theme.js touches storage: one key, for the theme, on this device", () => {
+    for (const { name, text } of scripts.filter((entry) => entry.name !== "theme.js")) assert.doesNotMatch(text, /localStorage/, name);
+    assert.match(themeJs, /const KEY = "agent-arena-lab:theme";/);
+    const uses = [...themeJs.matchAll(/localStorage\.(\w+)\(([^)]*)\)/g)].map(([, method, args]) => `${method}(${args})`);
+    assert.deepEqual(uses.sort(), ["getItem(KEY)", "removeItem(KEY)", "setItem(KEY, choice)"]);
   });
 
   test("never parses markup: chain data is written as text", () => {
@@ -74,25 +92,62 @@ describe("what the page loads and calls", () => {
 
   test("no analytics, trackers or third-party fonts", () => {
     const everything = [html, css, ...scripts.map(({ text }) => text)].join("\n");
-    assert.doesNotMatch(everything, /gtag|googletagmanager|google-analytics|plausible|posthog|mixpanel|segment\.(?:io|com)|hotjar|clarity\.ms|_vercel\/insights|@vercel\/analytics|sentry|fonts\.googleapis|fonts\.gstatic/i);
+    assert.doesNotMatch(everything, /gtag|googletagmanager|google-analytics|plausible|posthog|mixpanel|segment\.(?:io|com)|hotjar|clarity\.ms|_vercel\/insights|@vercel\/analytics|sentry|fonts\.googleapis|fonts\.gstatic|cdn\.|unpkg|jsdelivr/i);
   });
 
-  test("every element the script writes to exists in the page", () => {
+  test("every element the scripts write to exists in the page", () => {
     const ids = new Set([...pageJs.matchAll(/\$\("([\w-]+)"\)/g)].map((match) => match[1]));
     assert.ok(ids.size > 30);
     for (const id of ids) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
-    for (const attribute of ["data-refresh", "data-status-word", "data-status-detail", "data-status-time", "data-block", "data-chain"]) assert.match(html, new RegExp(`\\s${attribute}[\\s>]`), attribute);
+    for (const attribute of ["data-refresh", "data-status-word", "data-status-detail", "data-block", "data-chain"]) assert.match(html, new RegExp(`\\s${attribute}[\\s>]`), attribute);
     const inspectorIds = new Set([...inspectorJs.matchAll(/\$\("([\w-]+)"\)/g)].map((match) => match[1]));
     assert.ok(inspectorIds.size >= 10);
     for (const id of inspectorIds) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
+    assert.match(themeJs, /getElementById\("theme-toggle"\)/);
+    assert.match(html, /<button class="theme-toggle" id="theme-toggle" type="button">/);
   });
 
-  test("the inspector is independent of the Task 01 readout: its own state, never the page's", () => {
-    assert.doesNotMatch(inspectorJs, /document\.body|setState|dataset\.state\b|data-status-|data-block|data-chain|data-refresh|\$\("main"\)|getElementById\("main"\)/);
+  test("the inspector is independent of the Task 01 snapshot: its own state, never the page's", () => {
+    assert.doesNotMatch(inspectorJs, /document\.body|setState|dataset\.state\b|data-status-|data-block|data-chain|data-refresh|"snapshot"|\$\("main"\)|getElementById\("main"\)/);
     assert.match(inspectorJs, /root\.dataset\.inspectState = state;/);
     assert.doesNotMatch(pageJs, /inspect/i);
-    // Its rows are never .measured, so Task 01's READING dim cannot reach them.
+    // Its rows are never .measured, so the snapshot's READING dim cannot reach them.
     assert.doesNotMatch(inspectorJs, /measured/);
+  });
+});
+
+describe("the words on the page", () => {
+  test("never says LIVE: the snapshot is a read at one block, not a stream", () => {
+    assert.doesNotMatch(visibleText, /\blive\b/i);
+    assert.doesNotMatch(html.match(/<head>[\s\S]*<\/head>/)[0], /\blive\b/i, "title or description");
+    for (const [name, text] of literals) assert.doesNotMatch(text, /\blive\b/i, `${name}: "${text}"`);
+    assert.deepEqual([...new Set(TASKS.map((task) => task.status))].sort(), ["available", "planned"]);
+  });
+
+  test("names the snapshot for what it is: on-chain, fresh or cached, at a block, read at a time", () => {
+    assert.match(pageJs, /const STATUS_WORD = \{ reading: "Reading", fresh: "Fresh snapshot", cached: "Cached snapshot", error: "Read failed" \};/);
+    assert.match(pageJs, /const TONE = \{ reading: "active", fresh: "success", cached: "neutral", error: "error" \};/);
+    assert.match(html, /<h2 class="label" id="snapshot-h">On-chain snapshot<\/h2>/);
+    assert.match(visibleText, /Block — read at —/);
+    assert.match(visibleText, /On-chain state via Pharos Chain MCP/);
+    assert.match(visibleText, /Total supply/);
+    assert.match(html, /<button class="btn" type="button" data-refresh>.*Refresh<span class="wide-only"> snapshot<\/span>/);
+    assert.match(pageJs, /last \? "showing the last good snapshot" : "no snapshot yet"/);
+  });
+
+  test("fresh or cached is decided by the response itself", () => {
+    const at = "2026-10-14T09:34:03.000Z";
+    const headers = (entries = {}) => new Headers(entries);
+    assert.deepEqual(snapshotSource(headers(), at, undefined), { cached: false, detail: "" });
+    assert.deepEqual(snapshotSource(headers({ "x-vercel-cache": "MISS" }), at, "2026-10-14T09:33:00.000Z"), { cached: false, detail: "" });
+    assert.deepEqual(snapshotSource(headers({ "x-vercel-cache": "HIT", age: "12" }), at, undefined), { cached: true, detail: "12 s old" });
+    assert.deepEqual(snapshotSource(headers({ "x-vercel-cache": "STALE" }), at, undefined), { cached: true, detail: "served from the edge cache" });
+    assert.deepEqual(snapshotSource(headers({ age: "40" }), at, undefined), { cached: true, detail: "40 s old" });
+    assert.deepEqual(snapshotSource(headers({ age: "0" }), at, undefined), { cached: false, detail: "" });
+    assert.deepEqual(snapshotSource(headers({ age: "soon" }), at, undefined), { cached: false, detail: "" });
+    // The read already on screen is the same read, whatever the headers say.
+    assert.deepEqual(snapshotSource(headers({ "x-vercel-cache": "MISS" }), at, at), { cached: true, detail: "same read as before" });
+    assert.match(pageJs, /snapshotSource\(response\.headers, data\.fetchedAt, last\?\.fetchedAt\)/);
   });
 });
 
@@ -100,7 +155,7 @@ describe("the page reports evidence, not certification", () => {
   test("names the client path precisely: zero direct RPC calls from this client, MCP-only", () => {
     assert.match(visibleText, /Direct RPC calls from this client 0 MCP-only client path/);
     for (const match of visibleText.matchAll(/direct rpc/gi)) {
-      assert.match(visibleText.slice(match.index), /^Direct RPC calls from this client/, "every Direct RPC claim is scoped to this client");
+      assert.match(visibleText.slice(match.index), /^Direct RPC calls from this client/i, "every Direct RPC claim is scoped to this client");
     }
     assert.match(visibleText, /opens no JSON-RPC connection of its own\. Pharos MCP talks to the chain on its side\./);
   });
@@ -108,10 +163,6 @@ describe("the page reports evidence, not certification", () => {
   test("makes no certification claims anywhere", () => {
     const everything = [html, ...scripts.map(({ text }) => text)].join("\n");
     assert.doesNotMatch(everything, /verif|certif|guarantee|audited|trustless|100%/i);
-    assert.match(visibleText, /On-chain state via Pharos Chain MCP/);
-    assert.match(pageJs, /const STATUS_WORD = \{ reading: "Reading", live: "Live", error: "Error" \};/);
-    assert.match(pageJs, /`\$\{repeat \? "cached read" : "read"\} \$\{read\}`/);
-    assert.match(pageJs, /`last good read \$\{lastRead\}`/);
   });
 
   test("keeps the four contract reads apart from the two context calls", () => {
@@ -132,9 +183,15 @@ describe("the page reports evidence, not certification", () => {
     for (const [fn, selector] of Object.entries(selectors)) assert.equal(selector, toFunctionSelector(`${fn}()`), fn);
   });
 
-  test("technical details stay collapsed until asked for", () => {
-    assert.match(html, /<details class="tech-details">/);
+  test("the proof is one disclosure, collapsed until asked for, with every piece of evidence inside", () => {
+    assert.equal(html.match(/<details\b/g).length, 1);
     assert.doesNotMatch(html, /<details[^>]*\sopen/);
+    const proof = html.match(/<details class="disclosure" id="proof">([\s\S]*?)<\/details>/)[1];
+    assert.match(proof, /<summary>\s*<h2 class="disclosure-title" id="proof-h">Proof &amp; technical details<\/h2>/);
+    for (const piece of ['class="counts"', 'class="steps"', 'class="kv"', 'id="v-raw"', 'id="t-raw"', "get_transaction_receipt", "proof/mcp-transcript.json", "MCP-only client path", "Direct RPC calls from this client"]) {
+      assert.ok(proof.includes(piece), piece);
+    }
+    assert.match(pageJs, /link\.addEventListener\("click", \(\) => void \(\$\("proof"\)\.open = true\)\)/);
   });
 });
 
@@ -153,8 +210,8 @@ describe("task manifest", () => {
     assert.ok(Object.isFrozen(TASKS) && TASKS.every(Object.isFrozen));
   });
 
-  test("only Task 01 is live and has a page; every other task is planned with no path", () => {
-    assert.deepEqual(TASKS.filter((task) => task.status === "live").map((task) => [task.n, task.path]), [["01", "/"]]);
+  test("only Task 01 is available and has a page; every other task is planned with no path", () => {
+    assert.deepEqual(TASKS.filter((task) => task.status === "available").map((task) => [task.n, task.path]), [["01", "/"]]);
     for (const task of TASKS.slice(1)) assert.deepEqual([task.status, task.path], ["planned", null], task.n);
   });
 
@@ -244,7 +301,7 @@ describe("DOM helpers write text, never markup", () => {
     });
   });
 
-  test("renderTaskContext links only a live task with a page", () => {
+  test("renderTaskContext links only an available task with a page", () => {
     withDocument(() => {
       const counter = element();
       const previous = element();
@@ -262,16 +319,197 @@ describe("DOM helpers write text, never markup", () => {
       renderTaskContext(planned, "01", { next });
       assert.equal(next.children.find((node) => node.className === "t").tagName, "SPAN", "a planned task never becomes a link, path or not");
 
-      const live = TASKS.map((task) => (task.n === "02" ? { ...task, status: "live", path: "/02" } : task));
-      renderTaskContext(live, "01", { next });
+      const available = TASKS.map((task) => (task.n === "02" ? { ...task, status: "available", path: "/02" } : task));
+      renderTaskContext(available, "01", { next });
       const link = next.children.find((node) => node.className === "t");
       assert.deepEqual([link.tagName, link.href], ["A", "/02"]);
-      assert.equal(next.children.at(-1).textContent, "Live");
+      assert.equal(next.children.at(-1).textContent, "Available");
     });
   });
 });
 
-describe("design system assets", () => {
+describe("two themes", () => {
+  /** The custom properties of one CSS block, in order: { name: value }. */
+  const block = (start) => {
+    const at = css.indexOf(start);
+    assert.ok(at >= 0, start);
+    const body = css.slice(css.indexOf("{", at) + 1, css.indexOf("}", at));
+    return Object.fromEntries([...body.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(--[\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()]));
+  };
+  const dark = block(":root {");
+  const light = block(':root[data-theme="light"] {');
+  const lightSystem = block(":root:not([data-theme]) {");
+  const colours = Object.keys(light);
+  const luminance = (hex) => {
+    const [r, g, b] = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  test("light is a designed theme: every colour token is redefined, and chosen or from the system it is the same", () => {
+    assert.match(css, /@media \(prefers-color-scheme: light\) \{\s*:root:not\(\[data-theme\]\) \{/);
+    assert.ok(colours.length >= 19, colours.join(", "));
+    for (const name of colours) assert.ok(name in dark, `${name} has no dark value`);
+    for (const [name, value] of Object.entries(dark)) {
+      if (/^#|^(visible|hidden)$/.test(value)) assert.ok(name in light, `${name} is not redefined for light`);
+    }
+    assert.deepEqual(lightSystem, light);
+    // Pharos Blue and White on it are the brand itself, the same in both themes; everything else differs.
+    for (const name of colours) {
+      if (light[name].startsWith("#") && !["--brand", "--on-brand"].includes(name)) assert.notEqual(light[name], dark[name], `${name} is the same in both themes`);
+    }
+    assert.match(html, /<meta name="color-scheme" content="dark light">/);
+  });
+
+  test("built on the Pharos brand kit: Blue #0113B7 as is, Black, Dark Gray, Light Gray and White", () => {
+    for (const theme of [dark, light, lightSystem]) {
+      assert.equal(theme["--brand"], "#0113B7", "Pharos Blue is never lightened or replaced");
+      assert.equal(theme["--on-brand"], "#FFFFFF");
+    }
+    assert.deepEqual([dark["--bg"], dark["--field"], dark["--line-strong"]], ["#0B0B0B", "#0B0B0B", "#343434"]);
+    assert.deepEqual([light["--surface"], light["--field"], light["--line"], light["--text"], light["--text-2"]], ["#FFFFFF", "#FFFFFF", "#DFE3E5", "#0B0B0B", "#343434"]);
+    // Pharos Blue reads as text on light grounds, so light needs no other blue.
+    assert.equal(light["--accent"], "#0113B7");
+    // The canonical blue is used for fills and marks only: never as text or as a focus ring.
+    for (const [line] of rules.matchAll(/[^\n]*var\(--brand\)[^\n]*/g)) {
+      for (const declaration of line.match(/[\w-]+:\s*var\(--brand\)/g)) assert.match(declaration, /^(?:background|border-color):/, line);
+    }
+    assert.match(rules, /\.btn-primary \{[^}]*border-color: var\(--brand-edge\); background: var\(--brand\); color: var\(--on-brand\);/);
+    assert.match(rules, /\.btn-primary:hover \{ border-color: var\(--brand-edge-hover\); background: var\(--brand-hover\); \}/);
+    // Dark gives the Pharos Blue control an edge in the derived blue it already uses; light keeps the
+    // fill as its own edge, exactly as before.
+    assert.deepEqual([dark["--brand-edge"], dark["--brand-edge-hover"]], [dark["--accent"], dark["--accent"]]);
+    assert.deepEqual([light["--brand-edge"], light["--brand-edge-hover"]], [light["--brand"], light["--brand-hover"]]);
+  });
+
+  test("dark uses a derived interaction blue only because Pharos Blue cannot be read on Black", () => {
+    const oklch = (hex) => {
+      const [r, g, b] = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+      const [l, m, s] = [0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b, 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b, 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b].map(Math.cbrt);
+      const [L, a, bb] = [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+      return { L, h: ((Math.atan2(bb, a) * 180) / Math.PI + 360) % 360 };
+    };
+    assert.ok(ratio(dark["--brand"], dark["--bg"]) < 4.5, "if Pharos Blue were readable on Black, it would be used as is");
+    assert.equal(dark["--accent"], "#4F84FF");
+    const brand = oklch(dark["--brand"]);
+    const derived = oklch(dark["--accent"]);
+    assert.ok(Math.abs(derived.h - brand.h) < 1.5, `same hue as Pharos Blue: ${derived.h.toFixed(1)} vs ${brand.h.toFixed(1)}`);
+    assert.ok(Math.abs(derived.L - 0.64) < 0.01 && Math.abs(brand.L - 0.364) < 0.01, `lightness raised from ${brand.L.toFixed(3)} to ${derived.L.toFixed(3)}`);
+    for (const ground of ["--bg", "--surface", "--surface-2"]) assert.ok(ratio(dark["--accent"], dark[ground]) >= 4.5, ground);
+    assert.match(css, /Pharos Blue is 1\.67:1 on Black: too dark here for text or focus rings, so those use a derived\s+interaction blue/);
+  });
+
+  test("every text colour passes WCAG AA in both themes; inputs and focus are visible", () => {
+    for (const [name, theme] of [["dark", dark], ["light", light]]) {
+      for (const text of ["--text", "--text-2", "--text-3", "--accent"]) {
+        for (const ground of ["--bg", "--surface", "--surface-2", "--field"]) {
+          assert.ok(ratio(theme[text], theme[ground]) >= 4.5, `${name}: ${text} on ${ground} is ${ratio(theme[text], theme[ground]).toFixed(2)}:1`);
+        }
+      }
+      assert.ok(ratio(theme["--on-brand"], theme["--brand"]) >= 4.5, `${name}: text on the primary button`);
+      assert.ok(ratio(theme["--on-brand"], theme["--brand-hover"]) >= 4.5, `${name}: text on the hovered primary button`);
+      for (const tone of ["--success", "--warning", "--error", "--accent"]) {
+        for (const ground of ["--surface", "--bg"]) assert.ok(ratio(theme[tone], theme[ground]) >= 3, `${name}: ${tone} dot on ${ground}`);
+      }
+      for (const ground of ["--surface", "--field"]) assert.ok(ratio(theme["--field-line"], theme[ground]) >= 3, `${name}: input edge on ${ground}`);
+      // The primary control's own boundary, at rest and on hover, against the panel and the page.
+      for (const edge of ["--brand-edge", "--brand-edge-hover"]) {
+        for (const ground of ["--surface", "--bg"]) assert.ok(ratio(theme[edge], theme[ground]) >= 3, `${name}: ${edge} on ${ground} is ${ratio(theme[edge], theme[ground]).toFixed(2)}:1`);
+      }
+    }
+    assert.match(rules, /:focus-visible \{ outline: 2px solid var\(--accent\);/);
+  });
+
+  test("theme.js and lab.css agree on each theme's background", () => {
+    assert.match(themeJs, new RegExp(`const BACKGROUND = \\{ dark: "${dark["--bg"]}", light: "${light["--bg"]}" \\};`));
+    assert.match(html, new RegExp(`<meta name="theme-color" content="${dark["--bg"]}" media="\\(prefers-color-scheme: dark\\)">`));
+    assert.match(html, new RegExp(`<meta name="theme-color" content="${light["--bg"]}" media="\\(prefers-color-scheme: light\\)">`));
+  });
+
+  /** Run theme.js against a fake browser: storage, the system setting, the toggle and two metas. */
+  function runTheme({ saved, system = "dark", storage = "ok" } = {}) {
+    const store = new Map(saved === undefined ? [] : [["agent-arena-lab:theme", saved]]);
+    const failing = () => {
+      throw new Error("storage is blocked");
+    };
+    const localStorage = storage === "ok"
+      ? { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => void store.set(key, String(value)), removeItem: (key) => void store.delete(key) }
+      : { getItem: failing, setItem: failing, removeItem: failing };
+    const listeners = {};
+    const on = (target) => (type, fn) => void (listeners[`${target}:${type}`] = fn);
+    const attributes = new Map();
+    const button = { setAttribute: (name, value) => attributes.set(name, value), addEventListener: on("button") };
+    const root = { dataset: {}, classList: { names: new Set(), add(name) { this.names.add(name); } } };
+    const metas = [{ media: "(prefers-color-scheme: dark)", content: dark["--bg"] }, { media: "(prefers-color-scheme: light)", content: light["--bg"] }];
+    const media = { matches: system === "light", addEventListener: on("media") };
+    const document = {
+      documentElement: root,
+      getElementById: (id) => (id === "theme-toggle" && listeners["document:DOMContentLoaded:fired"] ? button : null),
+      querySelectorAll: (selector) => (selector === 'meta[name="theme-color"]' ? metas : []),
+      addEventListener: on("document"),
+    };
+    vm.runInNewContext(themeJs, { document, localStorage, matchMedia: () => media, addEventListener: on("window") });
+    const ready = () => {
+      listeners["document:DOMContentLoaded:fired"] = true;
+      listeners["document:DOMContentLoaded"]();
+    };
+    return { root, store, metas, media, attributes, listeners, ready, click: () => listeners["button:click"]() };
+  }
+
+  test("with nothing saved the page follows the system, and the toggle offers the other theme", () => {
+    const onDark = runTheme({ system: "dark" });
+    assert.equal(onDark.root.dataset.theme, undefined);
+    assert.ok(onDark.root.classList.names.has("js"));
+    onDark.ready();
+    assert.equal(onDark.attributes.get("aria-label"), "Switch to light theme");
+    assert.deepEqual(onDark.metas.map((meta) => meta.content), [dark["--bg"], light["--bg"]]);
+
+    const onLight = runTheme({ system: "light" });
+    onLight.ready();
+    assert.equal(onLight.root.dataset.theme, undefined);
+    assert.equal(onLight.attributes.get("aria-label"), "Switch to dark theme");
+  });
+
+  test("a saved choice applies before the first paint, browser colour included", () => {
+    const page = runTheme({ saved: "light", system: "dark" });
+    assert.equal(page.root.dataset.theme, "light", "set by the head script, before DOMContentLoaded");
+    assert.deepEqual(page.metas.map((meta) => meta.content), [light["--bg"], light["--bg"]]);
+    page.ready();
+    assert.equal(page.attributes.get("aria-label"), "Switch to dark theme");
+    assert.equal(runTheme({ saved: "blue" }).root.dataset.theme, undefined, "an unknown value is ignored");
+  });
+
+  test("the toggle switches and remembers; switching back to the system's theme forgets", () => {
+    const page = runTheme({ system: "dark" });
+    page.ready();
+    page.click();
+    assert.equal(page.root.dataset.theme, "light");
+    assert.equal(page.store.get("agent-arena-lab:theme"), "light");
+    assert.equal(page.attributes.get("aria-label"), "Switch to dark theme");
+    page.click();
+    assert.equal(page.root.dataset.theme, undefined, "dark is the system's theme: follow the system again");
+    assert.equal(page.store.has("agent-arena-lab:theme"), false);
+    assert.deepEqual(page.metas.map((meta) => meta.content), [dark["--bg"], light["--bg"]]);
+
+    // A choice made in another tab applies here too.
+    page.store.set("agent-arena-lab:theme", "light");
+    page.listeners["window:storage"]({ key: "agent-arena-lab:theme" });
+    assert.equal(page.root.dataset.theme, "light");
+  });
+
+  test("blocked storage never breaks the page: the toggle still works for the visit", () => {
+    const page = runTheme({ storage: "blocked", system: "light" });
+    assert.equal(page.root.dataset.theme, undefined);
+    page.ready();
+    page.click();
+    assert.equal(page.root.dataset.theme, "dark");
+  });
+});
+
+describe("design system", () => {
   test("self-hosts four font faces under 200 KB, each with its OFL licence", () => {
     const dir = "public/assets/fonts";
     const files = readdirSync(file(dir)).sort();
@@ -301,17 +539,18 @@ describe("design system assets", () => {
     }
     const motion = css.slice(start, end);
     const declarations = (text) => (text.match(/(?:^|[\s;{])(?:animation|transition)(?:-[a-z-]+)?\s*:/g) ?? []).length;
-    assert.ok(declarations(motion) >= 5);
+    assert.ok(declarations(motion) >= 8);
     assert.equal(declarations(css), declarations(motion), "an animation or transition is declared outside the no-preference block");
     assert.equal(declarations(html), 0);
+    // The disclosure animates only through ::details-content, so it degrades to an instant toggle.
+    assert.match(motion, /\.disclosure::details-content \{ height: 0; overflow: clip; transition:/);
   });
 
-  test("the supply is one element in Geist SemiBold: number, fraction and unit on one line, nothing reshaped", () => {
-    assert.match(html, /<p class="figure measured" id="supply"><span class="figure-num"><span id="supply-major">—<\/span><span class="figure-frac" id="supply-minor"><\/span><\/span><span class="figure-unit" id="supply-unit"><\/span><\/p>/);
+  test("the supply is one continuous value in Geist SemiBold: one size, normal punctuation, nothing reshaped", () => {
+    assert.match(html, /<p class="figure measured" id="supply"><span class="figure-num" id="supply-amount">—<\/span><span class="figure-unit" id="supply-unit"><\/span><\/p>/);
     assert.match(rules, /\.figure \{[^}]*white-space: nowrap;[^}]*font-family: var\(--sans\);[^}]*font-weight: 600;/);
-    assert.match(rules, /\.figure-frac \{ font-size: \.72em; \}/);
-    // No punctuation tricks: no separator spans, and no negative spacing or glyph scaling on the figure.
-    assert.doesNotMatch(`${rules}\n${scripts.map(({ text }) => text).join("\n")}`, /\.sep\b|"sep"|scaleX|font-stretch/);
+    assert.match(pageJs, /setText\(\$\("supply-amount"\), supply\.major \+ supply\.minor\);/);
+    assert.doesNotMatch(`${rules}\n${html}\n${pageJs}`, /figure-frac|supply-minor|\.sep\b|"sep"|scaleX|font-stretch/);
     const figureRules = [...rules.matchAll(/([^{}]*figure[^{}]*)\{([^{}]*)\}/g)].map((match) => match[2]);
     assert.ok(figureRules.length >= 4);
     for (const body of figureRules) assert.doesNotMatch(body, /margin[\w-]*:\s*-|letter-spacing:\s*-/, body);
@@ -319,28 +558,86 @@ describe("design system assets", () => {
 
   test("every value a reader needs is set in Geist: never Departure Mono, never Geist Mono", () => {
     const using = (token) => [...rules.matchAll(new RegExp(`([^{}]+)\\{[^{}]*var\\(${token}\\)[^{}]*\\}`, "g"))].flatMap((match) => match[1].split(",").map((part) => part.trim()));
-    const values = /figure|spec dd|table dd|\.count|state-|\.status|step-n|\.subject|\.via/;
-    for (const selector of [...using("--display"), ...using("--mono")]) assert.doesNotMatch(selector, values, selector);
-    assert.match(html, /<dd id="block">/);
-    assert.match(html, /<div><dt>Chain ID<\/dt><dd data-chain>/);
+    const values = /figure|\.meta|\.rows dd|count-n|\.status|task-title|task-via|step-n|section-title|disclosure-title/;
+    for (const selector of [...using("--caption"), ...using("--mono")]) assert.doesNotMatch(selector, values, selector);
+    assert.match(html, /<span>Block <b id="block">—<\/b><\/span><span>read at <b id="read-at">—<\/b><\/span>/);
+    assert.match(html, /<span class="sub">Chain ID <span data-chain>—<\/span><\/span>/);
   });
 
-  test("Departure Mono is kept to small labels: the shell line and the readout captions", () => {
-    const selectors = [...rules.matchAll(/([^{}]+)\{[^{}]*var\(--display\)[^{}]*\}/g)].flatMap((match) => match[1].split(",").map((part) => part.trim()));
-    assert.deepEqual([...new Set(selectors)].sort(), [".foot-brand", ".label", ".shell", ".spec dt"]);
-    for (const label of ["Total supply", "Task <span class=\"task-n\">01</span>"]) assert.match(html, new RegExp(`class="[^"]*\\blabel\\b[^"]*">${label}`), label);
+  test("Departure Mono is kept to small captions, through .label only", () => {
+    const selectors = [...rules.matchAll(/([^{}]+)\{[^{}]*var\(--caption\)[^{}]*\}/g)].flatMap((match) => match[1].split(",").map((part) => part.trim()));
+    assert.deepEqual([...new Set(selectors)], [".label"]);
+    for (const caption of ["On-chain snapshot", "Total supply", "Contract", 'Task <span class="task-n">01</span> / Read Contract State']) {
+      assert.match(html, new RegExp(`class="label[^"]*"[^>]*>${caption}<`), caption);
+    }
   });
 
-  test("restrained type: little uppercase, no wide tracking, no glow", () => {
+  test("restrained type: one uppercase style, no wide tracking, no glow or glass", () => {
     const uppercase = [...rules.matchAll(/([^{}]+)\{[^{}]*text-transform: uppercase[^{}]*\}/g)].map((match) => match[1].trim());
-    assert.deepEqual(uppercase.sort(), [".foot-brand", ".inspect-word", ".label, .spec dt", ".shell-brand", ".state-word"]);
+    assert.deepEqual(uppercase, [".label"]);
     for (const [, value] of `${css}\n${html}`.matchAll(/letter-spacing:\s*(-?[\d.]+)em/g)) assert.ok(Number(value) <= 0.06, `letter-spacing ${value}em`);
-    assert.doesNotMatch(`${css}\n${html}`, /box-shadow|text-shadow|drop-shadow/);
+    assert.doesNotMatch(`${css}\n${html}`, /box-shadow|text-shadow|drop-shadow|backdrop-filter|linear-gradient|radial-gradient/);
   });
 
-  test("colour stays semantic: green only for LIVE, red only for ERROR", () => {
-    const uses = (token) => [...css.matchAll(new RegExp(`[^\\n]*var\\(${token}[^\\n]*`, "g"))].map((match) => match[0].trim());
-    for (const line of uses("--live")) assert.match(line, /data-state="live"|data-inspect-state="success"|\.tag-live/, line);
-    for (const line of uses("--fault")) assert.match(line, /data-(?:inspect-)?state="error"/, line);
+  test("colour stays semantic: green, amber and red only for their states", () => {
+    const uses = (token) => [...rules.matchAll(new RegExp(`[^\\n]*var\\(${token}\\)[^\\n]*`, "g"))].map((match) => match[0].trim());
+    for (const line of uses("--success")) assert.match(line, /\[data-tone="success"\]/, line);
+    for (const line of uses("--warning")) assert.match(line, /\[data-tone="warning"\]/, line);
+    for (const line of uses("--error")) assert.match(line, /\[data-tone="error"\]|\[aria-invalid="true"\]/, line);
+    assert.ok(uses("--success").length >= 1 && uses("--warning").length >= 2 && uses("--error").length >= 3);
+    assert.match(inspectorJs, /const TONE = \{ inspecting: "active", success: "success", partial: "warning", "not-found": "neutral", error: "error" \};/);
+  });
+
+  test("long hex values break only into whole, equal lines of groups", () => {
+    for (const rule of [
+      /\.hex-hash \{ max-width: 21ch; \}/,
+      /\.hex-address \{ max-width: 25\.5ch; \}/,
+      /@container hex \(min-width: 39ch\) \{ \.hex-hash \{ max-width: 39ch; \} \}/,
+      /@container hex \(min-width: 74ch\) \{ \.hex-hash \{ max-width: none; \} \}/,
+      /@container hex \(min-width: 47\.5ch\) \{ \.hex-address \{ max-width: none; \} \}/,
+      /\.hex > span \{ margin-right: \.5ch; \}/,
+    ]) assert.match(rules, rule);
+    // Lines of n groups: the first carries "0x" (2 + 4.5n ch), the others 4.5n ch. Each max-width
+    // must fit n groups on the first line and not n + 1 groups on any line.
+    const fits = (max, n) => 2 + 4.5 * n <= max && 4.5 * (n + 1) > max && 2 + 4.5 * (n + 1) > max;
+    assert.ok(fits(21, 4) && fits(39, 8) && fits(25.5, 5));
+    assert.equal(2 + 4.5 * 16, 74);
+    assert.equal(2 + 4.5 * 10, 47);
+  });
+});
+
+describe("accessible structure", () => {
+  test("one h1, then h2 sections, then h3 only inside the proof", () => {
+    const headings = [...html.matchAll(/<h([1-6])\b[^>]*>(.*?)<\/h\1>/g)].map(([, level, text]) => [Number(level), text.replace(/<[^>]+>/g, "")]);
+    assert.deepEqual(headings.filter(([level]) => level === 1), [[1, "Circle USDC Contract"]]);
+    assert.deepEqual(headings.filter(([level]) => level === 2).map(([, text]) => text), ["On-chain snapshot", "Pharos Inspector", "Proof &amp; technical details", "Sources"]);
+    const proof = html.match(/<details[\s\S]*<\/details>/)[0];
+    assert.equal(html.match(/<h3\b/g).length, proof.match(/<h3\b/g).length);
+  });
+
+  test("labels, names and live regions are in place", () => {
+    assert.match(html, /<html lang="en">/);
+    assert.match(html, /<a class="skip" href="#snapshot">Skip to the snapshot<\/a>/);
+    assert.match(html, /<section class="panel" id="snapshot" aria-labelledby="snapshot-h" tabindex="-1">/);
+    assert.match(html, /<label class="field-label" for="inspect-input">Paste contract address or transaction hash<\/label>/);
+    assert.match(html, /<input class="input" id="inspect-input"[^>]* aria-describedby="inspect-detected">/);
+    assert.match(html, /<p class="status" id="status" role="status"/);
+    assert.match(html, /<p class="status inspect-status" id="inspect-status" role="status" hidden>/);
+    // Icons are decoration: each is hidden itself or sits inside a hidden wrapper.
+    const unwrapped = html.replace(/<span class="[^"]*" aria-hidden="true">(?:\s*<svg[\s\S]*?<\/svg>)+\s*<\/span>/g, "");
+    assert.equal(html.match(/<svg\b/g).length - unwrapped.match(/<svg\b/g).length, 3, "the two theme icons and the disclosure chevron are wrapped");
+    for (const svg of unwrapped.match(/<svg\b[^>]*>/g)) assert.match(svg, /aria-hidden="true"/, svg);
+    // Every button has words: its own text, or the name theme.js gives the theme toggle.
+    for (const [, inner] of html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)) assert.match(inner.replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, "").trim(), /\w/);
+    assert.match(themeJs, /button\.setAttribute\("aria-label", `Switch to \$\{current\(\) === "dark" \? "light" : "dark"\} theme`\)/);
+  });
+
+  test("busy controls keep focus: aria-disabled, never disabled", () => {
+    for (const text of [pageJs, inspectorJs]) {
+      assert.doesNotMatch(text, /\.disabled\s*=/);
+      assert.match(text, /setAttribute\("aria-disabled", String\(on\)\)/);
+      assert.match(text, /setAttribute\("aria-busy", String\(on\)\)/);
+    }
+    assert.match(inspectorJs, /example\.addEventListener\("click", \(\) => \{\n {2}if \(busy\) return;/);
   });
 });
