@@ -270,7 +270,9 @@ class Session {
         if (error) {
           if (isFatal(error)) return error;
           if (error.kind === "MCP_CONNECTION") reconnect = true;
-          this.warn(`Poll ${result.cycle} failed, the cursor stays at block ${this.monitor.cursor ?? "unset"} and the same range is asked for next poll: ${error.message}`);
+          const failed = result.ranges.find((range) => !range.ok);
+          const again = failed ? `blocks ${failed.from}..${failed.to} are asked for again, unchanged, next poll` : "the next poll starts from the same block";
+          this.warn(`Poll ${result.cycle} failed, the cursor stays at block ${this.monitor.cursor ?? "unset"} and ${again}: ${error.message}`);
         }
       }
       if (mode.cycles !== undefined && cycle >= mode.cycles) {

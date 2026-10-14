@@ -170,8 +170,8 @@ describe("watch mode", () => {
     await withServer(chain, async (server) => {
       const { code, stdout } = await runCli(server, ["--watch", "--cycles", "3"]);
       assert.equal(code, 0);
-      assert.match(stdout, /! Poll 2 failed, the cursor stays at block 1000 and the same range is asked for next poll: get_logs failed: header not found/);
-      assert.deepEqual(getLogs(server).map(span), ["1001..1001", "1001..1001", "1001..1002"]);
+      assert.match(stdout, /! Poll 2 failed, the cursor stays at block 1000 and blocks 1001\.\.1001 are asked for again, unchanged, next poll: get_logs failed: header not found/);
+      assert.deepEqual(getLogs(server).map(span), ["1001..1001", "1001..1001", "1001..1001", "1002..1002"]);
       assert.equal(eventBlocks(stdout), 2);
     });
   });
@@ -199,15 +199,16 @@ describe("watch mode", () => {
       logs: [makeLog({ block: 99n, index: 3, tx })],
       beforeBlockNumber: (n, c) => {
         if (n === 2) {
+          // A reorged log comes back with its original block, behind the cursor.
           c.head = 101n;
-          c.logs = [makeLog({ block: 101n, index: 3, tx, removed: true })];
+          c.onGetLogs = () => [makeLog({ block: 99n, index: 3, tx, removed: true })];
         }
       },
     };
     await withServer(chain, async (server) => {
       const { stdout } = await runCli(server, ["--watch", "--cycles", "2", "--lookback", "2"]);
       assert.equal(eventBlocks(stdout), 1);
-      assert.match(stdout, new RegExp(`^Removed\\s+Log ${tx} \\(log index 3\\) at block 101 came back with removed: true`, "m"));
+      assert.match(stdout, new RegExp(`^Removed\\s+Log ${tx} \\(log index 3\\) at block 99 came back with removed: true`, "m"));
       assert.match(stdout, /Retracted\s+1/);
     });
   });

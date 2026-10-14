@@ -50,6 +50,7 @@ export async function readWindow(endpoint = HOSTED_ENDPOINT) {
     const result = await monitor.poll();
     if (result.error) throw result.error;
     const range = result.ranges[0];
+    const retracted = new Set(result.retractions.map((entry) => entry.key));
     return {
       status: 200,
       body: {
@@ -61,7 +62,9 @@ export async function readWindow(endpoint = HOSTED_ENDPOINT) {
         fromBlock: range ? String(range.from) : null,
         toBlock: range ? String(range.to) : null,
         getLogs: range ? getLogsArgs(WATCHED_TOKEN, TRANSFER_TOPIC, range) : null,
-        events: result.events.map((event) => ({
+        // A log reported and then removed within this one window is not an event: it is listed
+        // with the removed keys, as the page applies the same policy as the CLI.
+        events: result.events.filter((event) => !retracted.has(event.key)).map((event) => ({
           key: event.key,
           type: event.kind,
           from: event.from,
@@ -72,7 +75,7 @@ export async function readWindow(endpoint = HOSTED_ENDPOINT) {
           logIndex: event.logIndex,
           summary: event.summary,
         })),
-        removedKeys: result.removedKeys,
+        removedKeys: [...result.removedKeys, ...retracted],
         skipped: result.skipped,
         toolCalls: { total: calls.get_chain_info + calls.get_block_number + calls.get_logs, byTool: calls },
         elapsedMs: Math.round(performance.now() - started),

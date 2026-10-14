@@ -96,7 +96,7 @@ export function verifyProof(transcript: unknown, report: unknown, output: string
   const rangeProblems: string[] = [];
   let lastHead: bigint | undefined;
   let previousOk: { from: bigint; to: bigint } | undefined;
-  let pendingRetryFrom: bigint | undefined;
+  let pendingRetry: { from: bigint; to: bigint } | undefined;
   for (const call of calls) {
     if (call.name === "get_block_number" && !call.failed) {
       const head = asObject(call.payload)?.blockNumber;
@@ -117,12 +117,14 @@ export function verifyProof(transcript: unknown, report: unknown, output: string
     const to = BigInt(toBlock);
     if (to < from || to - from + 1n > MAX_BLOCK_RANGE) rangeProblems.push(`#${call.seq} spans ${to - from + 1n} blocks`);
     if (lastHead === undefined || to > lastHead) rangeProblems.push(`#${call.seq} ends at ${to}, past the resolved head ${String(lastHead)}`);
-    if (pendingRetryFrom !== undefined && from !== pendingRetryFrom) rangeProblems.push(`#${call.seq} starts at ${from}, but the failed range started at ${pendingRetryFrom}`);
-    if (previousOk && from !== previousOk.to + 1n && pendingRetryFrom === undefined) rangeProblems.push(`#${call.seq} starts at ${from}, not right after ${previousOk.to}`);
-    if (call.failed) {
-      pendingRetryFrom = from;
+    if (pendingRetry && (from !== pendingRetry.from || to !== pendingRetry.to)) {
+      rangeProblems.push(`#${call.seq} asks for ${from}..${to}, but the failed range ${pendingRetry.from}..${pendingRetry.to} was not repeated exactly`);
+    }
+    if (!pendingRetry && previousOk && from !== previousOk.to + 1n) rangeProblems.push(`#${call.seq} starts at ${from}, not right after ${previousOk.to}`);
+    if (logsFailed(call)) {
+      pendingRetry = { from, to };
     } else {
-      pendingRetryFrom = undefined;
+      pendingRetry = undefined;
       previousOk = { from, to };
     }
   }
@@ -136,35 +138,21 @@ export function verifyProof(transcript: unknown, report: unknown, output: string
     logCalls.length > 0 && rangeProblems.length === 0,
     rangeProblems.length
       ? rangeProblems.slice(0, 5).join("; ")
-      : `${logCalls.length} hex ranges, each within the resolved head, no gaps or overlaps; failed ranges repeated from the same block`,
+      : `${logCalls.length} hex ranges, each within the resolved head, no gaps or overlaps; a failed range repeated with the same fromBlock and toBlock`,
   );
 
-  // Every event in the report, re-derived from the raw logs.
-  const rawLogs = new Map<string, Json>();
-  for (const call of logCalls) {
-    if (call.failed || !Array.isArray(call.payload) || !HEX_QUANTITY.test(String(call.args.fromBlock)) || !HEX_QUANTITY.test(String(call.args.toBlock))) continue;
-    const from = BigInt(call.args.fromBlock);
-    const to = BigInt(call.args.toBlock);
-    for (const log of call.payload as Json[]) {
-      const key = rawKey(log);
-      const block = typeof log?.blockNumber === "string" && HEX_QUANTITY.test(log.blockNumber) ? BigInt(log.blockNumber) : undefined;
-      if (!key || block === undefined || block < from || block > to) continue;
-      // A removed log is never an event; one reported earlier stays here so its report entry still checks out.
-      if (log.removed === true) continue;
-      if (!rawLogs.has(key)) rawLogs.set(key, log);
-    }
-  }
+  // Replay the monitor's policy over the raw responses, in order: what should have been reported,
+  // and what retracted. Then hold the report and the printed output to exactly that.
+  const expected = expectedFromRaw(logCalls);
   const events: Json[] = Array.isArray(r.events) ? r.events : [];
   const decodeProblems: string[] = [];
-  for (const event of events) {
-    const log = rawLogs.get(String(event.key));
-    if (!log) {
-      decodeProblems.push(`${String(event.key)} has no matching raw log in a successful get_logs response`);
-      continue;
+  events.forEach((event, index) => {
+    const want = expected.events[index];
+    if (want && want.key === event.key) {
+      const problem = compareEvent(event, want.log);
+      if (problem) decodeProblems.push(`${String(event.key)}: ${problem}`);
     }
-    const problem = compareEvent(event, log);
-    if (problem) decodeProblems.push(`${String(event.key)}: ${problem}`);
-  }
+  });
   check(
     "decoded fields match raw topics and data",
     events.length > 0 && decodeProblems.length === 0,
@@ -174,25 +162,30 @@ export function verifyProof(transcript: unknown, report: unknown, output: string
   );
 
   const keys = events.map((event) => String(event.key));
-  const unique = new Set(keys);
-  const reportedKeys = new Set(keys);
-  const missed = [...rawLogs.keys()].filter((key) => !reportedKeys.has(key) && isWellFormedTransfer(rawLogs.get(key)!));
+  const wantKeys = expected.events.map((entry) => entry.key);
+  const firstDiff = wantKeys.findIndex((key, index) => keys[index] !== key);
+  const sameSequence = keys.length === wantKeys.length && firstDiff === -1;
   check(
     "dedup by transactionHash + logIndex, nothing missed",
-    r.dedupKey === "transactionHash:logIndex" && unique.size === keys.length && missed.length === 0 && (r.truncated?.events ?? 0) === 0,
-    unique.size !== keys.length
-      ? `${keys.length - unique.size} duplicate key(s) in the report`
-      : missed.length
-        ? `${missed.length} raw Transfer log(s) not reported, e.g. ${missed[0]}`
-        : `${unique.size} unique keys, one per well-formed Transfer log returned`,
+    r.dedupKey === "transactionHash:logIndex" && sameSequence && (r.truncated?.events ?? 0) === 0,
+    sameSequence
+      ? `${keys.length} events, one per well-formed Transfer log returned (a key again only after its retraction)`
+      : `the report has ${keys.length} events where the raw responses call for ${wantKeys.length}` +
+          (firstDiff !== -1 ? `; first difference at #${firstDiff + 1}: expected ${wantKeys[firstDiff]}, got ${String(keys[firstDiff])}` : ""),
   );
 
-  const printed = printedEvents(output);
-  const printedKeys = printed.map((entry) => `${entry.tx}:${entry.logIndex}`);
+  const retracted: string[] = (Array.isArray(r.retractions) ? r.retractions : []).map((entry: Json) => String(entry?.key));
+  check(
+    "removed logs never reported, retracted when shown before",
+    JSON.stringify(retracted) === JSON.stringify(expected.retractions),
+    `${expected.removed} removed log(s) in the responses; ${expected.retractions.length} retraction(s) expected, ${retracted.length} in the report`,
+  );
+
+  const printed = printedEvents(output).map((entry) => `${entry.tx}:${entry.logIndex}`);
   check(
     "no duplicate event output",
-    printed.length === keys.length && new Set(printedKeys).size === printedKeys.length && printedKeys.every((key) => reportedKeys.has(key)),
-    `${printed.length} events printed in the saved output, ${new Set(printedKeys).size} distinct, ${keys.length} in the report`,
+    JSON.stringify(printed) === JSON.stringify(keys),
+    `${printed.length} events printed in the saved output, in the report's order, ${new Set(printed).size} distinct`,
   );
 
   const afterStart = events.filter((event) => event.afterStart === true).length;
@@ -233,14 +226,70 @@ function compareEvent(event: Json, log: Json): string | undefined {
   return undefined;
 }
 
+/** A get_logs call the monitor would have retried: an error, or a payload that is not a log array. */
+function logsFailed(call: Call): boolean {
+  return call.failed || !Array.isArray(call.payload);
+}
+
+/**
+ * The monitor's policy, replayed over the successful get_logs responses in order: each response's
+ * logs by block, then logIndex; another address or topic0 is ignored; a removed log retracts a
+ * reported key (whatever its block) and is otherwise only counted; a log outside its call's range
+ * waits for its own range; a well-formed Transfer log is reported unless its key already was.
+ */
+function expectedFromRaw(logCalls: Call[]): { events: Array<{ key: string; log: Json }>; retractions: string[]; removed: number } {
+  const reported = new Set<string>();
+  const events: Array<{ key: string; log: Json }> = [];
+  const retractions: string[] = [];
+  let removed = 0;
+  for (const call of logCalls) {
+    if (logsFailed(call) || !HEX_QUANTITY.test(String(call.args.fromBlock)) || !HEX_QUANTITY.test(String(call.args.toBlock))) continue;
+    const from = BigInt(call.args.fromBlock);
+    const to = BigInt(call.args.toBlock);
+    for (const log of [...(call.payload as unknown[])].sort(byPosition) as Json[]) {
+      if (asObject(log) === undefined) continue;
+      const topics: unknown[] = Array.isArray(log.topics) ? log.topics : [];
+      if (String(log.address).toLowerCase() !== WATCHED_TOKEN.address.toLowerCase() || String(topics[0]).toLowerCase() !== TRANSFER_TOPIC) continue;
+      const block = typeof log.blockNumber === "string" && HEX_QUANTITY.test(log.blockNumber) ? BigInt(log.blockNumber) : undefined;
+      if (block === undefined) continue;
+      const key = rawKey(log);
+      if (log.removed === true) {
+        removed += 1;
+        if (key && reported.delete(key)) retractions.push(key);
+        continue;
+      }
+      if (block < from || block > to || (log.removed !== undefined && log.removed !== false)) continue;
+      if (!key || !isWellFormedTransfer(log) || reported.has(key)) continue;
+      reported.add(key);
+      events.push({ key, log });
+    }
+  }
+  return { events, retractions, removed };
+}
+
 function isWellFormedTransfer(log: Json): boolean {
   const topics: unknown[] = Array.isArray(log.topics) ? log.topics : [];
   return (
+    /^0x[0-9a-f]{40}$/i.test(String(log.address)) &&
     topics.length === 3 &&
     topics.slice(1).every((topic) => typeof topic === "string" && /^0x0{24}[0-9a-f]{40}$/i.test(topic)) &&
     typeof log.data === "string" &&
     /^0x[0-9a-f]{64}$/i.test(log.data)
   );
+}
+
+/** Block, then logIndex, as the monitor orders a response; entries without a position first, in order. */
+function byPosition(a: unknown, b: unknown): number {
+  const position = (log: unknown): [bigint, bigint] => {
+    const entry = asObject(log);
+    const block = typeof entry?.blockNumber === "string" && HEX_QUANTITY.test(entry.blockNumber) ? BigInt(entry.blockNumber) : -1n;
+    const index = typeof entry?.logIndex === "string" && /^0x[0-9a-f]+$/i.test(entry.logIndex) ? BigInt(entry.logIndex) : -1n;
+    return [block, index];
+  };
+  const [blockA, indexA] = position(a);
+  const [blockB, indexB] = position(b);
+  if (blockA !== blockB) return blockA < blockB ? -1 : 1;
+  return indexA === indexB ? 0 : indexA < indexB ? -1 : 1;
 }
 
 function rawKey(log: Json): string | undefined {
@@ -257,31 +306,40 @@ export function printedEvents(output: string): Array<{ tx: string; logIndex: num
   return found;
 }
 
-/** Pair each tools/call request with its response, in request order. */
+/**
+ * Pair each tools/call request with its response, in request order, session by session: JSON-RPC
+ * ids restart in every MCP session, and watch mode opens a new session (a new initialize) after a
+ * lost connection, so ids are not unique across the transcript.
+ */
 function toolCalls(transcript: Json): Call[] {
   const messages: Json[] = Array.isArray(transcript.messages) ? transcript.messages : [];
-  const responses = new Map<unknown, Json>();
-  for (const entry of messages) {
-    const message = entry?.message;
-    if (entry?.direction === "server->client" && message && "id" in message && !("method" in message)) responses.set(message.id, message);
-  }
   const calls: Call[] = [];
+  const open = new Map<unknown, Call[]>();
   for (const entry of messages) {
     const message = entry?.message;
-    if (entry?.direction !== "client->server" || message?.method !== "tools/call") continue;
-    const response = responses.get(message.id);
-    const result = response?.result;
-    const failed = !result || result.isError === true;
-    let payload: unknown;
-    if (!failed) {
+    if (!message || typeof message !== "object") continue;
+    // A new session: requests the old one never answered stay failed, and ids start over.
+    if (entry.direction === "client->server" && message.method === "initialize") open.clear();
+    if (entry.direction === "client->server" && message.method === "tools/call") {
+      const call: Call = { seq: Number(entry.seq), name: String(message.params?.name), args: asObject(message.params?.arguments) ?? {}, failed: true };
+      calls.push(call);
+      open.set(message.id, [...(open.get(message.id) ?? []), call]);
+      continue;
+    }
+    if (entry.direction !== "server->client" || "method" in message || !("id" in message)) continue;
+    const waiting = open.get(message.id);
+    const call = waiting?.shift();
+    if (!call) continue;
+    const result = message.result;
+    call.failed = !result || result.isError === true;
+    if (!call.failed) {
       const text = Array.isArray(result.content) ? result.content.find((item: Json) => item?.type === "text")?.text : undefined;
       try {
-        payload = typeof text === "string" ? JSON.parse(text) : result.structuredContent;
+        call.payload = typeof text === "string" ? JSON.parse(text) : result.structuredContent;
       } catch {
-        payload = text;
+        call.payload = text;
       }
     }
-    calls.push({ seq: Number(entry.seq), name: String(message.params?.name), args: asObject(message.params?.arguments) ?? {}, payload, failed });
   }
   return calls;
 }

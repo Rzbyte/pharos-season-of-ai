@@ -143,9 +143,31 @@ describe("cursor and retries", () => {
     caller.onGetLogs = undefined;
     caller.head = 1_020n;
     const recovered = await monitor.poll();
-    assert.deepEqual(ranges(caller), ["1001..1010", "1001..1010", "1001..1020"]);
+    // The failed range first, unchanged; only then the blocks mined since.
+    assert.deepEqual(ranges(caller), ["1001..1010", "1001..1010", "1001..1010", "1011..1020"]);
+    assert.deepEqual(caller.getLogs[2], caller.getLogs[0]);
     assert.equal(recovered.events.length, 1);
     assert.equal(monitor.cursor, 1_020n);
+  });
+
+  test("while the head is below a failed range's end, nothing is queried; then that range comes first", async () => {
+    const caller = new FakeCaller(1_000n);
+    const monitor = monitorFor(caller);
+    await monitor.poll();
+    caller.head = 1_010n;
+    caller.onGetLogs = () => {
+      throw transient();
+    };
+    await monitor.poll();
+    caller.onGetLogs = undefined;
+    caller.head = 1_005n; // a lagging node answers next
+    const lagging = await monitor.poll();
+    assert.equal(lagging.ranges.length, 0);
+    assert.equal(monitor.cursor, 1_000n);
+    caller.head = 1_012n;
+    await monitor.poll();
+    assert.deepEqual(ranges(caller).slice(2), ["1001..1010", "1011..1012"]);
+    assert.equal(monitor.cursor, 1_012n);
   });
 
   test("a transient failure is retried once with identical arguments and then succeeds", async () => {
@@ -322,6 +344,28 @@ describe("removed logs", () => {
     caller.head = 14n;
     caller.onGetLogs = () => [makeLog({ block: 13n, index: 4, tx })];
     assert.equal((await monitor.poll()).events.length, 1);
+  });
+
+  test("a reorged log keeps its original block, behind the cursor, and is still retracted", async () => {
+    const tx = `0x${"ef".repeat(32)}`;
+    const reported = makeLog({ block: 8n, index: 1, tx });
+    const caller = new FakeCaller(10n, [reported]);
+    const monitor = monitorFor(caller, { lookback: 5n });
+    assert.equal((await monitor.poll()).events.length, 1);
+    caller.head = 12n;
+    caller.onGetLogs = () => [{ ...reported, removed: true }];
+    const result = await monitor.poll();
+    assert.deepEqual(result.retractions.map((entry) => [entry.key, entry.blockNumber]), [[`${tx}:1`, 8n]]);
+    assert.equal(result.skipped.outsideRange, 0);
+  });
+
+  test("a removed log outside the range and never reported is only counted as outside the range", async () => {
+    const caller = new FakeCaller(10n);
+    caller.onGetLogs = () => [makeLog({ block: 2n, removed: true })];
+    const result = await monitorFor(caller, { lookback: 5n }).poll();
+    assert.equal(result.skipped.outsideRange, 1);
+    assert.equal(result.skipped.removed, 0);
+    assert.deepEqual(result.removedKeys, []);
   });
 
   test("removed must be a boolean when present", async () => {

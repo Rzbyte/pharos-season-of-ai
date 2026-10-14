@@ -85,6 +85,62 @@ describe("verifyProof", () => {
     assert.equal(requests(value, "get_logs").length, 2);
   });
 
+  test("a watch run that lost its MCP session and reconnected still verifies (ids restart per session)", async () => {
+    const chain: FakeLogChain = {
+      head: 1_000n,
+      logs: [makeLog({ block: 998n })],
+      dropSessionAfterToolCalls: 3,
+      beforeBlockNumber: (n, c) => {
+        if (n === 1) return;
+        c.head += 1n;
+        c.logs.push(makeLog({ block: c.head, index: n }));
+      },
+    };
+    const value = await proofRun(chain, ["--watch", "--cycles", "5", "--lookback", "5"]);
+    assert.equal(value.transcript.messages.filter((entry: Json) => entry.message.method === "initialize").length, 2);
+    assert.deepEqual(failed(verify(value)), []);
+  });
+
+  test("a get_logs answer that was not a log array, then retried, still verifies", async () => {
+    const value = await proofRun({ head: 1_000n, logs: [makeLog({ block: 995n })], onGetLogs: (_args, n) => (n === 1 ? { oops: true } : undefined) }, ["--blocks", "10"]);
+    assert.equal(requests(value, "get_logs").length, 2);
+    assert.deepEqual(failed(verify(value)), []);
+  });
+
+  test("a well-formed Transfer of another contract, ignored by the monitor, is not counted as missed", async () => {
+    const foreign = makeLog({ block: 995n, address: "0x52C48d4213107b20bC583832b0d951FB9CA8F0B0" });
+    const value = await proofRun({ head: 1_000n, logs: [], onGetLogs: () => [foreign, makeLog({ block: 996n })] }, ["--blocks", "10"]);
+    assert.equal(value.report.events.length, 1);
+    assert.deepEqual(failed(verify(value)), []);
+  });
+
+  test("retractions are checked against the raw removed logs", async () => {
+    const tx = `0x${"ab".repeat(32)}`;
+    const chain: FakeLogChain = {
+      head: 100n,
+      logs: [makeLog({ block: 99n, index: 3, tx }), makeLog({ block: 98n })],
+      beforeBlockNumber: (n, c) => {
+        if (n !== 2) return;
+        c.head = 101n;
+        c.onGetLogs = () => [makeLog({ block: 99n, index: 3, tx, removed: true })];
+      },
+    };
+    const value = await proofRun(chain, ["--watch", "--cycles", "2", "--lookback", "5"]);
+    assert.equal(value.report.retractions.length, 1);
+    assert.deepEqual(failed(verify(value)), []);
+
+    const silent = clone(value);
+    silent.report.retractions = [];
+    assert.ok(failed(verify(silent)).includes("removed logs never reported, retracted when shown before"));
+  });
+
+  test("refuses a failed range that was not repeated exactly", async () => {
+    const value = await proofRun({ head: 500n, logs: [makeLog({ block: 450n })], getLogsFailures: 1 }, ["--blocks", "100"]);
+    const retry = requests(value, "get_logs")[1].params.arguments;
+    retry.toBlock = `0x${(BigInt(retry.toBlock) - 1n).toString(16)}`;
+    assert.ok(failed(verify(value)).includes("explicit ranges of at most 1,000 blocks, contiguous"));
+  });
+
   test("refuses a run against another endpoint", () => {
     const value = clone(baseline);
     value.transcript.endpoint = "http://127.0.0.1:1234/mcp";

@@ -85,7 +85,7 @@ The cursor is the last block whose logs are fully processed.
 1. `get_block_number` gives the head.
 2. The blocks after the cursor, up to the head, are split into contiguous ranges of at most 1,000 blocks, the inclusive limit of `get_logs`. One poll handles at most 10 ranges, so a long outage is caught up over a few polls.
 3. Each range is one `get_logs` call. The cursor moves to the range's last block only after that call succeeded and all its logs were processed.
-4. A failed range is retried once with the exact same arguments. If it fails again, the poll stops and the cursor stays put, so the next poll asks for the same range again (extended to the new head). A lost MCP session is reopened on the next poll.
+4. A failed range is retried once with the exact same arguments. If it fails again, the poll stops and the cursor stays put. The next poll first asks for exactly that range again, with the same `fromBlock` and `toBlock`, and only then plans the blocks mined since. A lost MCP session is reopened on the next poll.
 
 Watch mode starts at the head: by default it reports only events mined after it started. `--lookback n` also covers the last n blocks on the first poll. Finite mode scans one explicit range and exits.
 
@@ -98,7 +98,7 @@ Each reported event is remembered by `transactionHash:logIndex`. A log with a ke
 Policy (deterministic):
 
 - A log with `removed: true` is **never reported as an event**.
-- If the same `transactionHash` + `logIndex` was reported earlier, a **retraction** is printed (`Removed  Log 0x… (log index n) at block … came back with removed: true …`), and the key is forgotten. If the log is later re-included, it is reported again.
+- If the same `transactionHash` + `logIndex` was reported earlier, a **retraction** is printed (`Removed  Log 0x… (log index n) at block … came back with removed: true …`), and the key is forgotten. This holds whatever block the removed log carries, even one behind the cursor, since a reorged log keeps its original block. If the log is later re-included, it is reported again.
 - Otherwise the removed log is only counted (`Skipped … removed`).
 
 `eth_getLogs` over explicit, already-mined ranges rarely carries `removed: true`, since that flag mostly shows up in filter subscriptions. The policy is there so a reorged log can never pass as a normal new event.
@@ -135,9 +135,11 @@ Then `src/verify-proof.ts` checks those files **from the raw MCP messages**, not
 - `get_chain_info` reported chain ID 1672 before any other call;
 - only `get_chain_info`, `get_block_number` and `get_logs` were called, with no other JSON-RPC method (no direct RPC);
 - every `get_logs` call had exactly the USDC address and `[Transfer topic0]`, and an explicit hex range of at most 1,000 blocks that ends within the head resolved before it;
-- the ranges are contiguous, and a failed range was repeated from the same block;
+- the ranges are contiguous, and a failed range (an error, or a payload that is not a log array) was repeated with the same `fromBlock` and `toBlock`. Requests and responses are paired session by session, so a run that reconnected verifies too;
+- the monitor's policy is replayed over the raw responses: which logs must be reported, in what order, and which retracted. The report must match it exactly: every well-formed Transfer log of the watched contract once, nothing else, and a key again only after its retraction;
 - for every reported event, from = topic1, to = topic2, amount = data (raw, and formatted with 6 decimals), and tx hash, block, log index and type match the raw log. This decoding is redone in the verifier, independently of the monitor's decoder;
-- the keys are unique (`transactionHash:logIndex`), every well-formed Transfer log returned was reported, and the saved output prints each event exactly once;
+- removed logs were never reported as events, and every one that removed an already reported event was retracted;
+- the saved output prints exactly the reported events, in order, each once;
 - at least one real Transfer event, with a count of those mined after the monitor started.
 
 ### Running it from Termux (or any machine with internet access)

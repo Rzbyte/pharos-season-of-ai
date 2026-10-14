@@ -53,6 +53,15 @@ describe("readWindow", () => {
     });
   });
 
+  test("a log reported and removed within one window is not an event, only a removed key", async () => {
+    const live = makeLog({ block: HEAD - 3n, index: 1 });
+    await withFake({ head: HEAD, logs: [], onGetLogs: () => [live, { ...live, removed: true }, makeLog({ block: HEAD - 2n })] }, async (fake) => {
+      const { body } = await readWindow(fake.url);
+      assert.deepEqual(body.events.map((event) => event.blockNumber), [String(HEAD - 2n)]);
+      assert.deepEqual(body.removedKeys, [`${live.transactionHash}:1`]);
+    });
+  });
+
   test("refuses another chain", async () => {
     await withFake({ head: HEAD, logs: [], chainId: 1 }, async (fake) => {
       const { status, body } = await readWindow(fake.url);

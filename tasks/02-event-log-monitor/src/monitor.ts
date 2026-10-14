@@ -104,12 +104,15 @@ export function getLogsArgs(token: Token, topic: string, range: Range): GetLogsA
  * get_block_number, then queries only the blocks after the cursor, in ranges of at most 1,000
  * blocks, each call carrying the exact address, the Transfer topic0 and explicit hex bounds. The
  * cursor moves to a range's last block only after that call succeeded and all its logs were
- * processed; a failed range stops the poll with the cursor unchanged, so the next poll asks for
- * exactly the same range again. Reported events are remembered by transactionHash + logIndex, so a
- * log the server returns twice is never reported twice.
+ * processed. A failed range is retried once at once; if it fails again the poll stops with the
+ * cursor unchanged, and the next poll starts with exactly that range again (same fromBlock and
+ * toBlock) before planning any newer blocks. Reported events are remembered by transactionHash +
+ * logIndex, so a log the server returns twice is never reported twice.
  */
 export class TransferMonitor {
   cursor: bigint | undefined;
+  /** The range whose get_logs call failed last; the next poll repeats it exactly, first. */
+  private retryRange: Range | undefined;
   private cycles = 0;
   /** key -> block of reported events, in insertion order so the oldest can be evicted. */
   private readonly seen = new Map<string, bigint>();
@@ -180,7 +183,7 @@ export class TransferMonitor {
 
     const target = options.upTo !== undefined && options.upTo < head ? options.upTo : head;
     const limit = this.options.maxRangesPerPoll ?? MAX_RANGES_PER_POLL;
-    for (const range of planRanges(this.cursor + 1n, target, MAX_BLOCK_RANGE, limit)) {
+    for (const range of this.plan(target, limit)) {
       const entry: RangeResult = { ...range, ok: false, attempts: 0, logs: 0 };
       result.ranges.push(entry);
       let logs: RawLog[];
@@ -189,6 +192,7 @@ export class TransferMonitor {
       } catch (error) {
         result.error = toCliError(error);
         entry.error = result.error.message;
+        this.retryRange = range;
         break;
       }
       entry.ok = true;
@@ -197,10 +201,22 @@ export class TransferMonitor {
       this.processLogs(range, logs, result);
       // Only now, with the call succeeded and every log processed, does the cursor move.
       this.cursor = range.to;
+      this.retryRange = undefined;
     }
     result.cursorAfter = this.cursor;
     result.caughtUp = result.error === undefined && this.cursor >= target;
     return result;
+  }
+
+  /**
+   * This poll's ranges: a range that failed before comes first, unchanged (or nothing, while the head
+   * is still below its end), then the newer blocks up to `target`.
+   */
+  private plan(target: bigint, limit: number): Range[] {
+    const failed = this.retryRange;
+    if (!failed) return planRanges(this.cursor! + 1n, target, MAX_BLOCK_RANGE, limit);
+    if (failed.to > target) return [];
+    return [failed, ...planRanges(failed.to + 1n, target, MAX_BLOCK_RANGE, limit - 1)];
   }
 
   /** get_logs for one range; a transient failure repeats the very same arguments once. */
@@ -240,21 +256,25 @@ export class TransferMonitor {
         this.skipMalformed(result, { key, blockNumber: null, reason: "blockNumber is missing or not a hex quantity" });
         continue;
       }
-      if (block < range.from || block > range.to) {
-        this.count(result, "outsideRange");
-        continue;
-      }
-      // Removed-log policy: a removed log is never reported as an event. If it had been reported,
-      // a retraction is reported and its key forgotten; otherwise it is only counted.
+      const inRange = block >= range.from && block <= range.to;
+      // Removed-log policy: a removed log is never reported as an event. If it had been reported, a
+      // retraction is reported and its key forgotten, whatever block it carries: a reorged log keeps
+      // its original block, which is at or behind the cursor. Otherwise it is only counted.
       if (log.removed === true) {
         if (key !== null && this.seen.has(key)) {
           this.seen.delete(key);
           this.totals.retracted += 1;
           result.retractions.push({ key, transactionHash: String(log.transactionHash).toLowerCase(), logIndex: Number(BigInt(String(log.logIndex))), blockNumber: block });
-        } else {
+        } else if (inRange) {
           this.count(result, "removed");
           if (key !== null) result.removedKeys.push(key);
+        } else {
+          this.count(result, "outsideRange");
         }
+        continue;
+      }
+      if (!inRange) {
+        this.count(result, "outsideRange");
         continue;
       }
       if (log.removed !== undefined && log.removed !== false) {
