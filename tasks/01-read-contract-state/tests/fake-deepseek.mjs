@@ -35,12 +35,12 @@ export const SAMPLE_TX_ANSWER = [
 export const SAMPLE_WALLET_ANSWER = [
   "This address has no smart-contract code at the inspected block, so it behaves like a wallet-like account rather than a smart contract. The inspection does not show who controls it.",
   "",
-  "It holds 1.5 PROS, the network's own currency, at that block.",
+  "Its balance is 1.5 PROS, the network's own currency, at that block.",
   "",
-  "It has sent 37 transactions so far. Transactions it received are not part of that count.",
+  "Its account nonce is 37. For a wallet-like address, this is the running count used for transactions sent from the address; received transactions are not counted.",
   "",
   "Details",
-  "- The balance and the count are from one block and can change in later ones.",
+  "- The balance and the nonce are from one block and can change in later ones.",
 ].join("\n");
 
 /**

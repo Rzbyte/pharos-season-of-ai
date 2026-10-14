@@ -16,7 +16,7 @@ import { cleanText, FIELDS, HIDDEN, validateExplainPayload } from "../public/ass
 export const PROVIDER_URL = "https://api.deepseek.com/chat/completions";
 export const MODEL = "deepseek-flash";
 /** Changing the instructions changes every cache key, so no answer to old instructions is reused. */
-export const PROMPT_VERSION = "explain-4";
+export const PROMPT_VERSION = "explain-5";
 
 /** A short answer: about 200 words of output at most, and a stop after 12 s. */
 export const PROVIDER_TIMEOUT_MS = 12_000;
@@ -62,7 +62,8 @@ Get these right:
 - The native currency label (such as PROS) is network information used to show a value or a balance. It is not a token from a contract.
 - Log entries are records the transaction emitted; their contents are not in the data.
 - An address with no contract code at the inspected block is wallet-like: say "wallet-like", never who owns or controls it, and never call it a person's, a user's or an exchange's wallet. Token names, symbols, decimals and total supply do not apply to it.
-- "transactionsSent" is the address's nonce: how many transactions it has sent. Transactions it received are not counted.
+- "nativeBalance.inNativeCurrency" is already the readable amount (say "Its balance is about 82.84 PROS"). Only "inSmallestUnits" is in the network's smallest unit: never say the PROS amount is.
+- "accountNonce" is the address's account nonce: say "Its account nonce is N". For a wallet-like address it is the running count used for transactions sent from the address; received transactions are not counted.
 - A contract that answers name, symbol, decimals and totalSupply returned standard ERC-20 metadata. Say that; never that it "presents itself as" or "claims to be" a token.
 - Decimals tell where the decimal point goes: the total supply is stored in the smallest unit and divided by 10 to the power of decimals.
 
@@ -151,7 +152,7 @@ function walletFacts(p) {
     network: network(p.chainId, p.nativeSymbol),
     block: p.blockNumber,
     nativeBalance: "raw" in p.balance ? { inSmallestUnits: p.balance.raw, inNativeCurrency: formatTokenAmount(BigInt(p.balance.raw), DECIMALS_OF_NATIVE_TOKEN) } : { unavailable: REASON_TEXT[p.balance.unavailable] },
-    transactionsSent: "value" in p.nonce ? p.nonce.value : { unavailable: REASON_TEXT[p.nonce.unavailable] },
+    accountNonce: "value" in p.nonce ? p.nonce.value : { unavailable: REASON_TEXT[p.nonce.unavailable] },
     notes: p.notes.map((code) => NOTE_TEXT[code]),
   };
 }
@@ -405,9 +406,10 @@ function checkSentences(line, untrusted, { transaction, wallet, seen }) {
     const claims = CLAIM.test(probe) && !(NEGATION.test(probe) && DETERMINATION.test(probe));
     const next = claims ? UNDETERMINED : transaction ? checkTransaction(sentence, transaction) : wallet ? checkWallet(sentence, wallet) : sentence;
     // Said once is enough: a sentence already in the explanation is not repeated.
-    if (next && !seen.has(next)) {
-      seen.add(next);
-      kept.push(next);
+    for (const part of next ? next.split(/(?<=[.!?])\s+/) : []) {
+      if (seen.has(part)) continue;
+      seen.add(part);
+      kept.push(part);
     }
   }
   return kept.join(" ");
@@ -470,9 +472,13 @@ function checkTransaction(sentence, { status, nativeSymbol, contractCreation = f
  * data; and the address is wallet-like, never simply "a wallet". A rule stands down only when the
  * claim's own clause negates or questions it ("the data does not show who it belongs to").
  */
-function checkWallet(sentence, { nativeSymbol }) {
+function checkWallet(sentence, { nativeSymbol, balance = null, nonce = null }) {
   const text = sentence.replace(/[\u2018\u2019]/g, "'");
   if (TOKEN_METADATA.test(text)) return "";
+  // A readable amount said to be "in the smallest unit": only the raw on-chain value is.
+  if (/\bsmallest\s+units?\b/i.test(text) && /\d[\d,]*\.\d|\d[\d,]*\s+[A-Z]{2,}\b/.test(text)) return balanceSentences(balance, nativeSymbol);
+  // "It has sent N transactions": the data holds the account nonce, said as what it is.
+  if (nonce !== null && /\b(?:has\s+)?sent\s+(?:about\s+|around\s+|roughly\s+)?[\d,]+\s+transactions?\b/i.test(text)) return nonceSentences(nonce);
   if (nativeSymbol && new RegExp(`\\b${escapeRegExp(nativeSymbol)}\\b`).test(text) && /\btokens?\b/i.test(text) && !negated(text, "tokens?")) {
     return `${nativeSymbol} is the network's native currency, not a token from a contract.`;
   }
@@ -484,6 +490,27 @@ function checkWallet(sentence, { nativeSymbol }) {
   return sentence.replace(/\b(this|that|the|a)\s+wallet\b(?![-\u2010\u2011]like)/gi, (phrase, article, at) =>
     CLAUSE_HEDGE.test(clauseBefore(sentence, at)) || /\b(?:may|might|could|either)\b/i.test(clauseBefore(sentence, at)) ? phrase : `${article} wallet-like address`,
   );
+}
+
+/** The balance, readable, and what the smallest unit really is. */
+function balanceSentences(balance, symbol) {
+  const unit = symbol ?? "the native currency";
+  const raw = `The raw on-chain balance is stored in the network's smallest unit and converted to ${unit} for display.`;
+  return balance === null ? raw : `Its balance is ${readableAmount(balance)} ${unit}. ${raw}`;
+}
+
+/** The account nonce, and what it counts for a wallet-like address. */
+function nonceSentences(nonce) {
+  return `Its account nonce is ${nonce.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}. For a wallet-like address, this is the running count used for transactions sent from the address; received transactions are not counted.`;
+}
+
+/** "82.919315921481639197" as "about 82.91"; "1.5" stays "1.5"; a tiny amount is "less than 0.01". */
+function readableAmount(amount) {
+  const [whole, fraction = ""] = amount.split(".");
+  const cut = fraction.slice(0, 2).replace(/0+$/, "");
+  if (whole.replace(/,/g, "") === "0" && cut === "" && /[1-9]/.test(fraction)) return "less than 0.01";
+  const shown = cut ? `${whole}.${cut}` : whole;
+  return fraction.replace(/0+$/, "").length > 2 ? `about ${shown}` : shown;
 }
 
 /** Token metadata, which a wallet-like address does not have. The native currency's own decimals are fine. */
@@ -647,7 +674,14 @@ export function createExplainer(options = {}) {
     try {
       const { content, truncated } = await callProvider({ apiKey, url: providerUrl, model, messages: buildMessages(payload, tag), timeoutMs, fetchImpl });
       const transaction = payload.kind === "transaction" ? { status: payload.status, nativeSymbol: payload.nativeSymbol, contractCreation: payload.contractCreation } : null;
-      const wallet = payload.kind === "wallet-like" ? { nativeSymbol: payload.nativeSymbol } : null;
+      const wallet =
+        payload.kind === "wallet-like"
+          ? {
+              nativeSymbol: payload.nativeSymbol,
+              balance: "raw" in payload.balance ? formatTokenAmount(BigInt(payload.balance.raw), DECIMALS_OF_NATIVE_TOKEN) : null,
+              nonce: "value" in payload.nonce ? payload.nonce.value : null,
+            }
+          : null;
       const shaped = shapeExplanation(content, { untrusted, forbidden: [...CANARIES, tag, apiKey], truncated, transaction, wallet });
       const explanation = { ...shaped, words: wordCount(shaped) };
       remember(key, explanation);

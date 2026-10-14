@@ -378,7 +378,8 @@ describe("what the model is told", () => {
       /Whether the recipient is the sender is given as "recipientIsSender"\. Never judge it from the shortened addresses: two different addresses can look alike when shortened\./,
       /The native currency label \(such as PROS\) is network information used to show a value or a balance\. It is not a token from a contract\./,
       /An address with no contract code at the inspected block is wallet-like: say "wallet-like", never who owns or controls it, and never call it a person's, a user's or an exchange's wallet\. Token names, symbols, decimals and total supply do not apply to it\./,
-      /"transactionsSent" is the address's nonce: how many transactions it has sent\. Transactions it received are not counted\./,
+      /"nativeBalance\.inNativeCurrency" is already the readable amount \(say "Its balance is about 82\.84 PROS"\)\. Only "inSmallestUnits" is in the network's smallest unit: never say the PROS amount is\./,
+      /"accountNonce" is the address's account nonce: say "Its account nonce is N"\. For a wallet-like address it is the running count used for transactions sent from the address; received transactions are not counted\./,
       /2 to 4 short paragraphs, 60 to 120 words in all/,
       /Do not repeat what the reader already sees: no hashes, no full addresses, no list of fields\./,
       /Plain text only: no Markdown, no headings, no links\./,
@@ -468,13 +469,13 @@ describe("what the model is told", () => {
       network: { name: "Pharos Mainnet", chainId: 1672, nativeCurrencyLabel: "PROS" },
       block: "4242",
       nativeBalance: { inSmallestUnits: "1500000000000000000", inNativeCurrency: "1.5" },
-      transactionsSent: "37",
+      accountNonce: "37",
       notes: [],
     });
     assert.doesNotMatch(JSON.stringify(facts), /0x[0-9a-fA-F]{12,}/, "no whole address");
     assert.doesNotMatch(JSON.stringify(facts), /erc-?20|decimals|total ?supply|symbol|token|owner|owned/i);
     const unread = inspectionFacts({ ...validateExplainPayload(await requestFor(WALLET)).payload, balance: { unavailable: "not-offered" }, nonce: { unavailable: "failed" } });
-    assert.deepEqual([unread.nativeBalance, unread.transactionsSent], [{ unavailable: "this Pharos Chain MCP server does not offer that read" }, { unavailable: "the read failed" }]);
+    assert.deepEqual([unread.nativeBalance, unread.accountNonce], [{ unavailable: "this Pharos Chain MCP server does not offer that read" }, { unavailable: "the read failed" }]);
     // A contract that answers nothing is still called a contract, and not blamed for it.
     const none = inspectionFacts(validateExplainPayload(await requestFor(NONE)).payload);
     assert.match(none.inspection, /^A contract address \(it has contract code at the inspected block\)/);
@@ -649,6 +650,26 @@ describe("the answer, checked before anyone sees it", () => {
     assert.doesNotMatch(SAMPLE_ANSWER, /whoever|presents itself|retr/i);
   });
 
+  test("production wording: a wallet's PROS amount is never 'in the smallest unit', and its nonce is called a nonce", () => {
+    const wallet = (text, extra = {}) => textOf(shapeExplanation(text, { wallet: { nativeSymbol: "PROS", balance: "82.84213", nonce: "184325", ...extra }, untrusted: ["PROS"] }));
+    const BALANCE = "Its balance is about 82.84 PROS. The raw on-chain balance is stored in the network's smallest unit and converted to PROS for display.";
+    const NONCE = "Its account nonce is 184,325. For a wallet-like address, this is the running count used for transactions sent from the address; received transactions are not counted.";
+    // The exact sentences seen in production.
+    assert.equal(wallet("Its PROS balance is about 82.84, shown in the network's smallest unit and converted using the currency's decimals."), BALANCE);
+    assert.equal(wallet("It has sent 184,325 transactions, which is its nonce, the count of transactions sent from this address."), NONCE);
+    assert.equal(wallet("It holds 82.84 PROS in the smallest unit."), BALANCE);
+    // The correct sentences stay as they are, and are not said twice.
+    assert.equal(wallet(BALANCE), BALANCE);
+    assert.equal(wallet(NONCE), NONCE);
+    assert.equal(wallet(`${NONCE} It has sent 184,325 transactions.`), NONCE);
+    // An exact short amount reads without "about"; a tiny one reads "less than 0.01"; without a balance, only the unit sentence.
+    assert.match(wallet("The balance is 1.5 PROS, in the smallest unit.", { balance: "1.5" }), /^Its balance is 1\.5 PROS\. The raw/);
+    assert.match(wallet("It holds 0.000001 PROS in the smallest unit.", { balance: "0.000001" }), /^Its balance is less than 0\.01 PROS\./);
+    assert.equal(wallet("It holds 82.84 PROS in the smallest unit.", { balance: null }), "The raw on-chain balance is stored in the network's smallest unit and converted to PROS for display.");
+    // Without a nonce in the data, nothing is put in its place.
+    assert.equal(wallet("It has sent 3 transactions.", { nonce: null }), "It has sent 3 transactions.");
+  });
+
   test("claims the data cannot support become the undetermined sentence; honest disclaimers and quoted names stay", () => {
     const one = (text, untrusted) => textOf(shapeExplanation(text, { untrusted }));
     for (const claim of ["This token is safe and trusted.", "It is a scam.", "This token is not a scam.", "This is the official USDC contract.", "The project is legitimate.", "Your funds are guaranteed."]) {
@@ -736,18 +757,22 @@ describe("the explainer: provider call, cache, one call at a time, limits, failu
     assert.equal(status, 200);
     assert.deepEqual(body.explanation.summary, [
       "This address has no smart-contract code at the inspected block, so it behaves like a wallet-like account rather than a smart contract. The inspection does not show who controls it.",
-      "It holds 1.5 PROS, the network's own currency, at that block.",
-      "It has sent 37 transactions so far. Transactions it received are not part of that count.",
+      "Its balance is 1.5 PROS, the network's own currency, at that block.",
+      "Its account nonce is 37. For a wallet-like address, this is the running count used for transactions sent from the address; received transactions are not counted.",
     ]);
     assert.doesNotMatch(textOf(body.explanation), /erc-?20|decimals|total ?supply|token|symbol/i);
     const asked = ai.requests.at(-1).body.messages[1].content;
     const facts = JSON.parse(asked.split("\n").slice(2, -1).join("\n"));
-    assert.deepEqual([facts.nativeBalance.inNativeCurrency, facts.transactionsSent, facts.network.nativeCurrencyLabel], ["1.5", "37", "PROS"]);
+    assert.deepEqual([facts.nativeBalance.inNativeCurrency, facts.accountNonce, facts.network.nativeCurrencyLabel], ["1.5", "37", "PROS"]);
     assert.ok(!asked.toLowerCase().includes(WALLET.slice(2)), "the model is not given the address to repeat");
     // Even an answer that drifts into token talk or ownership comes out clean.
     ai.set({ content: "This is a wallet owned by an exchange. It has no ERC-20 name, symbol or decimals. It holds 1.5 PROS tokens.\n\nIt has sent 37 transactions." });
     const drifted = (await explainer()(await requestFor(EMPTY), { client: "198.51.100.4" })).body.explanation;
-    assert.deepEqual(drifted.summary, ["The inspection does not show who controls this address. PROS is the network's native currency, not a token from a contract.", "It has sent 37 transactions."]);
+    assert.deepEqual(drifted.summary, [
+      "The inspection does not show who controls this address. PROS is the network's native currency, not a token from a contract.",
+      // The count comes from the data (this address's nonce is 0), never from the answer's own number.
+      "Its account nonce is 0. For a wallet-like address, this is the running count used for transactions sent from the address; received transactions are not counted.",
+    ]);
     ai.set({});
   });
 
