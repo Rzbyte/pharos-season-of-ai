@@ -33,6 +33,8 @@
   .lab-more { display: grid; }
   .lab-more > section { border-top: 1px solid var(--line); }
   .planned-head { font-size: 1rem; }
+  /* Collapsed only once landing.js has wired its toggle; without JavaScript the list is shown. */
+  .js .planned:not([data-ready]) { display: none; }
   .planned { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--space-2) var(--space-6); padding-bottom: var(--space-6); }
   .planned li { display: flex; gap: var(--space-3); color: var(--text-2); font-size: var(--fs-small); }
   .planned .row-n { color: var(--text-3); padding-top: 1px; }

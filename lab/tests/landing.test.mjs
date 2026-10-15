@@ -39,7 +39,9 @@ describe("the landing page", () => {
 
   test("planned tasks wait behind one collapsed row, never as links; Task 03 is built, not planned", () => {
     assert.match(html, /<button class="toggle-row" id="planned-toggle" type="button" aria-expanded="false" aria-controls="planned-body">/);
-    const planned = html.match(/<ol class="planned" id="planned-body" hidden>([\s\S]*?)<\/ol>/)[1];
+    // Not hidden in the markup: without JavaScript the list is shown; landing.js collapses it.
+    const planned = html.match(/<ol class="planned" id="planned-body">([\s\S]*?)<\/ol>/)[1];
+    assert.match(read("public/assets/landing.css"), /\.js \.planned:not\(\[data-ready\]\) \{ display: none; \}/);
     assert.equal(planned.match(/<li>/g).length, 24);
     assert.doesNotMatch(planned, /<a\b/);
     assert.doesNotMatch(planned, /Docs MCP Onboarding|Docs Onboarding/);

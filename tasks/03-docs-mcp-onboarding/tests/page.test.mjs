@@ -41,6 +41,10 @@ describe("the content", () => {
     assert.match(validate({ ...FIXTURE, gaps: [{ ...FIXTURE.gaps[0], evidence: { thumb: "../x.png", full: "evidence/x.png", alt: "x" } }] }).join(), /under evidence\//);
     assert.match(validate({ ...FIXTURE, gaps: [{ ...FIXTURE.gaps[0], evidence: { ...FIXTURE.gaps[0].evidence, alt: "" } }] }).join(), /alt describes/);
     assert.match(validate({ ...FIXTURE, sources: [{ title: "x", url: "ftp://x" }] }).join(), /sources\[0\]/);
+    // A list field that is not a list is reported, never a crash.
+    for (const key of ["journey", "gaps", "sources"]) {
+      for (const bad of [{}, "", 3]) assert.ok(validate({ ...FIXTURE, [key]: bad }).length > 0, `${key}: ${JSON.stringify(bad)}`);
+    }
   });
 });
 

@@ -56,7 +56,7 @@ ${built.map(row).join("\n")}
   <div class="lab-more">
     <section aria-labelledby="planned-h">
       <h2 class="planned-head"><button class="toggle-row" id="planned-toggle" type="button" aria-expanded="false" aria-controls="planned-body"><span id="planned-h">Planned</span><span class="disclosure-meta">${planned.length} tasks, ${planned[0]?.n ?? ""}–${planned.at(-1)?.n ?? ""}</span>${CHEV}</button></h2>
-      <ol class="planned" id="planned-body" hidden>
+      <ol class="planned" id="planned-body">
 ${planned.map((task) => `        <li><span class="row-n">${esc(task.n)}</span><span>${esc(task.title)}</span></li>`).join("\n")}
       </ol>
     </section>
@@ -117,7 +117,8 @@ async function main(check) {
   for (const part of ["header", "footer"]) {
     const re = new RegExp(`<!-- shell:${part} lab -->[\\s\\S]*?<!-- /shell:${part} -->`);
     const kept = current.match(re)?.[0];
-    if (kept) page = page.replace(re, kept);
+    // A function replacer: the kept markup is inserted as is, with no "$" patterns expanded.
+    if (kept) page = page.replace(re, () => kept);
   }
   if (check) {
     if (page !== current) {

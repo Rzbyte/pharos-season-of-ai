@@ -1,5 +1,5 @@
-// The browser terminal's command line, with no DOM, so tests can import it in Node.
-// It accepts what the CLI accepts, plus two terminal commands:
+// The docs search page's question box, read like the CLI's command line, with no DOM, so tests can
+// import it in Node. It accepts what the CLI accepts, plus a few page commands:
 //   pharos-docs "question" [--json]     the same as the CLI
 //   "question" [--json] / question      the command name may be left out
 //   pharos-docs --help | --version, help, clear, history
@@ -26,11 +26,6 @@ export function parseCommand(input) {
   if (!question) return { kind: "error", message: 'Ask a question, for example: pharos-docs "how do I deploy a contract?"' };
   if (question.length > 300) return { kind: "error", message: "Keep the question under 300 characters." };
   return { kind: "ask", question, json };
-}
-
-/** The command line as it is echoed into the log. */
-export function echo(command) {
-  return command.kind === "ask" ? `pharos-docs "${command.question}"${command.json ? " --json" : ""}` : "";
 }
 
 /** Plain-language reasons, the same wording as the CLI. */

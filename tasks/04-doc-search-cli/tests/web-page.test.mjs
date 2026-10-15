@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, test } from "node:test";
-import { createHistory, echo, parseCommand, REASONS } from "../public/assets/command.js";
+import { createHistory, parseCommand, REASONS } from "../public/assets/command.js";
 import { REASON_TEXT } from "../dist/src/search.js";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
@@ -35,8 +35,7 @@ describe("command line", () => {
     assert.equal(parseCommand("what about -1 gas").kind, "ask", "a negative number is not an option");
   });
 
-  test("echo and history", () => {
-    assert.equal(echo({ kind: "ask", question: "q", json: true }), 'pharos-docs "q" --json');
+  test("history", () => {
     const history = createHistory(3);
     for (const line of ["a", "b", "b", "c", "d"]) history.push(line);
     assert.deepEqual(history.list(), ["b", "c", "d"]);

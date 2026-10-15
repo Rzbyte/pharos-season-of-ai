@@ -213,13 +213,25 @@ function turn(list, step) {
   renderLists();
 }
 
-/** A list's pager: hidden with one page, ends marked unavailable (still focusable), position announced. */
+/**
+ * A list's pager: hidden with one page, ends marked unavailable (still focusable). The position is a
+ * live region, so it is written only when it changes: a check that changes nothing says nothing.
+ */
 function renderPager(list, { page, pages }) {
-  $(`${list}-pager`).hidden = pages <= 1;
+  const pager = $(`${list}-pager`);
+  if (pages <= 1) keepFocus(pager, $(list === "session" ? "session-h" : "initial-toggle"));
+  pager.hidden = pages <= 1;
   $(`${list}-newer`).setAttribute("aria-disabled", String(page <= 1));
   $(`${list}-older`).setAttribute("aria-disabled", String(page >= pages));
   const position = $(`${list}-pos`);
+  if (position.dataset.at === `${page}/${pages}`) return;
+  position.dataset.at = `${page}/${pages}`;
   position.replaceChildren(Object.assign(document.createElement("span"), { className: "sr", textContent: "Page " }), `${page} / ${pages}`);
+}
+
+/** Before `region` is hidden, move focus out of it to `fallback`, so a keyboard reader never loses it. */
+function keepFocus(region, fallback) {
+  if (region.contains(document.activeElement)) fallback.focus();
 }
 
 /** Render one page of each list, reusing the nodes already on screen. */
@@ -256,6 +268,7 @@ function renderLists() {
       (initial.length < initialTotal ? ` · ${initial.length === 0 ? "none" : groupDigits(String(initial.length))} kept` : ""),
   );
   if (initial.length === 0) view.initialOpen = false;
+  if (!view.initialOpen) keepFocus($("initial-body"), $("initial-toggle"));
   const toggle = $("initial-toggle");
   toggle.setAttribute("aria-disabled", String(initial.length === 0));
   toggle.setAttribute("aria-expanded", String(view.initialOpen));

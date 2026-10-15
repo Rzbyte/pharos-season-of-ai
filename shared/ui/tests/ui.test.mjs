@@ -38,6 +38,15 @@ describe("helpers", () => {
   });
 });
 
+describe("stylesheet", () => {
+  test("phone overrides come after the base rules they override (same layer, same specificity)", () => {
+    const css = read("lab.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const base = css.indexOf(".beacon::after { content:");
+    const phone = css.indexOf("@media (max-width: 599px) {\n    .panel { margin-inline");
+    assert.ok(base > 0 && phone > base, "the phone panel and beacon rules follow the base beacon rule");
+  });
+});
+
 describe("sync", () => {
   test("every deployment ships an exact copy of the shared UI and the shell markup", () => {
     execFileSync(process.execPath, [new URL("../sync.mjs", import.meta.url).pathname, "--check"]);

@@ -34,13 +34,13 @@ export function validate(data) {
   need(isText(data.title), "title is required");
   for (const key of ["goal", "environment"]) need(data[key] === null || isText(data[key]), `${key} is text or null`);
   need(Array.isArray(data.journey) && data.journey.length > 0, "journey lists at least one stage");
-  for (const [index, step] of (data.journey ?? []).entries()) {
+  for (const [index, step] of (Array.isArray(data.journey) ? data.journey : []).entries()) {
     need(isText(step?.stage), `journey[${index}].stage is required`);
     need(step?.detail === null || isText(step?.detail), `journey[${index}].detail is text or null`);
   }
   need(Array.isArray(data.outcome) && data.outcome.every(isText), "outcome is a list of statements");
   need(Array.isArray(data.gaps) && data.gaps.length <= MAX_GAPS, `gaps is a list of at most ${MAX_GAPS}`);
-  for (const [index, gap] of (data.gaps ?? []).entries()) {
+  for (const [index, gap] of (Array.isArray(data.gaps) ? data.gaps : []).entries()) {
     for (const key of ["title", "happened", "fix"]) need(isText(gap?.[key]), `gaps[${index}].${key} is required`);
     const shot = gap?.evidence;
     if (shot !== null && shot !== undefined) {
@@ -50,7 +50,7 @@ export function validate(data) {
   }
   for (const key of ["proof", "video"]) need(data.links?.[key] === null || data.links?.[key] === undefined || isHttps(data.links[key]), `links.${key} is an https URL or null`);
   need(Array.isArray(data.sources ?? []), "sources is a list");
-  for (const [index, source] of (data.sources ?? []).entries()) need(isText(source?.title) && isHttps(source?.url), `sources[${index}] needs a title and an https url`);
+  for (const [index, source] of (Array.isArray(data.sources) ? data.sources : []).entries()) need(isText(source?.title) && isHttps(source?.url), `sources[${index}] needs a title and an https url`);
   return problems;
 }
 
@@ -187,7 +187,7 @@ ${renderMain(data)}
 async function main(check) {
   const data = JSON.parse(await readFile(new URL("evidence.json", ROOT), "utf8"));
   const problems = validate(data);
-  for (const gap of data.gaps ?? []) {
+  for (const gap of Array.isArray(data.gaps) ? data.gaps : []) {
     for (const path of gap.evidence ? [gap.evidence.thumb, gap.evidence.full] : []) {
       await access(new URL(`public/${path}`, ROOT)).catch(() => problems.push(`missing image public/${path}`));
     }
@@ -204,7 +204,8 @@ async function main(check) {
   let page = renderPage(data);
   for (const part of ["header", "footer"]) {
     const kept = shell(current, part);
-    if (kept) page = page.replace(shell(page, part), kept);
+    // A function replacer: the kept markup is inserted as is, with no "$" patterns expanded.
+    if (kept) page = page.replace(shell(page, part), () => kept);
   }
   if (check) {
     if (page !== current) {

@@ -267,17 +267,17 @@
     position: relative; min-width: 0; padding: var(--panel-pad); border: 1px solid var(--line);
     border-radius: var(--radius); background: var(--surface); container: panel / inline-size;
   }
-  /* Phones: a panel runs edge to edge, ruled above and below, with the page's own gutter inside. */
-  @media (max-width: 599px) {
-    .panel { margin-inline: calc(-1 * var(--pad-x)); padding-inline: var(--pad-x); border-inline: 0; border-radius: 0; }
-    .beacon { left: 0; right: 0; }
-    .beacon::after { left: var(--pad-x); }
-  }
   /* The beacon: a short Pharos Blue mark on the top edge; it sweeps while a read is in flight. */
   .beacon { position: absolute; top: -1px; left: var(--radius); right: var(--radius); height: 2px; overflow: hidden; pointer-events: none; }
   .beacon::after { content: ""; position: absolute; inset: 0 auto 0 calc(var(--panel-pad) - var(--radius)); width: 32px; background: var(--brand); }
   .panel[aria-busy="true"] .beacon { background: color-mix(in srgb, var(--accent) 28%, transparent); }
   .panel[aria-busy="true"] .beacon::after { background: var(--accent); }
+  /* Phones (after the base rules, which it overrides): a panel runs edge to edge, ruled above and below, with the page's own gutter inside. */
+  @media (max-width: 599px) {
+    .panel { margin-inline: calc(-1 * var(--pad-x)); padding-inline: var(--pad-x); border-inline: 0; border-radius: 0; }
+    .beacon { left: 0; right: 0; }
+    .beacon::after { left: var(--pad-x); }
+  }
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--target); }
 
   /* Status: a dot and a word, then detail. Tones: success, warning, error, active, neutral. */

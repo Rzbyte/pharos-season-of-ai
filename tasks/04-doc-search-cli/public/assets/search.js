@@ -4,10 +4,11 @@
 // against docs.pharos.xyz and returns the same result (schema pharos-docs-result/1). Nothing here
 // answers on its own: the page only lays that result out. Every value is written as text, never HTML.
 //
-// States, on <body data-state>: idle (nothing asked yet), searching, answer, no-answer, error.
+// States, on <body data-state>: idle (nothing asked yet), searching, answer, no-answer, error, and
+// note (a version, history or option message).
 // The thread keeps the last MAX_TURNS questions; older ones are removed, so the page stays bounded.
 import { createHistory, parseCommand, REASONS } from "./command.js";
-import { renderTaskNav, wireToggle } from "./lab.js";
+import { ICON, renderTaskNav, svgIcon, wireToggle } from "./lab.js";
 import { LAB, TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
@@ -18,6 +19,15 @@ const go = $("go");
 const history = createHistory();
 const MAX_TURNS = 6;
 const STATE = { answered: "answer", no_answer: "no-answer", error: "error" };
+/**
+ * What a screen reader hears when a search ends: one short line in #announce. The thread itself is not
+ * a live region, so an answer or its JSON is read only when the reader goes to it.
+ */
+const OUTCOME = {
+  answered: (result) => `Answer found, ${result.sources?.length ?? 0} ${result.sources?.length === 1 ? "source" : "sources"}.`,
+  no_answer: () => "No good answer found.",
+  error: (result) => `Search failed. ${result.error?.message ?? ""}`.trim(),
+};
 let busy = false;
 
 renderTaskNav(TASKS, "04", LAB);
@@ -64,12 +74,14 @@ async function submit(line) {
     return $("cli-toggle").focus();
   }
   if (command.kind === "version" || command.kind === "history" || command.kind === "error") {
-    const items = history.list();
+    // The history before this command, not the command itself.
+    const items = history.list().slice(0, -1);
     const text = command.kind === "version" ? "pharos-docs 1.0.0" : command.kind === "history" ? (items.length ? items.join("\n") : "No questions yet.") : command.message;
     const turn = addTurn(line.trim());
     turn.removeAttribute("aria-busy");
     turn.append(el("p", command.kind === "error" ? "turn-note turn-note-error" : "turn-note", text));
-    return;
+    announce(text);
+    return setState("note");
   }
 
   const turn = addTurn(command.question, command.json);
@@ -94,10 +106,12 @@ async function submit(line) {
   if (problem) {
     failed(turn, problem, command.question);
     setState("error");
+    announce(`Search failed. ${problem}`);
   } else {
     if (command.json) turn.append(el("pre", "json", JSON.stringify(result, null, 2)));
     else render(turn, result, command.question);
     setState(STATE[result.status] ?? "error");
+    announce(OUTCOME[result.status] ? OUTCOME[result.status](result) : "Search failed.");
   }
   setBusy(false);
   turn.scrollIntoView({ block: "nearest" });
@@ -120,7 +134,8 @@ function addTurn(question, json = false) {
 /** Answer and sources; or the no-answer, with nearby pages; or the error. Then the run's meta and its JSON. */
 function render(turn, result, question) {
   if (result.status === "answered") {
-    turn.append(answer(result.answer ?? ""));
+    const titles = new Set((Array.isArray(result.sources) ? result.sources : []).map((source) => String(source?.title ?? "")));
+    turn.append(answer(result.answer ?? "", titles));
     if (Array.isArray(result.sources) && result.sources.length) turn.append(el("h3", "label turn-label", "Sources"), sourceRows(result.sources));
   } else if (result.status === "no_answer") {
     const block = el("div", "state-block");
@@ -154,28 +169,36 @@ function retry(words, question) {
 }
 
 /**
- * The answer text as the docs gave it: blocks split at blank lines, "- " lines as a list, and the
- * "Page title:" line that opens each page's part of a several-page answer as a small heading.
+ * The answer text as the docs gave it: blocks split at blank lines, "- " lines as a list, other lines
+ * kept with their line breaks (so code stays line by line). Only a several-page answer has headings:
+ * its parts open with "<page title>:", where the title is one of the answer's own sources.
  */
-function answer(text) {
+function answer(text, titles) {
   const root = el("div", "answer");
   for (const block of String(text).split(/\n{2,}/)) {
     const lines = block.split("\n");
     let start = 0;
-    if (lines.length > 1 && /^[^\s-][^:]{0,80}:$/.test(lines[0])) {
+    if (titles.size > 1 && lines.length > 1 && lines[0].endsWith(":") && titles.has(lines[0].slice(0, -1))) {
       root.append(el("p", "answer-from", lines[0].slice(0, -1)));
       start = 1;
     }
     let list = null;
+    let prose = [];
+    const flush = () => {
+      if (prose.length) root.append(el("p", "answer-text", prose.join("\n")));
+      prose = [];
+    };
     for (const line of lines.slice(start)) {
       if (/^- /.test(line)) {
+        flush();
         list ??= root.appendChild(el("ul"));
         list.append(el("li", "", line.slice(2)));
       } else if (line.trim()) {
         list = null;
-        root.append(el("p", "", line));
+        prose.push(line);
       }
     }
+    flush();
   }
   return root;
 }
@@ -193,25 +216,12 @@ function sourceRows(sources) {
     }
     const where = official ? new URL(source.url) : null;
     row.append(el("span", "source-title", String(source?.title ?? "")), el("span", "source-meta", where ? `${where.host}${where.pathname}` : String(source?.url ?? "")));
-    if (official) {
-      row.append(arrow(), el("span", "sr", ", opens in a new tab"));
-    }
+    if (official) row.append(svgIcon(ICON.out, "source-arrow"), el("span", "sr", ", opens in a new tab"));
     const item = el("li");
     item.append(row);
     list.append(item);
   }
   return list;
-}
-
-function arrow() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "source-arrow");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  for (const [name, value] of Object.entries({ d: "M5 11l6-6M6 5h5v5", fill: "none", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" })) path.setAttribute(name, value);
-  svg.append(path);
-  return svg;
 }
 
 /** "2 pages asked · 3 requests · 1.2 s", and the result as JSON behind a toggle. */
@@ -256,4 +266,8 @@ function setBusy(value) {
 
 function setState(state) {
   document.body.dataset.state = state;
+}
+
+function announce(text) {
+  $("announce").textContent = text;
 }

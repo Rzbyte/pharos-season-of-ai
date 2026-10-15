@@ -193,6 +193,36 @@ describe("the docs search page in a browser", { skip }, () => {
     assert.equal(await page.inputValue("#q"), "How do I deploy a contract with Foundry?", "Try again puts the question back");
   });
 
+  test("screen readers hear one line per search; the thread and its JSON are never read out by themselves", async () => {
+    const { page } = await open();
+    assert.equal(await page.getAttribute("#thread", "aria-live"), null);
+    assert.equal(await page.getAttribute("#announce", "aria-live"), "polite");
+    const turn = await ask(page, "What is the chain ID of the Atlantic testnet?");
+    assert.equal(await page.locator("#announce").textContent(), "Answer found, 1 source.");
+    await turn.locator(".json-toggle").click();
+    assert.equal(await page.locator("#announce").textContent(), "Answer found, 1 source.", "opening the JSON announces nothing");
+    await ask(page, "How do I deploy an Anchor program to Solana?");
+    assert.equal(await page.locator("#announce").textContent(), "No good answer found.");
+  });
+
+  test("history lists earlier questions, not itself; a note leaves the first screen", async () => {
+    const { page } = await open();
+    const turn = await ask(page, "history");
+    assert.equal(await turn.locator(".turn-note").innerText(), "No questions yet.");
+    assert.equal(await state(page), "note");
+    assert.equal(await page.locator(".try").isHidden(), true);
+    await ask(page, "pharos-docs --version");
+    assert.equal(await (await ask(page, "history")).locator(".turn-note").innerText(), "history\npharos-docs --version");
+  });
+
+  test("a one-page answer keeps its own lines: no heading made from a line ending in a colon", async () => {
+    const { page } = await open();
+    fake.set("/getting-started/network/atlantic-testnet", { answer: "To reach the Atlantic testnet, set the chain ID:\nchainId = 424242\nThen connect." });
+    const turn = await ask(page, "What is the chain ID of the Atlantic testnet?");
+    assert.equal(await turn.locator(".answer-from").count(), 0);
+    assert.equal(await turn.locator(".answer-text").innerText(), "To reach the Atlantic testnet, set the chain ID:\nchainId = 424242\nThen connect.");
+  });
+
   test("the thread stays bounded at six questions", async () => {
     const { page } = await open();
     for (let i = 0; i < 9; i += 1) {

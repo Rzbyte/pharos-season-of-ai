@@ -40,6 +40,7 @@
 
   /* The answer: editorial, at reading size; a several-page answer names each page above its part. */
   .answer { display: grid; gap: var(--space-2); font-size: var(--fs-body); line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
+  .answer-text { white-space: pre-line; }
   .answer ul { display: grid; gap: var(--space-1); padding-left: 1.2em; list-style: disc; }
   .answer-from { margin-top: var(--space-2); font-size: var(--fs-meta); font-weight: 600; color: var(--text-2); }
   .answer-from:first-child { margin-top: 0; }

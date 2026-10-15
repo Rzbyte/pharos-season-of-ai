@@ -225,15 +225,22 @@ export function neighbours(tasks, current) {
   return { index, previous: index > 0 ? tasks[index - 1] : null, next: index >= 0 && index < tasks.length - 1 ? tasks[index + 1] : null };
 }
 
-const ARROW = { previous: "M10 3.5 5.5 8l4.5 4.5", next: "M6 3.5 10.5 8 6 12.5" };
+/** Stroke paths of the small 16px icons the scripts draw. */
+export const ICON = {
+  previous: "M10 3.5 5.5 8l4.5 4.5",
+  next: "M6 3.5 10.5 8 6 12.5",
+  out: "M5 11l6-6M6 5h5v5",
+};
 
-function arrow(direction) {
+/** A decorative 16px stroke icon (hidden from assistive technology), built without parsing markup. */
+export function svgIcon(d, className = "") {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  if (className) svg.setAttribute("class", className);
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
   svg.setAttribute("focusable", "false");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  for (const [name, value] of Object.entries({ d: ARROW[direction], fill: "none", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" })) path.setAttribute(name, value);
+  for (const [name, value] of Object.entries({ d, fill: "none", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" })) path.setAttribute(name, value);
   svg.append(path);
   return svg;
 }
@@ -262,7 +269,7 @@ export function renderTaskNav(tasks, current, lab, root = document) {
       const step = document.createElement(linked ? "a" : "span");
       step.className = "shell-step";
       step.dataset.taskStep = direction;
-      step.append(arrow(direction));
+      step.append(svgIcon(ICON[direction]));
       if (linked) {
         step.href = task.href;
         step.rel = direction === "previous" ? "prev" : "next";

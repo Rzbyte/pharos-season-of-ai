@@ -260,6 +260,22 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.equal(await page.evaluate(() => document.activeElement?.closest("li")?.dataset.key), key);
   });
 
+  test("the page position is announced only when it changes, not on every check", async () => {
+    const { page } = await open();
+    await monitoring(page);
+    mine(8);
+    await sessionTotal(page, 8);
+    await page.evaluate(() => {
+      window.__writes = 0;
+      new MutationObserver((records) => void (window.__writes += records.length)).observe(document.getElementById("session-pos"), { childList: true, characterData: true, subtree: true });
+    });
+    const checks = apiCalls;
+    while (apiCalls < checks + 4) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(await page.evaluate(() => window.__writes), 0, "four checks with nothing new: the live region is left alone");
+    await page.click("#session-older");
+    assert.ok((await page.evaluate(() => window.__writes)) > 0, "a page change is announced");
+  });
+
   test("paging keeps focus on the pager, even at the last page, where Older is marked unavailable", async () => {
     const { page } = await open();
     await monitoring(page);
