@@ -76,7 +76,7 @@ describe("proof verifier", () => {
     const { transcript, output } = await proofRun(PROOF_QUERIES[0].question);
     const unread = asOfficial(transcript);
     unread.result.sources.push({ title: "Hardhat", url: `${DOCS_ORIGIN}/developer-guide/hardhat` });
-    assert.ok(failedChecks(verifyRun(unread, output, "answered")).includes("sources are pages asked or cited in the answer"));
+    assert.ok(failedChecks(verifyRun(unread, output, "answered")).includes("sources are pages asked in this run"));
 
     const malformed = asOfficial(transcript);
     malformed.requests[1]!.url = malformed.requests[1]!.url.replace("?ask=", "?q=");
@@ -102,7 +102,7 @@ describe("proof verifier", () => {
       for (const url of [`${DOCS_ORIGIN}/developer-guide/hardhat`, `${DOCS_ORIGIN}/tooling-and-infrastructure/rpc`]) {
         const leaked = asOfficial(transcript);
         leaked.result.sources.push({ title: "Follow-up", url });
-        assert.ok(failedChecks(verifyRun(leaked, `${output}${url}\n`, "answered")).includes("sources are pages asked or cited in the answer"), url);
+        assert.ok(failedChecks(verifyRun(leaked, `${output}${url}\n`, "answered")).includes("sources are pages asked in this run"), url);
       }
 
       // Answer text taken from the restated question or the follow-ups is not grounded, though it is in the body.
@@ -110,6 +110,24 @@ describe("proof verifier", () => {
       borrowed.result.answer = "Which canonical contracts are deployed on Pharos? Which tokens are listed in the token registry? How do bridges move assets between networks?";
       assert.ok(transcript.requests.some((r) => r.body?.includes("How do bridges move assets between networks?")));
       assert.ok(failedChecks(verifyRun(borrowed, output, "answered")).includes("answer grounded in the fetched docs"));
+    } finally {
+      fake.reset();
+    }
+  });
+
+  test("a multi-page run whose answers overlap verifies: shown once, grounded, both pages as sources", async () => {
+    const question = PROOF_QUERIES[1].question;
+    const body = (extra: string) =>
+      `# ${question}\n\nInstall Foundry with foundryup, then run forge init. Deploy with forge create and --rpc-url; the chain ID is 424242.${extra}\n\n# Suggested Follow-up Questions:\n\n- [Hardhat?](/developer-guide/hardhat.md)\n`;
+    fake.set("/developer-guide/foundry", { answer: body(" Verify it with forge verify-contract.") });
+    fake.set("/getting-started/network/atlantic-testnet", { answer: body("") });
+    try {
+      const { transcript, output } = await proofRun(question);
+      const official = asOfficial(transcript);
+      assert.equal(official.result.answer!.split("forge init").length - 1, 1, "the shared statement is shown once");
+      assert.match(official.result.answer!, /forge verify-contract/);
+      assert.equal(official.result.sources.length, 2);
+      assert.deepEqual(failedChecks(verifyRun(official, output, "answered")), []);
     } finally {
       fake.reset();
     }

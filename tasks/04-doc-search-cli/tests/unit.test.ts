@@ -8,8 +8,9 @@ import { choosePages, isMultiPart, MIN_PAGE_SCORE, rankPages } from "../src/page
 import { classify, DocsHttpProvider, interpret, parseJsonBody } from "../src/providers/docs-http.js";
 import { ProviderError } from "../src/providers/provider.js";
 import { GOAL } from "../src/search.js";
-import { bestPassages, cleanAnswer, dedupeSources, judge, officialSourceUrl, retainedText, saysNotInDocs } from "../src/source-gate.js";
+import { bestPassages, cleanAnswer, combineAnswers, dedupeSources, judge, officialSourceUrl, retainedText, saysNotInDocs } from "../src/source-gate.js";
 import { answerSegment, clip, hasValue, htmlToText, linksIn, markdownBlocks, pageBody, questionTerms, stem, terms, valueKind } from "../src/text.js";
+import { search } from "../src/search.js";
 import type { DocPage, PageResponse } from "../src/types.js";
 import { ATLANTIC_ASK_ANSWER, PAGES, SITEMAP } from "./fake-docs.js";
 
@@ -25,6 +26,16 @@ const response = (path: string, text: string, kind: PageResponse["kind"] = "page
   declaredSources: [],
   ...extra,
 });
+
+/** search() over the fixture pages, with some paths answering with the given composed answers instead. */
+async function searchWith(question: string, answers: Record<string, string>, maxPages?: number) {
+  const fetch = async (url: string) => {
+    const path = new URL(url).pathname.replace(/\.md$/, "");
+    const body = path === "/sitemap" ? SITEMAP : (answers[path] ?? PAGES[path]);
+    return body === undefined ? new Response("Not found", { status: 404 }) : new Response(body, { status: 200, headers: { "content-type": "text/markdown; charset=utf-8" } });
+  };
+  return search(question, { provider: new DocsHttpProvider({ fetch }), maxPages });
+}
 
 describe("terms and question parsing", () => {
   test("natural language becomes stems without stopwords", () => {
@@ -210,12 +221,11 @@ describe("source gate", () => {
     assert.deepEqual([verdict.ok, verdict.reason], [false, "not_in_docs"]);
   });
 
-  test("a composed answer on topic is shown as given, with its docs links as extra sources", () => {
+  test("a composed answer on topic is shown as given, its links reduced to their labels", () => {
     const text = "Deploy the contract with `forge create`, pointing **--rpc-url** at the network. See [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet) and [a blog](https://blog.example.com/x).";
     const verdict = judge(response("/developer-guide/foundry", text, "answer"), "How do I deploy a contract with Foundry?");
     assert.equal(verdict.ok, true);
-    assert.match(verdict.answer!, /Deploy the contract with forge create/);
-    assert.deepEqual(verdict.sources.map((s) => s.url), ["https://docs.pharos.xyz/getting-started/network/atlantic-testnet"]);
+    assert.equal(verdict.answer, "Deploy the contract with forge create, pointing --rpc-url at the network. See Atlantic Testnet and a blog.");
   });
 
   test("a composed answer about something else is a weak match, even if it shares a word", () => {
@@ -294,10 +304,10 @@ describe("review fixes (regressions)", () => {
     assert.deepEqual(terms("bridge oracle fee address guide"), ["bridge", "oracle", "fee", "address", "guide"]);
   });
 
-  test("a full page's own links are not sources of the answer", () => {
-    const verdict = judge(response("/developer-guide/foundry", PAGES["/developer-guide/foundry"]!), "How do I deploy a contract with Foundry?");
-    assert.equal(verdict.ok, true);
-    assert.deepEqual(verdict.sources, [], "the page links to Atlantic Testnet, but that is navigation, not the answer's source");
+  test("a full page's own links are not sources of the answer", async () => {
+    const result = await searchWith("How do I deploy a contract with Foundry?", {}, 1);
+    assert.equal(result.status, "answered");
+    assert.deepEqual(result.sources.map((s) => s.url), ["https://docs.pharos.xyz/developer-guide/foundry"], "the page links to Atlantic Testnet, but that is navigation");
   });
 
   test("a value stated after the clip point of a long composed answer is still found and shown", () => {
@@ -352,14 +362,11 @@ describe("composed ?ask= answers in the real response shape", () => {
     const response = await fetched();
     assert.deepEqual(response.links, ["https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md"], "only the link inside the answer segment");
     assert.ok(linksIn(ATLANTIC_ASK_ANSWER, atlantic.url).length >= 10, "the body itself links to many pages");
-    assert.deepEqual(judge(response, question).sources, [], "the answer cites only the page asked, which is the primary source already");
-    // Even a response object carrying every link in the body gets no follow-up link through the gate.
-    const leaky = { ...response, links: linksIn(ATLANTIC_ASK_ANSWER, atlantic.url) };
-    assert.deepEqual(judge(leaky, question).sources, []);
+    const result = await searchWith(question, { "/getting-started/network/atlantic-testnet": ATLANTIC_ASK_ANSWER });
+    assert.deepEqual(result.sources.map((s) => s.url), [atlantic.url]);
   });
 
   test("end to end, a simple one-page query has exactly one source and stays grounded", async () => {
-    const { search } = await import("../src/search.js");
     const fetch = async (url: string) =>
       new Response(url.endsWith("/sitemap.md") ? SITEMAP : ATLANTIC_ASK_ANSWER, { status: 200, headers: { "content-type": "text/markdown; charset=utf-8" } });
     const provider = new DocsHttpProvider({ fetch });
@@ -375,7 +382,7 @@ describe("composed ?ask= answers in the real response shape", () => {
     for (const word of result.answer!.toLowerCase().match(/[a-z]{4,}/g)!) assert.ok(segment.toLowerCase().includes(word), word);
   });
 
-  test("a cited docs page inside the answer is kept as a source; deduplicated", () => {
+  test("a page the answer only links to was never read, so it is not a source", async () => {
     const text = `# How do I deploy to the Atlantic testnet?
 
 Deploy the contract with forge create, as in [Foundry](/developer-guide/foundry.md) and [Foundry again](https://docs.pharos.xyz/developer-guide/foundry), using the [Atlantic Testnet](/getting-started/network/atlantic-testnet.md) RPC URL.
@@ -383,9 +390,9 @@ Deploy the contract with forge create, as in [Foundry](/developer-guide/foundry.
 ## Related Questions
 
 - [How do I deploy with Hardhat?](/developer-guide/hardhat.md)`;
-    const verdict = judge(response("/getting-started/network/atlantic-testnet", text, "answer"), "How do I deploy a contract to the Atlantic testnet?");
-    assert.equal(verdict.ok, true);
-    assert.deepEqual(verdict.sources.map((s) => s.url), ["https://docs.pharos.xyz/developer-guide/foundry"]);
+    const result = await searchWith("How do I deploy a contract to the Atlantic testnet?", { "/getting-started/network/atlantic-testnet": text }, 1);
+    assert.equal(result.status, "answered");
+    assert.deepEqual(result.sources.map((s) => s.url), ["https://docs.pharos.xyz/getting-started/network/atlantic-testnet"]);
   });
 
   test("generated sections end the answer in their usual spellings; real page sections do not", () => {
@@ -401,6 +408,92 @@ Deploy the contract with forge create, as in [Foundry](/developer-guide/foundry.
     assert.ok(long.length > 3_000);
     assert.equal(classify(long, page("/getting-started/network/atlantic-testnet")), "answer");
     assert.equal(interpret(page("/getting-started/network/atlantic-testnet"), "u", long, "text/markdown", "md-ask").links.length, 1);
+  });
+});
+
+describe("several pages: each statement shown once", () => {
+  const question = "How do I set up Foundry and deploy a contract to the Atlantic testnet?";
+  const FOUNDRY = "https://docs.pharos.xyz/developer-guide/foundry";
+  const ATLANTIC = "https://docs.pharos.xyz/getting-started/network/atlantic-testnet";
+  // Composed answers in the live shape; every value and name is a fixture value.
+  const COMMON =
+    "Install Foundry with foundryup, then run forge init to create a project. Add the Atlantic testnet RPC URL https://rpc.fixture.invalid to foundry.toml. Deploy with forge create, passing --rpc-url and --private-key. The chain ID is 424242.";
+  const UNIQUE = "Verify the deployed contract with forge verify-contract after deployment.";
+  const composed = (body: string) =>
+    `# ${question}\n\n${body} See [Foundry](/developer-guide/foundry.md) and [Hardhat](/developer-guide/hardhat.md).\n\n# Suggested Follow-up Questions:\n\n- [Which tokens are listed?](/getting-started/token-registry.md)\n- [Which RPC providers serve Pharos?](https://docs.pharos.xyz/tooling-and-infrastructure/rpc)\n`;
+  const count = (text: string, part: string) => text.split(part).length - 1;
+
+  test("two identical composed answers: one answer, both pages as sources, no labels", async () => {
+    const result = await searchWith(question, { "/developer-guide/foundry": composed(COMMON), "/getting-started/network/atlantic-testnet": composed(COMMON) });
+    assert.equal(result.status, "answered");
+    assert.equal(result.meta.pagesConsulted.length, 2);
+    assert.equal(result.answer, `${COMMON} See Foundry and Hardhat.`);
+    assert.doesNotMatch(result.answer!, /^(Foundry|Atlantic Testnet):$/m);
+    assert.deepEqual(result.sources.map((s) => s.url), result.meta.pagesConsulted.map((p) => p.url), "the pages asked, in their ranked order");
+    assert.deepEqual(new Set(result.sources.map((s) => s.url)), new Set([FOUNDRY, ATLANTIC]));
+  });
+
+  test("two highly overlapping answers: the shared statements once, the extra sentence once", async () => {
+    const result = await searchWith(question, { "/developer-guide/foundry": composed(`${COMMON} ${UNIQUE}`), "/getting-started/network/atlantic-testnet": composed(COMMON) });
+    const answer = result.answer!;
+    for (const sentence of [...COMMON.split(/(?<=\.) /), UNIQUE]) assert.equal(count(answer, sentence), 1, sentence);
+    assert.equal(count(answer, "424242"), 1);
+    assert.equal(result.sources.length, 2);
+
+    // The same, combined in a fixed order: the first answer whole, then only what is new, labelled.
+    assert.equal(
+      combineAnswers([
+        { title: "Atlantic Testnet", answer: COMMON },
+        { title: "Foundry", answer: `${COMMON} ${UNIQUE}` },
+      ]),
+      `Atlantic Testnet:\n${COMMON}\n\nFoundry:\n${UNIQUE}`,
+    );
+  });
+
+  test("genuinely different answers are both kept, whole and labelled", async () => {
+    const a = "Run forge create with --rpc-url to deploy a contract.";
+    const b = "The Atlantic testnet chain ID is 424242 and its currency is FIX.";
+    assert.equal(combineAnswers([{ title: "Foundry", answer: a }, { title: "Atlantic Testnet", answer: b }]), `Foundry:\n${a}\n\nAtlantic Testnet:\n${b}`);
+    // The fixture pages themselves answer different parts of the question.
+    const result = await searchWith(question, {});
+    assert.match(result.answer!, /^Foundry:\n/m);
+    assert.match(result.answer!, /^Atlantic Testnet:\n/m);
+    assert.equal(result.sources.length, 2);
+  });
+
+  test("a different value is never folded into an earlier statement", () => {
+    const combined = combineAnswers([
+      { title: "A", answer: "The chain ID of the network is 424242." },
+      { title: "B", answer: "The chain ID of the network is 424243." },
+    ]);
+    assert.equal(combined, "A:\nThe chain ID of the network is 424242.\n\nB:\nThe chain ID of the network is 424243.");
+  });
+
+  test("the same text split into sentences differently counts as already said", () => {
+    const combined = combineAnswers([
+      { title: "A", answer: "Install Foundry with foundryup. Then deploy the contract with forge create and the RPC URL." },
+      { title: "B", answer: "Install Foundry with foundryup and deploy the contract with forge create and the RPC URL." },
+    ]);
+    assert.equal(combined, "Install Foundry with foundryup. Then deploy the contract with forge create and the RPC URL.");
+  });
+
+  test("sources are only the pages asked and used: no linked, see-also or follow-up pages", async () => {
+    const result = await searchWith(question, { "/developer-guide/foundry": composed(`${COMMON} ${UNIQUE}`), "/getting-started/network/atlantic-testnet": composed(COMMON) });
+    assert.deepEqual(new Set(result.sources.map((s) => s.url)), new Set([FOUNDRY, ATLANTIC]));
+    assert.doesNotMatch(JSON.stringify(result.sources), /hardhat|token-registry|tooling-and-infrastructure/);
+  });
+
+  test("order is deterministic: the same run gives the same answer and sources, ties in ranked page order", async () => {
+    const answers = { "/developer-guide/foundry": composed(`${COMMON} ${UNIQUE}`), "/getting-started/network/atlantic-testnet": composed(COMMON) };
+    const first = await searchWith(question, answers);
+    for (let i = 0; i < 3; i += 1) {
+      const again = await searchWith(question, answers);
+      assert.equal(again.answer, first.answer);
+      assert.deepEqual(again.sources, first.sources);
+    }
+    const tie = await searchWith(question, { "/developer-guide/foundry": composed(COMMON), "/getting-started/network/atlantic-testnet": composed(COMMON) });
+    assert.deepEqual(tie.sources.map((s) => s.url), tie.meta.pagesConsulted.map((p) => p.url));
+    assert.deepEqual(combineAnswers([{ title: "A", answer: "x is y." }]), "x is y.");
   });
 });
 

@@ -1,7 +1,7 @@
 import { DEFAULT_MAX_PAGES, MAX_ANSWER_CHARS, MAX_QUESTION_CHARS, TOOL_NAME, VERSION } from "./constants.js";
 import { choosePages, nearbyTopics, rankPages } from "./page-ranker.js";
 import { ProviderError, type DocsProvider } from "./providers/provider.js";
-import { dedupeSources, judge, type Verdict } from "./source-gate.js";
+import { combineAnswers, dedupeSources, judge, type Verdict } from "./source-gate.js";
 import { clip } from "./text.js";
 import type { ErrorKind, NoAnswerReason, PageResponse, RankedPage, SearchResult, Source } from "./types.js";
 
@@ -94,14 +94,16 @@ export async function search(input: string, options: SearchOptions): Promise<Sea
     return result({ status: "no_answer", reason: pickReason(reasons), suggestions });
   }
 
-  // One page: its answer. Several: each page's part, labelled with its title, best first.
-  answered.sort((a, b) => b.verdict.score - a.verdict.score);
+  // Best first (ties keep the ranked page order), each statement once across pages.
+  answered.sort((a, b) => b.verdict.score - a.verdict.score || pages.indexOf(a.page) - pages.indexOf(b.page));
   const answer =
     answered.length === 1
       ? answered[0]!.verdict.answer!
-      : clip(answered.map(({ page, verdict }) => `${page.title}:\n${verdict.answer}`).join("\n\n"), MAX_ANSWER_CHARS * answered.length);
+      : clip(combineAnswers(answered.map(({ page, verdict }) => ({ title: page.title, answer: verdict.answer! }))), MAX_ANSWER_CHARS * answered.length);
+  // Sources: the pages asked whose answer supports what is shown, in the same order. A page whose answer
+  // repeated another's still stated it, so it stays a source; pages only linked to were never read.
   const sources: Source[] = dedupeSources(
-    [...answered.map(({ page }) => ({ title: page.title, url: page.url })), ...answered.flatMap(({ verdict }) => verdict.sources)],
+    answered.map(({ page }) => ({ title: page.title, url: page.url })),
     titles,
   );
   return result({ status: "answered", answer, sources });

@@ -2,8 +2,7 @@ import { DOCS_HOST, DOCS_ORIGIN, HARD_MAX_PAGES, TOOL_NAME } from "./constants.j
 import { docsPath, pageUrl } from "./docs-index.js";
 import { interpret } from "./providers/docs-http.js";
 import { GOAL } from "./search.js";
-import { dedupeSources, officialSourceUrl, retainedText } from "./source-gate.js";
-import { linksIn } from "./text.js";
+import { officialSourceUrl, retainedText } from "./source-gate.js";
 import type { RequestRecord, SearchResult } from "./types.js";
 
 /** The three README examples: a simple fact, a multi-step workflow, and one the docs should not answer. */
@@ -85,19 +84,14 @@ export function verifyRun(transcript: Transcript, output: string, expect: string
     }
   });
 
-  // Sources: the pages asked in this run, plus docs pages cited inside a composed answer's retained
-  // segment. A link that only appears in generated follow-up questions or navigation is not a source.
+  // Sources: pages asked in this run, each once. A page only linked to (in an answer, or in its generated
+  // follow-up questions) was never read, so it is not a source.
   const asked = new Set(readings.map(({ response }) => response.page.url));
-  const cited = new Set(
-    readings
-      .filter(({ response }) => response.kind !== "page")
-      .flatMap(({ response, retained }) => dedupeSources([...response.declaredSources, ...linksIn(retained, response.page.url).map((u) => ({ title: null, url: u }))]).map((s) => s.url)),
-  );
-  const badSources = result.sources.filter((s) => officialSourceUrl(s.url) !== s.url || !(asked.has(s.url) || cited.has(s.url)));
+  const badSources = result.sources.filter((s) => officialSourceUrl(s.url) !== s.url || !asked.has(s.url));
   check(
-    "sources are pages asked or cited in the answer",
+    "sources are pages asked in this run",
     (result.status !== "answered" || result.sources.length > 0) && badSources.length === 0 && new Set(result.sources.map((s) => s.url)).size === result.sources.length,
-    badSources.length ? `not asked or cited in a retained answer: ${badSources.map((s) => s.url).join(", ")}` : `${result.sources.length} unique docs.pharos.xyz sources, each asked or cited`,
+    badSources.length ? `not asked in this run: ${badSources.map((s) => s.url).join(", ")}` : `${result.sources.length} unique docs.pharos.xyz sources, each a page asked`,
   );
 
   // Grounding: every number, hex value and URL in the answer appears verbatim both in a fetched body and

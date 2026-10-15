@@ -1,6 +1,6 @@
 import { DOCS_HOST, MAX_ANSWER_CHARS } from "./constants.js";
 import { docsPath, pageUrl } from "./docs-index.js";
-import { answerSegment, clip, hasValue, linksIn, markdownBlocks, pageBody, plainInline, questionTerms, stripControls, terms, valueKind, type Block } from "./text.js";
+import { answerSegment, clip, hasValue, markdownBlocks, pageBody, plainInline, questionTerms, stripControls, terms, valueKind, type Block } from "./text.js";
 import type { NoAnswerReason, PageResponse, Source } from "./types.js";
 
 // The source-first gate. An answer is shown only when it can be traced to text the official docs
@@ -62,8 +62,6 @@ export interface Verdict {
   /** The grounded answer text (verbatim from the response, lightly cleaned), when ok. */
   answer: string | null;
   reason: NoAnswerReason | null;
-  /** Extra official sources the response itself pointed to. */
-  sources: Source[];
   /** How strongly the response supports the question (for ordering multi-page answers). */
   score: number;
 }
@@ -75,13 +73,9 @@ export function judge(response: PageResponse, question: string): Verdict {
   // The text an answer may come from: a composed answer's own segment (no restated question heading,
   // no generated follow-up questions or navigation), or the page without any follow-up list.
   const retained = retainedText(response);
-  // Extra sources only from a composed answer: its declared sources and the docs pages its answer
-  // segment links to. A full page's links (navigation, "next page", see-also) and a composed answer's
-  // generated follow-ups are not where the answer comes from, so they are not sources.
-  const cited = response.kind === "page" ? [] : linksIn(retained, response.page.url);
-  const extra =
-    response.kind === "page" ? [] : dedupeSources([...response.declaredSources, ...cited.map((url) => ({ title: null, url }))]).filter((source) => source.url !== response.page.url);
-  const fail = (reason: NoAnswerReason): Verdict => ({ ok: false, answer: null, reason, sources: [], score: 0 });
+  // Sources are chosen by search(): the pages that were asked and whose answer is used. A page the
+  // answer only links to was never read, so it is not a source (and neither is a generated follow-up).
+  const fail = (reason: NoAnswerReason): Verdict => ({ ok: false, answer: null, reason, score: 0 });
 
   if (response.kind === "answer" || response.kind === "json") {
     // An answer the docs composed for this question: shown as given, if it is on topic and says something.
@@ -97,14 +91,14 @@ export function judge(response: PageResponse, question: string): Verdict {
     let answer = clip(text, MAX_ANSWER_CHARS);
     // A long answer that states the value past the clip point: show the lines that hold it instead.
     if (kind && !hasValue(answer, kind)) answer = clip(text.split("\n").filter((line) => hasValue(line, kind)).join("\n"), MAX_ANSWER_CHARS);
-    return { ok: true, answer, reason: null, sources: extra, score: 10 + overlap };
+    return { ok: true, answer, reason: null, score: 10 + overlap };
   }
 
   // The page itself: answer with its best-matching passages, verbatim.
   const picked = bestPassages(markdownBlocks(retained), direct, related, kind, terms(response.page.title));
   if (!picked) return fail("weak_match");
   if (kind && !hasValue(picked.text, kind)) return fail("value_not_found");
-  return { ok: true, answer: picked.text, reason: null, sources: extra, score: picked.score };
+  return { ok: true, answer: picked.text, reason: null, score: picked.score };
 }
 
 /** The part of a response an answer may be taken from. The proof verifier checks answers against it too. */
@@ -196,3 +190,77 @@ function render(block: Block): string {
   if (block.kind === "item" || block.kind === "row") return `- ${block.text}`;
   return block.text;
 }
+
+// ---------------------------------------------------------------------------
+// Combining the answers of several pages
+
+/** Share of a statement's words found in one earlier statement for it to count as already said. */
+export const SAME_STATEMENT = 0.8;
+
+const VALUE_PATTERN = /0x[0-9a-f]+|https?:\/\/[^\s)]+|\d[\d,.]*\d|\d/gi;
+
+interface Statement {
+  line: number;
+  text: string;
+  words: Set<string>;
+  values: string[];
+}
+
+/** An answer as statements: each line, with prose lines split into sentences. */
+function statements(answer: string): Statement[] {
+  return answer.split("\n").flatMap((line, index) =>
+    line
+      .trim()
+      .split(/(?<=[.!?])\s+(?=[A-Z0-9`"'(\[])/)
+      .filter((text) => text.trim() !== "")
+      .map((text) => ({
+        line: index,
+        text,
+        words: new Set(terms(text)),
+        values: [...text.matchAll(VALUE_PATTERN)].map((m) => m[0].toLowerCase().replace(/,/g, "").replace(/[.,;:]+$/, "")),
+      })),
+  );
+}
+
+/**
+ * Already said: every value in it was already shown, and at least SAME_STATEMENT of its words appear in
+ * one earlier statement, or in two consecutive ones (the same text split into sentences differently).
+ */
+function alreadySaid(statement: Statement, kept: Statement[], keptValues: Set<string>): boolean {
+  if (statement.values.some((value) => !keptValues.has(value))) return false;
+  if (statement.words.size === 0) return statement.values.length > 0 || kept.some((k) => k.text.toLowerCase() === statement.text.toLowerCase());
+  const share = (pool: Set<string>) => [...statement.words].filter((word) => pool.has(word)).length / statement.words.size;
+  return kept.some((k, i) => share(k.words) >= SAME_STATEMENT || (i + 1 < kept.length && share(new Set([...k.words, ...kept[i + 1]!.words])) >= SAME_STATEMENT));
+}
+
+/**
+ * Several pages' answers as one, each statement shown once. The first answer is shown whole; every later
+ * one adds only its statements not already said (same values, and most of the same words, in an earlier
+ * statement), kept verbatim and in order. A later answer with nothing new adds nothing. When only one
+ * answer has anything to show it stands alone; otherwise each part is labelled with its page title.
+ * Deterministic: text comparison only, in the order given.
+ */
+export function combineAnswers(parts: Array<{ title: string; answer: string }>): string {
+  const kept: Statement[] = [];
+  const keptValues = new Set<string>();
+  const blocks: Array<{ title: string; text: string }> = [];
+  for (const [index, part] of parts.entries()) {
+    const fresh = statements(part.answer).filter((statement) => index === 0 || !alreadySaid(statement, kept, keptValues));
+    for (const statement of fresh) {
+      kept.push(statement);
+      for (const value of statement.values) keptValues.add(value);
+    }
+    if (fresh.length === 0) continue;
+    // Back to lines: statements from the same line rejoin with a space.
+    const lines: string[] = [];
+    let last = -1;
+    for (const statement of fresh) {
+      if (statement.line === last) lines[lines.length - 1] += ` ${statement.text}`;
+      else lines.push(statement.text);
+      last = statement.line;
+    }
+    blocks.push({ title: part.title, text: index === 0 ? part.answer : lines.join("\n") });
+  }
+  return blocks.length === 1 ? blocks[0]!.text : blocks.map(({ title, text }) => `${title}:\n${text}`).join("\n\n");
+}
+
