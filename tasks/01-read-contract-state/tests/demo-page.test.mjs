@@ -129,8 +129,10 @@ describe("what the page loads and calls", () => {
     assert.match(html, /<section class="section" id="inspector"[^>]* data-explain-api="\/api\/explain"/);
     assert.match(explainJs, /const API = inspector\.dataset\.explainApi;/);
     for (const { name, text } of scripts) {
-      // The one URL allowed is the SVG namespace, an identifier lab.js never requests.
-      assert.doesNotMatch(text.replaceAll('"http://www.w3.org/2000/svg"', '""'), /https?:\/\//, `${name} contains a URL`);
+      // Allowed: the SVG namespace (an identifier lab.js never requests), and the task pages' own
+      // addresses in tasks.js, which are links in the shell and never fetched (fetch counts are below).
+      const own = name === "tasks.js" ? text.replace(/export const DEPLOYMENTS = Object\.freeze\(\{[\s\S]*?\}\);/, "") : text;
+      assert.doesNotMatch(own.replaceAll('"http://www.w3.org/2000/svg"', '""'), /https?:\/\//, `${name} contains a URL`);
       assert.doesNotMatch(text, /XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|navigator\.connection/, name);
       assert.doesNotMatch(text, /jsonrpc|@modelcontextprotocol|mcp\.pharos|rpc\.pharos/i, name);
       assert.doesNotMatch(text, /deepseek|openai|anthropic|api[_-]?key|authorization|bearer/i, name);

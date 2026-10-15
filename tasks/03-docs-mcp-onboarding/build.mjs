@@ -24,6 +24,8 @@ const isHttps = (value) => {
   }
 };
 const EVIDENCE_PATH = /^evidence\/[\w.-]+\.(?:png|jpe?g|webp)$/;
+/** A step-by-step log entry: what was asked, what Docs MCP answered, what was run, what came back. */
+export const LOG_KINDS = new Map([["query", "Asked Docs MCP"], ["answer", "Docs MCP, in summary"], ["command", "Ran"], ["result", "Result"]]);
 
 /** Every problem with the content, as messages; [] when it can be rendered. */
 export function validate(data) {
@@ -32,16 +34,20 @@ export function validate(data) {
   need(data && typeof data === "object", "evidence.json must be an object");
   if (!data || typeof data !== "object") return problems;
   need(isText(data.title), "title is required");
-  for (const key of ["goal", "environment"]) need(data[key] === null || isText(data[key]), `${key} is text or null`);
+  for (const key of ["summary", "goal", "environment", "environmentNote"]) need(data[key] === null || data[key] === undefined || isText(data[key]), `${key} is text or null`);
   need(Array.isArray(data.journey) && data.journey.length > 0, "journey lists at least one stage");
   for (const [index, step] of (Array.isArray(data.journey) ? data.journey : []).entries()) {
     need(isText(step?.stage), `journey[${index}].stage is required`);
     need(step?.detail === null || isText(step?.detail), `journey[${index}].detail is text or null`);
+    need(step?.log === undefined || (Array.isArray(step.log) && step.log.every((entry) => LOG_KINDS.has(entry?.kind) && isText(entry?.text))), `journey[${index}].log is a list of { kind: ${[...LOG_KINDS].join(" | ")}, text }`);
   }
-  need(Array.isArray(data.outcome) && data.outcome.every(isText), "outcome is a list of statements");
+  need(Array.isArray(data.outcome) && data.outcome.every((line) => isText(line) || (isText(line?.text) && (line.detail === undefined || isText(line.detail)))), "outcome is a list of statements, or { text, detail }");
   need(Array.isArray(data.gaps) && data.gaps.length <= MAX_GAPS, `gaps is a list of at most ${MAX_GAPS}`);
   for (const [index, gap] of (Array.isArray(data.gaps) ? data.gaps : []).entries()) {
     for (const key of ["title", "happened", "fix"]) need(isText(gap?.[key]), `gaps[${index}].${key} is required`);
+    need(Array.isArray(gap?.queries) && gap.queries.length > 0 && gap.queries.every(isText), `gaps[${index}].queries lists the exact queries`);
+    need(gap?.queryNote === undefined || isText(gap.queryNote), `gaps[${index}].queryNote is text`);
+    need(gap?.evidenceUrl === undefined || isHttps(gap.evidenceUrl), `gaps[${index}].evidenceUrl is an https URL`);
     const shot = gap?.evidence;
     if (shot !== null && shot !== undefined) {
       need(EVIDENCE_PATH.test(shot.thumb ?? "") && EVIDENCE_PATH.test(shot.full ?? ""), `gaps[${index}].evidence needs thumb and full under evidence/`);
@@ -64,6 +70,28 @@ const ICON = {
 
 const outLink = (href, cls, inner) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}<span class="sr">, opens in a new tab</span></a>`;
 
+/** The step-by-step log, collapsed: per stage, in order, what was asked, answered, run and returned. */
+function renderLog(journey) {
+  if (!journey.some((step) => step.log?.length)) return [];
+  return [
+    `    <details class="disclosure log" id="log">`,
+    `      <summary><span class="log-title">Step-by-step log</span><span class="disclosure-meta">queries, answers, commands</span>${ICON.chev}</summary>`,
+    `      <ol class="log-stages">`,
+    ...journey.filter((step) => step.log?.length).map((step) =>
+      [
+        `        <li class="log-stage"><h3 class="sub-title">${esc(step.stage)}</h3><dl class="log-entries">`,
+        ...step.log.map((entry) => {
+          const body = entry.kind === "command" ? `<pre class="cmd"><code>${esc(entry.text)}</code></pre>` : entry.kind === "query" ? `<blockquote class="query">${esc(entry.text)}</blockquote>` : `<p>${esc(entry.text)}</p>`;
+          return `          <div class="log-entry" data-kind="${entry.kind}"><dt>${LOG_KINDS.get(entry.kind)}</dt><dd>${body}</dd></div>`;
+        }),
+        `        </dl></li>`,
+      ].join("\n"),
+    ),
+    `      </ol>`,
+    `    </details>`,
+  ];
+}
+
 /** The page's <main>, from validated content. */
 export function renderMain(data) {
   const final = data.journey.at(-1);
@@ -72,12 +100,15 @@ export function renderMain(data) {
     `  <header class="task-head">`,
     `    <p class="label task-kicker"><span class="task-n">03</span><span>Docs Onboarding</span></p>`,
     `    <h1 class="task-title">${esc(data.title)}</h1>`,
-    `    <p class="task-via">An onboarding run with the <strong class="nowrap">Pharos Developer Docs MCP</strong>, as evidence</p>`,
+    `    <p class="task-via">${data.summary ? esc(data.summary) : 'An onboarding run with the <strong class="nowrap">Pharos Developer Docs MCP</strong>, as evidence'}</p>`,
     `  </header>`,
   ];
-  const context = [data.goal && ["Goal", data.goal], data.environment && ["Environment", data.environment]].filter(Boolean);
+  const context = [
+    data.goal && ["Goal", esc(data.goal)],
+    data.environment && ["Environment", `<span class="env">${esc(data.environment)}</span>${data.environmentNote ? `<span class="context-note">${esc(data.environmentNote)}</span>` : ""}`],
+  ].filter(Boolean);
   const contextHtml = context.length
-    ? [`  <dl class="context">`, ...context.map(([key, value]) => `    <div><dt>${key}</dt><dd>${esc(value)}</dd></div>`), `  </dl>`]
+    ? [`  <dl class="context">`, ...context.map(([key, value]) => `    <div><dt>${key}</dt><dd>${value}</dd></div>`), `  </dl>`]
     : [];
 
   const actions = [
@@ -89,7 +120,10 @@ export function renderMain(data) {
     `    <div class="beacon" aria-hidden="true"></div>`,
     `    <p class="status" data-tone="${reached ? "success" : "neutral"}"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="outcome-h">${esc(reached ? "Successful" : final.stage)}</span><span class="status-detail">final outcome</span></p>`,
     `    <ul class="checks">`,
-    ...data.outcome.map((line) => `      <li>${ICON.check}<span>${esc(line)}</span></li>`),
+    ...data.outcome.map((line) => {
+      const { text, detail } = typeof line === "string" ? { text: line } : line;
+      return `      <li>${ICON.check}<span class="check-text">${esc(text)}</span>${detail ? `<span class="check-detail">${esc(detail)}</span>` : ""}</li>`;
+    }),
     `    </ul>`,
     ...(actions.length ? [`    <p class="outcome-actions">${actions.join("")}</p>`] : []),
     `  </section>`,
@@ -103,19 +137,22 @@ export function renderMain(data) {
       `      <li class="step" data-stage="${esc(step.stage.toLowerCase())}"><span class="step-mark" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span><span class="step-name">${esc(step.stage)}</span>${step.detail ? `<span class="step-detail">${esc(step.detail)}</span>` : ""}</li>`,
     ),
     `    </ol>`,
+    ...renderLog(data.journey),
     `  </section>`,
   ];
 
   const gaps = data.gaps.length
     ? [
         `  <section class="section" aria-labelledby="gaps-h">`,
-        `    <div class="section-head"><h2 class="section-title" id="gaps-h">Gaps</h2><p class="section-meta">${data.gaps.length === 1 ? "The strongest one" : `The ${data.gaps.length} strongest`}</p></div>`,
+        `    <div class="section-head"><h2 class="section-title" id="gaps-h">Documentation gaps</h2><p class="section-meta">${data.gaps.length}, each with its exact query and a suggested fix</p></div>`,
         `    <ol class="gaps">`,
         ...data.gaps.map((gap, index) => {
           const shot = gap.evidence
             ? `<a class="shot" href="${esc(gap.evidence.full)}" data-evidence data-alt="${esc(gap.evidence.alt)}"><img src="${esc(gap.evidence.thumb)}" alt="" width="160" height="100" loading="lazy" decoding="async"><span class="shot-word">View evidence</span><span class="sr">: ${esc(gap.evidence.alt)}</span></a>`
             : "";
-          return `      <li class="gap"><div class="gap-text"><h3 class="gap-title"><span class="gap-n">${index + 1}</span>${esc(gap.title)}</h3><p class="gap-happened">${esc(gap.happened)}</p><p class="gap-fix"><span class="gap-label">Suggested fix</span>${esc(gap.fix)}</p></div>${shot}</li>`;
+          const queries = `<details class="gap-query"><summary>${gap.queries.length === 1 ? "Exact query" : `Exact queries (${gap.queries.length})`}${ICON.chev}</summary>${gap.queryNote ? `<p class="query-note">${esc(gap.queryNote)}</p>` : ""}${gap.queries.map((query) => `<blockquote class="query">${esc(query)}</blockquote>`).join("")}</details>`;
+          const evidence = !gap.evidence && gap.evidenceUrl ? outLink(gap.evidenceUrl, "action gap-evidence", `<span>Evidence</span>${ICON.out}`) : "";
+          return `      <li class="gap"><div class="gap-text"><h3 class="gap-title"><span class="gap-n">${index + 1}</span>${esc(gap.title)}</h3><p class="gap-happened">${esc(gap.happened)}</p><p class="gap-fix"><span class="gap-label">Suggested fix</span>${esc(gap.fix)}</p><div class="gap-more">${queries}${evidence}</div></div>${shot}</li>`;
         }),
         `    </ol>`,
         `  </section>`,

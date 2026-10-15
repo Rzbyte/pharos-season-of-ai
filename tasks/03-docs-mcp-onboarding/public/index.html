@@ -41,26 +41,153 @@
   <header class="task-head">
     <p class="label task-kicker"><span class="task-n">03</span><span>Docs Onboarding</span></p>
     <h1 class="task-title">Docs MCP Onboarding</h1>
-    <p class="task-via">An onboarding run with the <strong class="nowrap">Pharos Developer Docs MCP</strong>, as evidence</p>
+    <p class="task-via">Testing whether the official docs can take a new developer from zero to a successful contract read.</p>
   </header>
+  <dl class="context">
+    <div><dt>Goal</dt><dd>Self-onboard into ai.pharos.xyz using only the Developer Docs MCP: no other docs, search or community help.</dd></div>
+    <div><dt>Environment</dt><dd><span class="env">Android · Termux · ARM64</span><span class="context-note">No laptop was available, so the whole run was done on a phone.</span></dd></div>
+  </dl>
 
   <section class="panel outcome" aria-labelledby="outcome-h">
     <div class="beacon" aria-hidden="true"></div>
     <p class="status" data-tone="success"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="outcome-h">Successful</span><span class="status-detail">final outcome</span></p>
     <ul class="checks">
-      <li><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Connected to Atlantic RPC</span></li>
-      <li><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span>eth_chainId succeeded</span></li>
-      <li><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span>eth_call succeeded</span></li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="check-text">Atlantic RPC connected</span></li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="check-text">eth_chainId verified</span><span class="check-detail">0xa8231 = 688689</span></li>
+      <li><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8.5l3.25 3.25L13 5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="check-text">eth_call succeeded</span><span class="check-detail">read-only, no wallet or gas</span></li>
     </ul>
+    <p class="outcome-actions"><a class="btn btn-primary" href="https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C" target="_blank" rel="noopener noreferrer"><span>View proof</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a><a class="btn" href="https://drive.google.com/file/d/1rT1rvJM3o2aLWhqF04cRsluy9Qu2epVt/view?usp=drivesdk" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3.5v9l7-4.5-7-4.5Z" fill="currentColor"/></svg><span>Watch video</span><span class="sr">, opens in a new tab</span></a></p>
   </section>
 
   <section class="section" aria-labelledby="journey-h">
     <h2 class="section-title" id="journey-h">Journey</h2>
     <ol class="journey">
-      <li class="step" data-stage="started"><span class="step-mark" aria-hidden="true">01</span><span class="step-name">Started</span></li>
-      <li class="step" data-stage="blocked"><span class="step-mark" aria-hidden="true">02</span><span class="step-name">Blocked</span></li>
-      <li class="step" data-stage="recovered"><span class="step-mark" aria-hidden="true">03</span><span class="step-name">Recovered</span></li>
-      <li class="step" data-stage="successful"><span class="step-mark" aria-hidden="true">04</span><span class="step-name">Successful</span></li>
+      <li class="step" data-stage="started"><span class="step-mark" aria-hidden="true">01</span><span class="step-name">Started</span><span class="step-detail">Docs MCP recommended Foundry. Its install step failed: Termux has no ~/.bashrc.</span></li>
+      <li class="step" data-stage="blocked"><span class="step-mark" aria-hidden="true">02</span><span class="step-name">Blocked</span><span class="step-detail">With ~/.foundry/bin on PATH, foundryup still would not run on ARM64. The Foundry path did not fit this environment.</span></li>
+      <li class="step" data-stage="recovered"><span class="step-mark" aria-hidden="true">03</span><span class="step-name">Recovered</span><span class="step-detail">Back to the actual goal, with the documented JSON-RPC path over curl. eth_chainId on the Atlantic RPC returned 0xa8231 (688689).</span></li>
+      <li class="step" data-stage="successful"><span class="step-mark" aria-hidden="true">04</span><span class="step-name">Successful</span><span class="step-detail">A read-only eth_call from Termux returned valid hex-encoded contract data. No wallet, private key or gas needed.</span></li>
+    </ol>
+    <details class="disclosure log" id="log">
+      <summary><span class="log-title">Step-by-step log</span><span class="disclosure-meta">queries, answers, commands</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
+      <ol class="log-stages">
+        <li class="log-stage"><h3 class="sub-title">Started</h3><dl class="log-entries">
+          <div class="log-entry" data-kind="query"><dt>Asked Docs MCP</dt><dd><blockquote class="query">I&#39;m new to Pharos and I want to build something simple.
+I&#39;m doing this entirely from my phone, using Android and Termux, so I don&#39;t have a normal desktop development setup.
+Can you guide me step by step using only the official Pharos Developer Docs?
+My goal is to get to the point where I can read a value from a smart contract on Pharos.
+Please start from the beginning and don&#39;t assume I already know the setup or tools I need.
+Just give me the first step for now. I&#39;ll try it on my phone and tell you what happens.</blockquote></dd></div>
+          <div class="log-entry" data-kind="answer"><dt>Docs MCP, in summary</dt><dd><p>Start with Foundry, installed with its install script.</p></dd></div>
+          <div class="log-entry" data-kind="command"><dt>Ran</dt><dd><pre class="cmd"><code>curl -L https://foundry.paradigm.xyz | bash
+source $HOME/.bashrc &amp;&amp; foundryup</code></pre></dd></div>
+          <div class="log-entry" data-kind="result"><dt>Result</dt><dd><p>Failed: Termux has no ~/.bashrc.</p></dd></div>
+          <div class="log-entry" data-kind="answer"><dt>Docs MCP, in summary</dt><dd><p>Run foundryup directly, with ~/.foundry/bin added to PATH.</p></dd></div>
+        </dl></li>
+        <li class="log-stage"><h3 class="sub-title">Blocked</h3><dl class="log-entries">
+          <div class="log-entry" data-kind="command"><dt>Ran</dt><dd><pre class="cmd"><code>export PATH=&quot;$HOME/.foundry/bin:$PATH&quot;
+foundryup</code></pre></dd></div>
+          <div class="log-entry" data-kind="result"><dt>Result</dt><dd><p>bash: /data/data/com.termux/files/home/.foundry/bin/foundryup: cannot execute: required file not found</p></dd></div>
+          <div class="log-entry" data-kind="query"><dt>Asked Docs MCP</dt><dd><blockquote class="query">I followed your fallback exactly:
+
+export PATH=&quot;$HOME/.foundry/bin:$PATH&quot;
+foundryup
+
+but it still failed with:
+
+bash: /data/data/com.termux/files/home/.foundry/bin/foundryup: cannot execute: required file not found
+
+I&#39;m still using Android + Termux on ARM64.
+
+What should I do next using only the official Pharos Developer Docs?</blockquote></dd></div>
+        </dl></li>
+        <li class="log-stage"><h3 class="sub-title">Recovered</h3><dl class="log-entries">
+          <div class="log-entry" data-kind="query"><dt>Asked Docs MCP</dt><dd><blockquote class="query">I think we got a bit sidetracked into troubleshooting Foundry.
+
+My original goal is simpler: I want to use only the official Pharos Developer Docs to get from zero to successfully reading a value from a smart contract on Pharos from my phone.
+
+If Foundry is not required for that, I&#39;d rather use the simplest documented approach that works from Termux.
+
+What is the next step toward making an actual read-only contract call?
+
+Please keep it step by step and only use information from the official Developer Docs.</blockquote></dd></div>
+          <div class="log-entry" data-kind="answer"><dt>Docs MCP, in summary</dt><dd><p>Use the documented JSON-RPC path: plain requests to the Atlantic RPC with curl.</p></dd></div>
+          <div class="log-entry" data-kind="result"><dt>Result</dt><dd><p>eth_chainId returned 0xa8231, which is 688689.</p></dd></div>
+          <div class="log-entry" data-kind="answer"><dt>Docs MCP, in summary</dt><dd><p>An expected chain ID given earlier did not match; Docs MCP acknowledged and corrected it.</p></dd></div>
+        </dl></li>
+        <li class="log-stage"><h3 class="sub-title">Successful</h3><dl class="log-entries">
+          <div class="log-entry" data-kind="result"><dt>Result</dt><dd><p>eth_call returned valid hex-encoded contract data.</p></dd></div>
+          <div class="log-entry" data-kind="query"><dt>Asked Docs MCP</dt><dd><blockquote class="query">That worked. I got a result back from the eth_call.
+
+But I don&#39;t actually understand what I just read.
+
+What contract is the example address, what function does the selector call, and what does the returned value mean?
+
+Please explain it using only the official Pharos Developer Docs.</blockquote></dd></div>
+          <div class="log-entry" data-kind="query"><dt>Asked Docs MCP</dt><dd><blockquote class="query">I understand how eth_call works now, but I still want an example where I can actually understand and verify what I read without leaving the official Pharos Developer Docs.
+
+Do the official Developer Docs provide a documented contract with:
+- its purpose or name
+- a real deployed address
+- a specific read-only function
+- the function&#39;s return type
+- and an explanation of what the returned value means?
+
+If yes, please guide me through that example.
+
+If not, please say clearly that the docs don&#39;t currently provide one.</blockquote></dd></div>
+          <div class="log-entry" data-kind="answer"><dt>Docs MCP, in summary</dt><dd><p>The official docs do not currently provide one complete example with all of these together.</p></dd></div>
+        </dl></li>
+      </ol>
+    </details>
+  </section>
+
+  <section class="section" aria-labelledby="gaps-h">
+    <div class="section-head"><h2 class="section-title" id="gaps-h">Documentation gaps</h2><p class="section-meta">3, each with its exact query and a suggested fix</p></div>
+    <ol class="gaps">
+      <li class="gap"><div class="gap-text"><h3 class="gap-title"><span class="gap-n">1</span>Incorrect expected chain ID</h3><p class="gap-happened">Docs MCP first gave an expected Atlantic chain ID that did not match the network. The RPC returned 0xa8231 (688689), and Docs MCP then acknowledged and corrected the value.</p><p class="gap-fix"><span class="gap-label">Suggested fix</span>For live network parameters such as the chain ID, RPC URL and contract addresses, retrieve or check the current Live Data page instead of relying on stored or inferred values.</p><div class="gap-more"><details class="gap-query"><summary>Exact query<span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary><p class="query-note">The query that led to the chain ID check:</p><blockquote class="query">I think we got a bit sidetracked into troubleshooting Foundry.
+
+My original goal is simpler: I want to use only the official Pharos Developer Docs to get from zero to successfully reading a value from a smart contract on Pharos from my phone.
+
+If Foundry is not required for that, I&#39;d rather use the simplest documented approach that works from Termux.
+
+What is the next step toward making an actual read-only contract call?
+
+Please keep it step by step and only use information from the official Developer Docs.</blockquote></details><a class="action gap-evidence" href="https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C" target="_blank" rel="noopener noreferrer"><span>Evidence</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></div></div></li>
+      <li class="gap"><div class="gap-text"><h3 class="gap-title"><span class="gap-n">2</span>Tooling path did not fit the environment or the goal</h3><p class="gap-happened">The goal was one read-only call from Android + Termux. The path went through installing Foundry, a missing ~/.bashrc, PATH fixes and an ARM64 execution failure. Direct JSON-RPC with curl was much simpler, and it worked.</p><p class="gap-fix"><span class="gap-label">Suggested fix</span>Ask about the environment and the goal first. For read-only work, offer the JSON-RPC/curl path straight away. For Android, Termux, ARM64 or other setups Foundry does not support, say so before the install steps.</p><div class="gap-more"><details class="gap-query"><summary>Exact queries (2)<span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary><blockquote class="query">I&#39;m new to Pharos and I want to build something simple.
+I&#39;m doing this entirely from my phone, using Android and Termux, so I don&#39;t have a normal desktop development setup.
+Can you guide me step by step using only the official Pharos Developer Docs?
+My goal is to get to the point where I can read a value from a smart contract on Pharos.
+Please start from the beginning and don&#39;t assume I already know the setup or tools I need.
+Just give me the first step for now. I&#39;ll try it on my phone and tell you what happens.</blockquote><blockquote class="query">I followed your fallback exactly:
+
+export PATH=&quot;$HOME/.foundry/bin:$PATH&quot;
+foundryup
+
+but it still failed with:
+
+bash: /data/data/com.termux/files/home/.foundry/bin/foundryup: cannot execute: required file not found
+
+I&#39;m still using Android + Termux on ARM64.
+
+What should I do next using only the official Pharos Developer Docs?</blockquote></details><a class="action gap-evidence" href="https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C" target="_blank" rel="noopener noreferrer"><span>Evidence</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></div></div></li>
+      <li class="gap"><div class="gap-text"><h3 class="gap-title"><span class="gap-n">3</span>No complete contract-read example</h3><p class="gap-happened">The docs explain how eth_call works, but no single example says which contract it reads, the function signature and selector, the return type, how to decode the hex, and what the value means. Docs MCP confirmed the docs do not currently provide one.</p><p class="gap-fix"><span class="gap-label">Suggested fix</span>Add one canonical read-only example: a named deployed contract with its purpose and current address, the function signature, selector and calldata, the return type, a raw eth_call response, the decoded value, and what that value means.</p><div class="gap-more"><details class="gap-query"><summary>Exact queries (2)<span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary><blockquote class="query">That worked. I got a result back from the eth_call.
+
+But I don&#39;t actually understand what I just read.
+
+What contract is the example address, what function does the selector call, and what does the returned value mean?
+
+Please explain it using only the official Pharos Developer Docs.</blockquote><blockquote class="query">I understand how eth_call works now, but I still want an example where I can actually understand and verify what I read without leaving the official Pharos Developer Docs.
+
+Do the official Developer Docs provide a documented contract with:
+- its purpose or name
+- a real deployed address
+- a specific read-only function
+- the function&#39;s return type
+- and an explanation of what the returned value means?
+
+If yes, please guide me through that example.
+
+If not, please say clearly that the docs don&#39;t currently provide one.</blockquote></details><a class="action gap-evidence" href="https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C" target="_blank" rel="noopener noreferrer"><span>Evidence</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></div></div></li>
     </ol>
   </section>
 
@@ -68,6 +195,10 @@
     <summary><h2 class="disclosure-title" id="proof-h">Proof &amp; sources</h2><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
     <div class="disclosure-body">
       <p class="prose">This page is built from <code>evidence.json</code> in this task's folder. Every statement on it comes from the submitted evidence; nothing is read live.</p>
+      <ul class="sources" aria-labelledby="proof-h">
+        <li><a href="https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C" target="_blank" rel="noopener noreferrer"><span class="source-title">Proof</span><span class="source-meta">drive.google.com</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+        <li><a href="https://drive.google.com/file/d/1rT1rvJM3o2aLWhqF04cRsluy9Qu2epVt/view?usp=drivesdk" target="_blank" rel="noopener noreferrer"><span class="source-title">Video</span><span class="source-meta">drive.google.com</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+      </ul>
       <ul class="sources">
         <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/03-docs-mcp-onboarding" target="_blank" rel="noopener noreferrer"><span class="source-title">Source</span><span class="source-meta">Rzbyte/pharos-season-of-ai</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
       </ul>

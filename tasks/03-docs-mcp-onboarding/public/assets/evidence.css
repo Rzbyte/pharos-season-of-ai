@@ -4,7 +4,9 @@
   .context { display: grid; gap: var(--space-1); margin-top: calc(-1 * var(--space-4)); }
   .context > div { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); font-size: var(--fs-small); }
   .context dt { color: var(--text-3); }
-  .context dd { color: var(--text-2); }
+  .context dd { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); color: var(--text-2); }
+  .env { color: var(--text); font-weight: 600; }
+  .context-note { color: var(--text-3); }
 
   /* Outcome: the result first, plainly. */
   .outcome { display: grid; gap: var(--space-3); }
@@ -13,6 +15,28 @@
   .checks li { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-small); color: var(--text); }
   .checks svg { width: 14px; height: 14px; flex: none; align-self: center; color: var(--success); }
   .outcome-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .checks li { flex-wrap: wrap; }
+  .check-detail { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+
+  /* The step-by-step log: collapsed under the journey; per stage, entries in the order they happened. */
+  .log { margin-top: var(--space-3); }
+  .log-title { font-size: 1rem; }
+  .log-stages { display: grid; gap: var(--space-6); }
+  .log-stage { display: grid; gap: var(--space-2); min-width: 0; }
+  .log-entries { display: grid; gap: var(--space-3); border-left: 1px solid var(--line); padding-left: var(--space-3); }
+  .log-entry { display: grid; gap: 2px; min-width: 0; }
+  .log-entry dt { font-size: var(--fs-label); color: var(--text-3); }
+  .log-entry dd { min-width: 0; font-size: var(--fs-small); color: var(--text-2); overflow-wrap: anywhere; }
+  .log-entry[data-kind="result"] dd { color: var(--text); }
+
+  /* An exact query, verbatim, line breaks kept. */
+  .query {
+    margin: 0; padding: var(--space-2) var(--space-3); border-left: 2px solid var(--accent); background: var(--surface);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--text); font-size: var(--fs-small); line-height: 1.55;
+    white-space: pre-line; overflow-wrap: anywhere;
+  }
+  .query + .query { margin-top: var(--space-2); }
+  .cmd { margin: 0; padding: var(--space-2) var(--space-3); overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); font: 400 var(--fs-meta)/1.6 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 
   /* Journey: four stages in a row with room, a column on a phone. The stage names carry the story;
      a detail line appears only where the evidence gives one. */
@@ -41,6 +65,19 @@
   .gap-happened { color: var(--text-2); font-size: var(--fs-small); }
   .gap-fix { font-size: var(--fs-small); color: var(--text); }
   .gap-label { display: block; color: var(--text-3); font-size: var(--fs-meta); }
+  /* Per gap: the exact query behind a small disclosure, and the evidence link beside it. */
+  .gap-more { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2) var(--space-4); margin-top: var(--space-1); }
+  .gap-query { flex: 0 1 auto; min-width: 0; }
+  .gap-query[open] { flex-basis: 100%; }
+  .gap-query > summary {
+    display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--target); cursor: pointer; list-style: none;
+    color: var(--text-2); font-size: var(--fs-small); font-weight: 600;
+  }
+  .gap-query > summary::-webkit-details-marker { display: none; }
+  .gap-query > summary:hover, .gap-query > summary:active { color: var(--text); }
+  .gap-query[open] > summary .chev svg { transform: rotate(180deg); }
+  .query-note { margin-bottom: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .gap-evidence { margin-top: 6px; }
   .shot { position: relative; display: grid; gap: var(--space-1); justify-items: start; width: 10rem; max-width: 100%; text-decoration: none; }
   .shot img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
   .shot-word { display: inline-flex; align-items: center; min-height: 32px; color: var(--text-2); font-size: var(--fs-meta); font-weight: 600; }

@@ -383,8 +383,11 @@ describe("the Task 01 page in a browser", { skip }, () => {
     const system = await look();
     assert.deepEqual([system.theme, system.saved, system.background, system.label, system.icon], [null, null, BACKGROUND.light, "Switch to dark theme", "when-light"]);
 
-    // Keyboard: Tab from the skip link reaches the toggle; Enter switches.
+    // Keyboard: from the skip link, Tab reaches the next task's arrow (a link once Task 02 has an
+    // address), then the toggle; Enter switches.
     await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Next task: 02 Event Monitor");
     await page.keyboard.press("Tab");
     assert.equal(await page.evaluate(() => document.activeElement.id), "theme-toggle");
     await page.keyboard.press("Enter");

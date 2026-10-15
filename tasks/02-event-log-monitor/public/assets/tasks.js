@@ -8,8 +8,8 @@
 /** Where each deployment lives. Fill in a production URL once it is known; null means "not linked". */
 export const DEPLOYMENTS = Object.freeze({
   lab: null,
-  "01": null,
-  "02": null,
+  "01": "https://pharos-task-01.vercel.app",
+  "02": "https://pharos-task-02.vercel.app",
   "03": null,
   "04": null,
 });

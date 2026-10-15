@@ -11,6 +11,9 @@ const shared = (name) => readFileSync(new URL(`../../../shared/ui/${name}`, impo
 const evidence = JSON.parse(read("evidence.json"));
 const html = read("public/index.html");
 
+const PROOF = "https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C";
+const VIDEO = "https://drive.google.com/file/d/1rT1rvJM3o2aLWhqF04cRsluy9Qu2epVt/view?usp=drivesdk";
+
 /** Made-up content in the shape of real evidence, for the renderer only. Never shipped. */
 const FIXTURE = {
   title: "Docs MCP Onboarding",
@@ -19,18 +22,31 @@ const FIXTURE = {
   journey: [{ stage: "Started", detail: "Fixture start" }, { stage: "Blocked", detail: null }, { stage: "Recovered", detail: null }, { stage: "Successful", detail: null }],
   outcome: ["Fixture outcome <b>one</b>"],
   gaps: [
-    { title: "Fixture gap", happened: "What happened, <script>alert(1)</script>", fix: "The fix", evidence: { thumb: "evidence/gap-1-thumb.webp", full: "evidence/gap-1.png", alt: "A fixture screenshot" } },
-    { title: "Second gap", happened: "Happened", fix: "Fix", evidence: null },
+    { title: "Fixture gap", happened: "What happened, <script>alert(1)</script>", fix: "The fix", queries: ["Fixture query"], evidence: { thumb: "evidence/gap-1-thumb.webp", full: "evidence/gap-1.png", alt: "A fixture screenshot" } },
+    { title: "Second gap", happened: "Happened", fix: "Fix", queries: ["Fixture query"], evidence: null },
   ],
   links: { proof: "https://example.com/proof", video: "https://example.com/video" },
   sources: [{ title: "A source", url: "https://example.com/source" }],
 };
 
 describe("the content", () => {
-  test("evidence.json is valid and holds only what the evidence states", () => {
+  test("evidence.json is valid and holds the submitted journey, outcome, gaps and links", () => {
     assert.deepEqual(validate(evidence), []);
     assert.deepEqual(evidence.journey.map((step) => step.stage), ["Started", "Blocked", "Recovered", "Successful"]);
-    assert.deepEqual(evidence.outcome, ["Connected to Atlantic RPC", "eth_chainId succeeded", "eth_call succeeded"]);
+    assert.ok(evidence.journey.every((step) => step.detail && step.log?.length), "every stage has one line and its log");
+    assert.deepEqual(evidence.outcome.map((line) => (typeof line === "string" ? line : line.text)), ["Atlantic RPC connected", "eth_chainId verified", "eth_call succeeded"]);
+    assert.equal(evidence.environment, "Android · Termux · ARM64");
+    assert.deepEqual(evidence.links, { proof: PROOF, video: VIDEO });
+    assert.equal(evidence.gaps.length, 3);
+    assert.ok(evidence.gaps.every((gap) => gap.queries.length >= 1 && gap.evidenceUrl === PROOF && !gap.evidence), "exact queries; evidence is the proof folder, no local screenshots");
+    // The five real queries, each asked once in the log.
+    const asked = evidence.journey.flatMap((step) => step.log.filter((entry) => entry.kind === "query").map((entry) => entry.text));
+    assert.equal(asked.length, 5);
+    assert.equal(new Set(asked).size, 5);
+    for (const gap of evidence.gaps) for (const query of gap.queries) assert.ok(asked.includes(query), "a gap's query is one of the logged queries");
+    assert.match(asked[0], /^I'm new to Pharos and I want to build something simple\./);
+    assert.match(JSON.stringify(evidence), /0xa8231/);
+    assert.match(JSON.stringify(evidence), /688689/);
   });
 
   test("bad content is refused, with the reason", () => {
@@ -41,6 +57,9 @@ describe("the content", () => {
     assert.match(validate({ ...FIXTURE, gaps: [{ ...FIXTURE.gaps[0], evidence: { thumb: "../x.png", full: "evidence/x.png", alt: "x" } }] }).join(), /under evidence\//);
     assert.match(validate({ ...FIXTURE, gaps: [{ ...FIXTURE.gaps[0], evidence: { ...FIXTURE.gaps[0].evidence, alt: "" } }] }).join(), /alt describes/);
     assert.match(validate({ ...FIXTURE, sources: [{ title: "x", url: "ftp://x" }] }).join(), /sources\[0\]/);
+    assert.match(validate({ ...FIXTURE, gaps: [{ ...FIXTURE.gaps[1], queries: [] }] }).join(), /gaps\[0\]\.queries lists the exact queries/);
+    assert.match(validate({ ...FIXTURE, gaps: [{ ...FIXTURE.gaps[1], evidenceUrl: "http://x" }] }).join(), /evidenceUrl/);
+    assert.match(validate({ ...FIXTURE, journey: [{ stage: "Started", detail: null, log: [{ kind: "guess", text: "x" }] }] }).join(), /log is a list/);
     // A list field that is not a list is reported, never a crash.
     for (const key of ["journey", "gaps", "sources"]) {
       for (const bad of [{}, "", 3]) assert.ok(validate({ ...FIXTURE, [key]: bad }).length > 0, `${key}: ${JSON.stringify(bad)}`);
@@ -56,14 +75,28 @@ describe("the page", () => {
     for (const name of ["lab.css", "lab.js", "theme.js", "tasks.js"]) assert.equal(read(`public/assets/${name}`), shared(name), name);
   });
 
-  test("the outcome is first and plain; nothing unknown is filled in", () => {
-    const order = [">Docs MCP Onboarding</h1>", 'class="panel outcome"', ">Connected to Atlantic RPC<", ">Journey</h2>", ">Proof &amp; sources</h2>"].map((needle) => html.indexOf(needle));
-    assert.ok(order.every((index) => index > 0));
+  test("the outcome first, then the journey and its log, then the three gaps, then proof", () => {
+    const order = [">Docs MCP Onboarding</h1>", ">Android · Termux · ARM64<", 'class="panel outcome"', ">Atlantic RPC connected<", ">View proof<", ">Watch video<", ">Journey</h2>", ">Step-by-step log<", ">Documentation gaps</h2>", ">Proof &amp; sources</h2>"].map((needle) => html.indexOf(needle));
+    assert.ok(order.every((index) => index > 0), JSON.stringify(order));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
-    // No gaps, proof or video link yet: those sections and actions are left out, not faked.
-    assert.doesNotMatch(html, />Gaps<|View proof|Watch video|class="context"/);
+    assert.equal(html.match(/<li class="gap">/g).length, 3);
+    assert.equal(html.match(/<li class="step" data-stage="/g).length, 4);
+    // The log and every exact query are collapsed, so the page is not a wall of text.
+    assert.match(html, /<details class="disclosure log" id="log">/);
+    assert.equal(html.match(/<details class="gap-query">/g).length, 3);
+    assert.doesNotMatch(html, /<details[^>]*\sopen/);
     assert.doesNotMatch(html, /\b(?:TODO|TBD|lorem|placeholder|coming soon|planned)\b/i);
+    assert.doesNotMatch(html, /<img\b|<dialog\b/, "no screenshots are in the repository, so none are shown");
     assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/, "no inline script");
+  });
+
+  test("proof, video and each gap's evidence point at the real Drive links, in a new tab", () => {
+    const anchors = (url) => [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>/g)].filter(([, href]) => href === url.replaceAll("&", "&amp;")).map(([tag]) => tag);
+    assert.equal(anchors(PROOF).length, 1 + 3 + 1, "View proof, three gap evidence links, and the proof source row");
+    assert.equal(anchors(VIDEO).length, 2, "Watch video and the video source row");
+    for (const tag of [...anchors(PROOF), ...anchors(VIDEO)]) assert.match(tag, /target="_blank" rel="noopener noreferrer"/);
+    assert.match(html, /<a class="btn btn-primary" href="https:\/\/drive\.google\.com\/drive\/folders\/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C"[^>]*><span>View proof<\/span>/);
+    assert.match(html, /<a class="btn" href="https:\/\/drive\.google\.com\/file\/d\/1rT1rvJM3o2aLWhqF04cRsluy9Qu2epVt\/view\?usp=drivesdk"[^>]*>.*<span>Watch video<\/span>/);
   });
 
   test("gaps render as title, what happened, the fix and a lazy thumbnail; text is escaped", () => {

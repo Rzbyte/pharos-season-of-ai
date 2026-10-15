@@ -201,7 +201,8 @@ describe("what the code never does", () => {
         assert.ok(
           // localhost: only the base for parsing a request's own path in api/search.js, never requested.
           // x.com: the author's profile in the shared footer, a link, never requested.
-          ["docs.pharos.xyz", "github.com", "www.w3.org", "localhost", "x.com"].includes(match[1]!.toLowerCase()),
+          // pharos-task-NN.vercel.app: the other task pages, in the shared task manifest, links only.
+          ["docs.pharos.xyz", "github.com", "www.w3.org", "localhost", "x.com"].includes(match[1]!.toLowerCase()) || /^pharos-task-\d\d\.vercel\.app$/.test(match[1]!.toLowerCase()),
           `${file}: unexpected host ${match[1]}`,
         );
       }

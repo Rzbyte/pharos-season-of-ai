@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 import { FOLDERS, renderMain } from "../build.mjs";
-import { LAB, TASKS } from "../public/assets/tasks.js";
+import { DEPLOYMENTS, LAB, TASKS } from "../public/assets/tasks.js";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const shared = (name) => readFileSync(new URL(`../../shared/ui/${name}`, import.meta.url), "utf8");
@@ -30,10 +30,11 @@ describe("the landing page", () => {
 
   test("a row opens its deployment when the manifest has an address, otherwise its source folder; never a dead link", () => {
     for (const task of TASKS.filter((entry) => entry.status === "built")) assert.ok(FOLDERS[task.n], task.n);
-    const linked = TASKS.map((task) => (task.n === "02" ? { ...task, href: "https://monitor.example.com/" } : task));
-    const main = renderMain(linked, LAB);
-    assert.match(main, /<a class="row-open" href="https:\/\/monitor\.example\.com\/"><span>Open<\/span>/);
-    assert.match(main, /<a class="row-open row-source" href="https:\/\/github\.com\/Rzbyte\/pharos-season-of-ai\/tree\/main\/tasks\/01-read-contract-state" target="_blank" rel="noopener noreferrer">/);
+    // 01 and 02 are deployed; 03 and 04 have no address yet.
+    for (const n of ["01", "02"]) assert.match(html, new RegExp(`<a class="row-open" href="https://pharos-task-${n}\\.vercel\\.app"><span>Open</span>`));
+    for (const folder of ["03-docs-mcp-onboarding", "04-doc-search-cli"]) assert.match(html, new RegExp(`<a class="row-open row-source" href="https://github\\.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/${folder}" target="_blank" rel="noopener noreferrer">`));
+    const linked = TASKS.map((task) => (task.n === "04" ? { ...task, href: "https://search.example.com/" } : task));
+    assert.match(renderMain(linked, LAB), /<a class="row-open" href="https:\/\/search\.example\.com\/"><span>Open<\/span>/, "an address, once set, replaces Source with Open");
     assert.doesNotMatch(html, /href=""|href="#"|href="null"/);
   });
 
@@ -47,8 +48,13 @@ describe("the landing page", () => {
     assert.doesNotMatch(planned, /Docs MCP Onboarding|Docs Onboarding/);
   });
 
-  test("every link that leaves the site opens a new tab with no opener and says so", () => {
+  test("every link that leaves the lab opens a new tab with no opener and says so; a task's own page opens in place", () => {
+    const deployments = Object.values(DEPLOYMENTS).filter(Boolean);
     for (const [anchor] of html.matchAll(/<a\b[^>]*href="https?:[^"]*"[^>]*>[\s\S]*?<\/a>/g)) {
+      if (deployments.some((url) => anchor.includes(`href="${url}"`))) {
+        assert.doesNotMatch(anchor, /target=/, anchor);
+        continue;
+      }
       assert.match(anchor, /target="_blank" rel="noopener noreferrer"/, anchor);
       assert.ok(/opens in a new tab/.test(anchor), anchor);
     }
