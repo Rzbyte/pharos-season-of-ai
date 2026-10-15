@@ -1,0 +1,25 @@
+Answer
+  Install Foundry, then use the Pharos token example:
+
+  git clone https://github.com/PharosNetwork/examples
+  cd examples/token/foundry/contract
+  forge install OpenZeppelin/openzeppelin-contracts --no-git
+  forge build
+  forge test
+
+  The example contract is src/Token.sol; its deployment script is script/DeployToken.s.sol. Set a testnet-funded deployer key, then broadcast the script to Atlantic:
+
+  export PRIVATE_KEY=
+  forge script script/DeployToken.s.sol \
+  --rpc-url https://atlantic.dplabs-internal.com \
+  --broadcast
+
+  Atlantic’s chain ID is 688689. The explorer is atlantic.pharosscan.xyz. Make sure the deployer has enough testnet tokens for gas.…
+
+Sources
+01  Atlantic Testnet
+    https://docs.pharos.xyz/getting-started/network/atlantic-testnet
+02  Write Your First Uniswap Contract
+    https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract
+
+2 docs pages asked · 3 HTTPS requests to docs.pharos.xyz · 0.6 s

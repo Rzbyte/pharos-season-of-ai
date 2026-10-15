@@ -1,0 +1,109 @@
+{
+  "format": "pharos-docs-transcript/1",
+  "about": "Every HTTPS request this run made to the Pharos docs, in order, then the result. These are plain HTTP GET requests to the public docs site, not MCP calls.",
+  "tool": {
+    "name": "pharos-docs",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "node": "v26.4.0",
+    "platform": "android"
+  },
+  "transport": "docs-http",
+  "fetchOrigin": "https://docs.pharos.xyz",
+  "indexFromCache": false,
+  "startedAt": "2026-10-15T01:45:08.749Z",
+  "finishedAt": "2026-10-15T01:45:09.361Z",
+  "argv": [
+    "How do I set up Foundry and deploy a contract to the Atlantic testnet?",
+    "--no-cache",
+    "--transcript",
+    "proof/query-b.json"
+  ],
+  "requests": [
+    {
+      "seq": 1,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/sitemap.md",
+      "purpose": "index",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 8465,
+      "ms": 161,
+      "sha256": "94d60dbe8ff97913ab7fb32a90c04ba67236726d39aab71abf6521f6f4d19fa3",
+      "excerpt": "# docs.pharos.xyz\n\n## Pharos Docs\n\n- [About Pharos](https://docs.pharos.xyz/introduction/readme.md)\n- [Vision & Mission](https://docs.pharos.xyz/introduction/vision-and-mission.md)\n- [Why Pharos](https://docs.pharos.xyz/introduction/why-pharos.md): Elevating Blockchain Efficiency: A Deep Dive into Scalability and Optimization\n- [Encyclopedia](https://docs.pharos.xyz/introduction/encyclopedia.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)\n- [Pacific Mainnet](https://docs.pharos.xyz/getting-started/network/pacific-mainnet.md)\n- [Get PROS Gas](https://docs.pharos.xyz/getting-started/get-pros-gas.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry.md)\n- [Gas Model](https://docs.pharos.xyz/getting-started/gas-model.md): Understanding Gas Refund and Gas Limit in Pharos Transactions\n- [FAQs](https://docs.pharos.xyz/getting-started/faqs.md)\n- [Validator Accountability](https://docs.pharos.xyz/node-and-validator-guide/validator-accountability.md)\n- [Validator Requiremen",
+      "body": null,
+      "error": null
+    },
+    {
+      "seq": 2,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md?ask=How%20do%20I%20set%20up%20Foundry%20and%20deploy%20a%20contract%20to%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 3028,
+      "ms": 169,
+      "sha256": "241c783b09759cf61401c66b8fef07cc03931f0d67481b5a78cb27f59c8dedaf",
+      "excerpt": "# How do I set up Foundry and deploy a contract to the Atlantic testnet?\n\nInstall [Foundry](https://book.getfoundry.sh/getting-started/installation), then use the Pharos token example:\n\n```sh\ngit clone https://github.com/PharosNetwork/examples\ncd examples/token/foundry/contract\nforge install OpenZeppelin/openzeppelin-contracts --no-git\nforge build\nforge test\n```\n\nThe example contract is `src/Token.sol`; its deployment script is `script/DeployToken.s.sol`. Set a testnet-funded deployer key, then broadcast the script to Atlantic:\n\n```sh\nexport PRIVATE_KEY=<your-private-key>\nforge script script/DeployToken.s.sol \\\n  --rpc-url https://atlantic.dplabs-internal.com \\\n  --broadcast\n```\n\nAtlantic’s chain ID is `688689`. The explorer is [atlantic.pharosscan.xyz](https://atlantic.pharosscan.xyz/). Make sure the deployer has enough testnet tokens for gas.\n\nSee [Write Your First Token](/developer-guide/foundry/write-your-first-token.md) for the contract and deployment script, and [Atlantic Testnet](/getting-started/network/atlantic-testnet.md) for network details.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an ",
+      "body": "# How do I set up Foundry and deploy a contract to the Atlantic testnet?\n\nInstall [Foundry](https://book.getfoundry.sh/getting-started/installation), then use the Pharos token example:\n\n```sh\ngit clone https://github.com/PharosNetwork/examples\ncd examples/token/foundry/contract\nforge install OpenZeppelin/openzeppelin-contracts --no-git\nforge build\nforge test\n```\n\nThe example contract is `src/Token.sol`; its deployment script is `script/DeployToken.s.sol`. Set a testnet-funded deployer key, then broadcast the script to Atlantic:\n\n```sh\nexport PRIVATE_KEY=<your-private-key>\nforge script script/DeployToken.s.sol \\\n  --rpc-url https://atlantic.dplabs-internal.com \\\n  --broadcast\n```\n\nAtlantic’s chain ID is `688689`. The explorer is [atlantic.pharosscan.xyz](https://atlantic.pharosscan.xyz/). Make sure the deployer has enough testnet tokens for gas.\n\nSee [Write Your First Token](/developer-guide/foundry/write-your-first-token.md) for the contract and deployment script, and [Atlantic Testnet](/getting-started/network/atlantic-testnet.md) for network details.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [What else to run after deploy?](https://docs.pharos.xyz?ask=What%20else%20to%20run%20after%20deploy%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Where to find deployed token address?](https://docs.pharos.xyz?ask=Where%20to%20find%20deployed%20token%20address%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [How to verify token on explorer?](https://docs.pharos.xyz?ask=How%20to%20verify%20token%20on%20explorer%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n\n# Sources:\n\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n- [Node Management](https://docs.pharos.xyz/node-and-validator-guide/node-management.md)\n- [Foundry](https://docs.pharos.xyz/developer-guide/foundry.md)\n- [Rapid Node Initialization(Testnet)](https://docs.pharos.xyz/node-and-validator-guide/rapid-node-initialization/rapid-node-initialization-testnet.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Chainlink Push Engine Feeds](https://docs.pharos.xyz/tooling-and-infrastructure/oracles/chainlink-pe.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token.md)\n- [Write Your First dApp](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-dapp.md)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract.md)\n\n",
+      "error": null
+    },
+    {
+      "seq": 3,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract.md?ask=How%20do%20I%20set%20up%20Foundry%20and%20deploy%20a%20contract%20to%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 3028,
+      "ms": 159,
+      "sha256": "241c783b09759cf61401c66b8fef07cc03931f0d67481b5a78cb27f59c8dedaf",
+      "excerpt": "# How do I set up Foundry and deploy a contract to the Atlantic testnet?\n\nInstall [Foundry](https://book.getfoundry.sh/getting-started/installation), then use the Pharos token example:\n\n```sh\ngit clone https://github.com/PharosNetwork/examples\ncd examples/token/foundry/contract\nforge install OpenZeppelin/openzeppelin-contracts --no-git\nforge build\nforge test\n```\n\nThe example contract is `src/Token.sol`; its deployment script is `script/DeployToken.s.sol`. Set a testnet-funded deployer key, then broadcast the script to Atlantic:\n\n```sh\nexport PRIVATE_KEY=<your-private-key>\nforge script script/DeployToken.s.sol \\\n  --rpc-url https://atlantic.dplabs-internal.com \\\n  --broadcast\n```\n\nAtlantic’s chain ID is `688689`. The explorer is [atlantic.pharosscan.xyz](https://atlantic.pharosscan.xyz/). Make sure the deployer has enough testnet tokens for gas.\n\nSee [Write Your First Token](/developer-guide/foundry/write-your-first-token.md) for the contract and deployment script, and [Atlantic Testnet](/getting-started/network/atlantic-testnet.md) for network details.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an ",
+      "body": "# How do I set up Foundry and deploy a contract to the Atlantic testnet?\n\nInstall [Foundry](https://book.getfoundry.sh/getting-started/installation), then use the Pharos token example:\n\n```sh\ngit clone https://github.com/PharosNetwork/examples\ncd examples/token/foundry/contract\nforge install OpenZeppelin/openzeppelin-contracts --no-git\nforge build\nforge test\n```\n\nThe example contract is `src/Token.sol`; its deployment script is `script/DeployToken.s.sol`. Set a testnet-funded deployer key, then broadcast the script to Atlantic:\n\n```sh\nexport PRIVATE_KEY=<your-private-key>\nforge script script/DeployToken.s.sol \\\n  --rpc-url https://atlantic.dplabs-internal.com \\\n  --broadcast\n```\n\nAtlantic’s chain ID is `688689`. The explorer is [atlantic.pharosscan.xyz](https://atlantic.pharosscan.xyz/). Make sure the deployer has enough testnet tokens for gas.\n\nSee [Write Your First Token](/developer-guide/foundry/write-your-first-token.md) for the contract and deployment script, and [Atlantic Testnet](/getting-started/network/atlantic-testnet.md) for network details.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [What else to run after deploy?](https://docs.pharos.xyz?ask=What%20else%20to%20run%20after%20deploy%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Where to find deployed token address?](https://docs.pharos.xyz?ask=Where%20to%20find%20deployed%20token%20address%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [How to verify token on explorer?](https://docs.pharos.xyz?ask=How%20to%20verify%20token%20on%20explorer%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n\n# Sources:\n\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n- [Node Management](https://docs.pharos.xyz/node-and-validator-guide/node-management.md)\n- [Foundry](https://docs.pharos.xyz/developer-guide/foundry.md)\n- [Rapid Node Initialization(Testnet)](https://docs.pharos.xyz/node-and-validator-guide/rapid-node-initialization/rapid-node-initialization-testnet.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Chainlink Push Engine Feeds](https://docs.pharos.xyz/tooling-and-infrastructure/oracles/chainlink-pe.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token.md)\n- [Write Your First dApp](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-dapp.md)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract.md)\n\n",
+      "error": null
+    }
+  ],
+  "result": {
+    "schema": "pharos-docs-result/1",
+    "status": "answered",
+    "question": "How do I set up Foundry and deploy a contract to the Atlantic testnet?",
+    "answer": "Install Foundry, then use the Pharos token example:\n\ngit clone https://github.com/PharosNetwork/examples\ncd examples/token/foundry/contract\nforge install OpenZeppelin/openzeppelin-contracts --no-git\nforge build\nforge test\n\nThe example contract is src/Token.sol; its deployment script is script/DeployToken.s.sol. Set a testnet-funded deployer key, then broadcast the script to Atlantic:\n\nexport PRIVATE_KEY=\nforge script script/DeployToken.s.sol \\\n--rpc-url https://atlantic.dplabs-internal.com \\\n--broadcast\n\nAtlantic’s chain ID is 688689. The explorer is atlantic.pharosscan.xyz. Make sure the deployer has enough testnet tokens for gas.…",
+    "sources": [
+      {
+        "title": "Atlantic Testnet",
+        "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet"
+      },
+      {
+        "title": "Write Your First Uniswap Contract",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract"
+      }
+    ],
+    "reason": null,
+    "suggestions": [],
+    "error": null,
+    "meta": {
+      "tool": "pharos-docs",
+      "version": "1.0.0",
+      "transport": "docs-http",
+      "pagesConsulted": [
+        {
+          "title": "Atlantic Testnet",
+          "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet",
+          "requestUrl": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md?ask=How%20do%20I%20set%20up%20Foundry%20and%20deploy%20a%20contract%20to%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+          "kind": "answer",
+          "outcome": "used"
+        },
+        {
+          "title": "Write Your First Uniswap Contract",
+          "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract",
+          "requestUrl": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract.md?ask=How%20do%20I%20set%20up%20Foundry%20and%20deploy%20a%20contract%20to%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+          "kind": "answer",
+          "outcome": "used"
+        }
+      ],
+      "requests": 3,
+      "elapsedMs": 608
+    }
+  }
+}

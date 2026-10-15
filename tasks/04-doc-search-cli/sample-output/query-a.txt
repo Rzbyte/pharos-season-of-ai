@@ -1,0 +1,8 @@
+Answer
+  The Atlantic testnet chain ID is 688689. See Atlantic Testnet.
+
+Sources
+01  Atlantic Testnet
+    https://docs.pharos.xyz/getting-started/network/atlantic-testnet
+
+1 docs page asked · 2 HTTPS requests to docs.pharos.xyz · 1.4 s

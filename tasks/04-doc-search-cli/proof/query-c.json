@@ -1,0 +1,113 @@
+{
+  "format": "pharos-docs-transcript/1",
+  "about": "Every HTTPS request this run made to the Pharos docs, in order, then the result. These are plain HTTP GET requests to the public docs site, not MCP calls.",
+  "tool": {
+    "name": "pharos-docs",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "node": "v26.4.0",
+    "platform": "android"
+  },
+  "transport": "docs-http",
+  "fetchOrigin": "https://docs.pharos.xyz",
+  "indexFromCache": false,
+  "startedAt": "2026-10-15T01:45:09.378Z",
+  "finishedAt": "2026-10-15T01:45:09.992Z",
+  "argv": [
+    "How do I deploy an Anchor program to Solana?",
+    "--no-cache",
+    "--transcript",
+    "proof/query-c.json"
+  ],
+  "requests": [
+    {
+      "seq": 1,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/sitemap.md",
+      "purpose": "index",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 8465,
+      "ms": 170,
+      "sha256": "94d60dbe8ff97913ab7fb32a90c04ba67236726d39aab71abf6521f6f4d19fa3",
+      "excerpt": "# docs.pharos.xyz\n\n## Pharos Docs\n\n- [About Pharos](https://docs.pharos.xyz/introduction/readme.md)\n- [Vision & Mission](https://docs.pharos.xyz/introduction/vision-and-mission.md)\n- [Why Pharos](https://docs.pharos.xyz/introduction/why-pharos.md): Elevating Blockchain Efficiency: A Deep Dive into Scalability and Optimization\n- [Encyclopedia](https://docs.pharos.xyz/introduction/encyclopedia.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)\n- [Pacific Mainnet](https://docs.pharos.xyz/getting-started/network/pacific-mainnet.md)\n- [Get PROS Gas](https://docs.pharos.xyz/getting-started/get-pros-gas.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry.md)\n- [Gas Model](https://docs.pharos.xyz/getting-started/gas-model.md): Understanding Gas Refund and Gas Limit in Pharos Transactions\n- [FAQs](https://docs.pharos.xyz/getting-started/faqs.md)\n- [Validator Accountability](https://docs.pharos.xyz/node-and-validator-guide/validator-accountability.md)\n- [Validator Requiremen",
+      "body": null,
+      "error": null
+    },
+    {
+      "seq": 2,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/developer-guide/foundry.md?ask=How%20do%20I%20deploy%20an%20Anchor%20program%20to%20Solana%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 2733,
+      "ms": 172,
+      "sha256": "c52d107114142038fbc88f3e35f24723bc6e5c43ff914ff57a3af58452ff959d",
+      "excerpt": "# How do I deploy an Anchor program to Solana?\n\nI cannot find instructions for deploying an Anchor program to Solana in the Pharos documentation. The [Rust](/developer-guide/rust.md) covers Pharos’s Rust/WASM toolchain, not Anchor or Solana deployment.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Where is Anchor deployment documented?](https://docs.pharos.xyz?ask=Where%20is%20Anchor%20deployment%20documented%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Do you have Solana deployment steps in Pharos docs?](https://docs.pharos.xyz?ask=Do%20you%20have%20Solana%20deployment%20steps%20in%20Pharos%20docs%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Which doc covers Solana/Anchor workflows?](https://docs.pharos.xyz?ask=Which%20doc%20covers%20Solana%2FAnchor%20workflows%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20",
+      "body": "# How do I deploy an Anchor program to Solana?\n\nI cannot find instructions for deploying an Anchor program to Solana in the Pharos documentation. The [Rust](/developer-guide/rust.md) covers Pharos’s Rust/WASM toolchain, not Anchor or Solana deployment.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Where is Anchor deployment documented?](https://docs.pharos.xyz?ask=Where%20is%20Anchor%20deployment%20documented%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Do you have Solana deployment steps in Pharos docs?](https://docs.pharos.xyz?ask=Do%20you%20have%20Solana%20deployment%20steps%20in%20Pharos%20docs%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Which doc covers Solana/Anchor workflows?](https://docs.pharos.xyz?ask=Which%20doc%20covers%20Solana%2FAnchor%20workflows%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n\n# Sources:\n\n- [Validator Node Deployment](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment.md)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract.md)\n- [Rust](https://docs.pharos.xyz/developer-guide/rust.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token.md)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract.md)\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft.md)\n- [Write Your First dApp](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-dapp.md)\n- [Write Your First dApp](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-dapp.md)\n- [Using Binary](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment/using-binary-deployment.md)\n- [Piggy Bank Tutorial](https://docs.pharos.xyz/tooling-and-infrastructure/pharos-skill-engine-guide/piggybank-skill-guide.md)\n- [Using Docker](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment/using-docker-deployment.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n\n",
+      "error": null
+    },
+    {
+      "seq": 3,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/developer-guide/hardhat.md?ask=How%20do%20I%20deploy%20an%20Anchor%20program%20to%20Solana%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 2733,
+      "ms": 232,
+      "sha256": "c52d107114142038fbc88f3e35f24723bc6e5c43ff914ff57a3af58452ff959d",
+      "excerpt": "# How do I deploy an Anchor program to Solana?\n\nI cannot find instructions for deploying an Anchor program to Solana in the Pharos documentation. The [Rust](/developer-guide/rust.md) covers Pharos’s Rust/WASM toolchain, not Anchor or Solana deployment.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Where is Anchor deployment documented?](https://docs.pharos.xyz?ask=Where%20is%20Anchor%20deployment%20documented%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Do you have Solana deployment steps in Pharos docs?](https://docs.pharos.xyz?ask=Do%20you%20have%20Solana%20deployment%20steps%20in%20Pharos%20docs%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Which doc covers Solana/Anchor workflows?](https://docs.pharos.xyz?ask=Which%20doc%20covers%20Solana%2FAnchor%20workflows%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20",
+      "body": "# How do I deploy an Anchor program to Solana?\n\nI cannot find instructions for deploying an Anchor program to Solana in the Pharos documentation. The [Rust](/developer-guide/rust.md) covers Pharos’s Rust/WASM toolchain, not Anchor or Solana deployment.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Where is Anchor deployment documented?](https://docs.pharos.xyz?ask=Where%20is%20Anchor%20deployment%20documented%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Do you have Solana deployment steps in Pharos docs?](https://docs.pharos.xyz?ask=Do%20you%20have%20Solana%20deployment%20steps%20in%20Pharos%20docs%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Which doc covers Solana/Anchor workflows?](https://docs.pharos.xyz?ask=Which%20doc%20covers%20Solana%2FAnchor%20workflows%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n\n# Sources:\n\n- [Validator Node Deployment](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment.md)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract.md)\n- [Rust](https://docs.pharos.xyz/developer-guide/rust.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token.md)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract.md)\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft.md)\n- [Write Your First dApp](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-dapp.md)\n- [Write Your First dApp](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-dapp.md)\n- [Using Binary](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment/using-binary-deployment.md)\n- [Piggy Bank Tutorial](https://docs.pharos.xyz/tooling-and-infrastructure/pharos-skill-engine-guide/piggybank-skill-guide.md)\n- [Using Docker](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment/using-docker-deployment.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n\n",
+      "error": null
+    }
+  ],
+  "result": {
+    "schema": "pharos-docs-result/1",
+    "status": "no_answer",
+    "question": "How do I deploy an Anchor program to Solana?",
+    "answer": null,
+    "sources": [],
+    "reason": "not_in_docs",
+    "suggestions": [
+      {
+        "title": "Foundry",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry"
+      },
+      {
+        "title": "Hardhat",
+        "url": "https://docs.pharos.xyz/developer-guide/hardhat"
+      },
+      {
+        "title": "Validator Node Deployment",
+        "url": "https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment"
+      }
+    ],
+    "error": null,
+    "meta": {
+      "tool": "pharos-docs",
+      "version": "1.0.0",
+      "transport": "docs-http",
+      "pagesConsulted": [
+        {
+          "title": "Foundry",
+          "url": "https://docs.pharos.xyz/developer-guide/foundry",
+          "requestUrl": "https://docs.pharos.xyz/developer-guide/foundry.md?ask=How%20do%20I%20deploy%20an%20Anchor%20program%20to%20Solana%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+          "kind": "answer",
+          "outcome": "not_in_docs"
+        },
+        {
+          "title": "Hardhat",
+          "url": "https://docs.pharos.xyz/developer-guide/hardhat",
+          "requestUrl": "https://docs.pharos.xyz/developer-guide/hardhat.md?ask=How%20do%20I%20deploy%20an%20Anchor%20program%20to%20Solana%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+          "kind": "answer",
+          "outcome": "not_in_docs"
+        }
+      ],
+      "requests": 3,
+      "elapsedMs": 603
+    }
+  }
+}

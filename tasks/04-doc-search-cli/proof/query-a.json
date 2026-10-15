@@ -1,0 +1,84 @@
+{
+  "format": "pharos-docs-transcript/1",
+  "about": "Every HTTPS request this run made to the Pharos docs, in order, then the result. These are plain HTTP GET requests to the public docs site, not MCP calls.",
+  "tool": {
+    "name": "pharos-docs",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "node": "v26.4.0",
+    "platform": "android"
+  },
+  "transport": "docs-http",
+  "fetchOrigin": "https://docs.pharos.xyz",
+  "indexFromCache": false,
+  "startedAt": "2026-10-15T01:45:07.287Z",
+  "finishedAt": "2026-10-15T01:45:08.719Z",
+  "argv": [
+    "What is the chain ID of the Atlantic testnet?",
+    "--no-cache",
+    "--transcript",
+    "proof/query-a.json"
+  ],
+  "requests": [
+    {
+      "seq": 1,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/sitemap.md",
+      "purpose": "index",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 8465,
+      "ms": 1039,
+      "sha256": "94d60dbe8ff97913ab7fb32a90c04ba67236726d39aab71abf6521f6f4d19fa3",
+      "excerpt": "# docs.pharos.xyz\n\n## Pharos Docs\n\n- [About Pharos](https://docs.pharos.xyz/introduction/readme.md)\n- [Vision & Mission](https://docs.pharos.xyz/introduction/vision-and-mission.md)\n- [Why Pharos](https://docs.pharos.xyz/introduction/why-pharos.md): Elevating Blockchain Efficiency: A Deep Dive into Scalability and Optimization\n- [Encyclopedia](https://docs.pharos.xyz/introduction/encyclopedia.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)\n- [Pacific Mainnet](https://docs.pharos.xyz/getting-started/network/pacific-mainnet.md)\n- [Get PROS Gas](https://docs.pharos.xyz/getting-started/get-pros-gas.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry.md)\n- [Gas Model](https://docs.pharos.xyz/getting-started/gas-model.md): Understanding Gas Refund and Gas Limit in Pharos Transactions\n- [FAQs](https://docs.pharos.xyz/getting-started/faqs.md)\n- [Validator Accountability](https://docs.pharos.xyz/node-and-validator-guide/validator-accountability.md)\n- [Validator Requiremen",
+      "body": null,
+      "error": null
+    },
+    {
+      "seq": 2,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md?ask=What%20is%20the%20chain%20ID%20of%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 2176,
+      "ms": 224,
+      "sha256": "ea4c2cbbe1f97a0b706f0d0b77bb72a682500475a6b50ecc9dc35efdaa740319",
+      "excerpt": "# What is the chain ID of the Atlantic testnet?\n\nThe Atlantic testnet chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet.md).\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Why 688689 as chainId?](https://docs.pharos.xyz?ask=Why%20688689%20as%20chainId%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Where to find Atlantic chain info?](https://docs.pharos.xyz?ask=Where%20to%20find%20Atlantic%20chain%20info%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [What if I need Pacific chainId?](https://docs.pharos.xyz?ask=What%20if%20I%20need%20Pacific%20chainId%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n\n# Sources:\n\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)",
+      "body": "# What is the chain ID of the Atlantic testnet?\n\nThe Atlantic testnet chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet.md).\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Why 688689 as chainId?](https://docs.pharos.xyz?ask=Why%20688689%20as%20chainId%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Where to find Atlantic chain info?](https://docs.pharos.xyz?ask=Where%20to%20find%20Atlantic%20chain%20info%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [What if I need Pacific chainId?](https://docs.pharos.xyz?ask=What%20if%20I%20need%20Pacific%20chainId%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n\n# Sources:\n\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)\n- [Node Management](https://docs.pharos.xyz/node-and-validator-guide/node-management.md)\n- [Cross Chain Infrastructure](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token.md)\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft.md)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token.md)\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-nft.md)\n- [Rapid Node Initialization(Testnet)](https://docs.pharos.xyz/node-and-validator-guide/rapid-node-initialization/rapid-node-initialization-testnet.md)\n- [Piggy Bank Tutorial](https://docs.pharos.xyz/tooling-and-infrastructure/pharos-skill-engine-guide/piggybank-skill-guide.md)\n- [Chainlink Push Engine Feeds](https://docs.pharos.xyz/tooling-and-infrastructure/oracles/chainlink-pe.md)\n\n",
+      "error": null
+    }
+  ],
+  "result": {
+    "schema": "pharos-docs-result/1",
+    "status": "answered",
+    "question": "What is the chain ID of the Atlantic testnet?",
+    "answer": "The Atlantic testnet chain ID is 688689. See Atlantic Testnet.",
+    "sources": [
+      {
+        "title": "Atlantic Testnet",
+        "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet"
+      }
+    ],
+    "reason": null,
+    "suggestions": [],
+    "error": null,
+    "meta": {
+      "tool": "pharos-docs",
+      "version": "1.0.0",
+      "transport": "docs-http",
+      "pagesConsulted": [
+        {
+          "title": "Atlantic Testnet",
+          "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet",
+          "requestUrl": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md?ask=What%20is%20the%20chain%20ID%20of%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+          "kind": "answer",
+          "outcome": "used"
+        }
+      ],
+      "requests": 2,
+      "elapsedMs": 1360
+    }
+  }
+}

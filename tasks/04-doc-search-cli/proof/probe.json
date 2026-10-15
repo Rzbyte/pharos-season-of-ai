@@ -1,0 +1,167 @@
+{
+  "startedAt": "2026-10-15T01:44:47.444Z",
+  "index": {
+    "pages": 72,
+    "sample": [
+      {
+        "title": "About Pharos",
+        "path": "/introduction/readme",
+        "url": "https://docs.pharos.xyz/introduction/readme",
+        "section": "Pharos Docs"
+      },
+      {
+        "title": "Vision & Mission",
+        "path": "/introduction/vision-and-mission",
+        "url": "https://docs.pharos.xyz/introduction/vision-and-mission",
+        "section": "Pharos Docs"
+      },
+      {
+        "title": "Why Pharos",
+        "path": "/introduction/why-pharos",
+        "url": "https://docs.pharos.xyz/introduction/why-pharos",
+        "section": "Pharos Docs"
+      },
+      {
+        "title": "Encyclopedia",
+        "path": "/introduction/encyclopedia",
+        "url": "https://docs.pharos.xyz/introduction/encyclopedia",
+        "section": "Pharos Docs"
+      },
+      {
+        "title": "Network",
+        "path": "/getting-started/network",
+        "url": "https://docs.pharos.xyz/getting-started/network",
+        "section": "Pharos Docs"
+      },
+      {
+        "title": "Atlantic Testnet",
+        "path": "/getting-started/network/atlantic-testnet",
+        "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet",
+        "section": "Pharos Docs"
+      },
+      {
+        "title": "Pacific Mainnet",
+        "path": "/getting-started/network/pacific-mainnet",
+        "url": "https://docs.pharos.xyz/getting-started/network/pacific-mainnet",
+        "section": "Pharos Docs"
+      },
+      {
+        "title": "Get PROS Gas",
+        "path": "/getting-started/get-pros-gas",
+        "url": "https://docs.pharos.xyz/getting-started/get-pros-gas",
+        "section": "Pharos Docs"
+      }
+    ],
+    "expectedPresent": [
+      "/getting-started/network/atlantic-testnet",
+      "/getting-started/network/pacific-mainnet",
+      "/getting-started/canonical-contracts",
+      "/getting-started/token-registry",
+      "/developer-guide/foundry",
+      "/developer-guide/hardhat",
+      "/api-and-sdk/json-rpc-methods",
+      "/tooling-and-infrastructure/pharos-skill-engine-guide",
+      "/tooling-and-infrastructure/rpc"
+    ],
+    "expectedMissing": []
+  },
+  "asks": [
+    {
+      "path": "/getting-started/network/atlantic-testnet",
+      "question": "What is the chain ID of the Atlantic testnet?",
+      "kind": "answer",
+      "via": "md-ask",
+      "chars": 2174,
+      "head": "# What is the chain ID of the Atlantic testnet?\n\nThe Atlantic testnet chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet.md).\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Why 688689 as chainId?](https://docs.pharos.xyz?ask=Why%20688689%20as%20chainId%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Where to find Atlantic chain in",
+      "verdict": {
+        "ok": true,
+        "reason": null,
+        "answer": "The Atlantic testnet chain ID is 688689. See Atlantic Testnet."
+      }
+    },
+    {
+      "path": "/developer-guide/foundry",
+      "question": "How do I deploy a contract with Foundry?",
+      "kind": "answer",
+      "via": "md-ask",
+      "chars": 3036,
+      "head": "# How do I deploy a contract with Foundry?\n\nTo deploy with Foundry on Pharos, compile your contract, create a deployment script, then broadcast it to a Pharos RPC endpoint.\n\n1. Set your deployer key and compile:\n\n```bash\nexport PRIVATE_KEY=<your_private_key>\nforge build\n```\n\n2. Create `script/DeployToken.s.sol`. In the script, read the key and broadcast the deployment:\n\n```solidity\nimport \"forge-std/Script.sol\";\nimport \"../src/Token.sol\";\n\ncontract DeployToken is Script {\n    function run() external {\n        uint256 key = vm.envUint(\"PRIVATE_KEY\");\n        vm.startBroadcast(key);\n        Toke",
+      "verdict": {
+        "ok": true,
+        "reason": null,
+        "answer": "To deploy with Foundry on Pharos, compile your contract, create a deployment script, then broadcast it to a Pharos RPC endpoint.\n\n- Set your deployer key and compile:\n\nexport PRIVATE_KEY=\nforge build\n\n- Create script/DeployToken.s.sol. In the script, read the key and broadcast the deployment:\n\nimport \"forge-std/Script.sol\";\nimport \"../src/Token.sol\";\n\ncontract DeployToken is Script {\nfunction run() external {\nuint256 key = vm.envUint(\"PRIVATE_KEY\");\nvm.startBroadcast(key);\nToken token = new Token(1_000_000);\nvm.stopBroadcast();\n}\n}\n\nAdjust the contract and constructor arguments to match yours.\n\n- Broadcast the script:\n\nforge script script/DeployToken.s.sol --rpc-url --broadcast…"
+      }
+    },
+    {
+      "path": "/developer-guide/hardhat",
+      "question": "How do I deploy an Anchor program to Solana?",
+      "kind": "answer",
+      "via": "md-ask",
+      "chars": 2729,
+      "head": "# How do I deploy an Anchor program to Solana?\n\nI cannot find instructions for deploying an Anchor program to Solana in the Pharos documentation. The [Rust](/developer-guide/rust.md) covers Pharos’s Rust/WASM toolchain, not Anchor or Solana deployment.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Where is Anchor deployment documented?](https://docs.pharos.xyz?ask=Where%20is%20Anchor%20deployment%20documented%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20",
+      "verdict": {
+        "ok": false,
+        "reason": "not_in_docs",
+        "answer": null
+      }
+    }
+  ],
+  "requests": [
+    {
+      "seq": 1,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/sitemap.md",
+      "purpose": "index",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 8465,
+      "ms": 4221,
+      "sha256": "94d60dbe8ff97913ab7fb32a90c04ba67236726d39aab71abf6521f6f4d19fa3",
+      "excerpt": "# docs.pharos.xyz\n\n## Pharos Docs\n\n- [About Pharos](https://docs.pharos.xyz/introduction/readme.md)\n- [Vision & Mission](https://docs.pharos.xyz/introduction/vision-and-mission.md)\n- [Why Pharos](https://docs.pharos.xyz/introduction/why-pharos.md): Elevating Blockchain Efficiency: A Deep Dive into Scalability and Optimization\n- [Encyclopedia](https://docs.pharos.xyz/introduction/encyclopedia.md)\n- [Network](https://docs.pharos.xyz/getting-started/network.md)\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)\n- [Pacific Mainnet](https://docs.pharos.xyz/getting-started/network/pacific-mainnet.md)\n- [Get PROS Gas](https://docs.pharos.xyz/getting-started/get-pros-gas.md)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts.md)\n- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry.md)\n- [Gas Model](https://docs.pharos.xyz/getting-started/gas-model.md): Understanding Gas Refund and Gas Limit in Pharos Transactions\n- [FAQs](https://docs.pharos.xyz/getting-started/faqs.md)\n- [Validator Accountability](https://docs.pharos.xyz/node-and-validator-guide/validator-accountability.md)\n- [Validator Requiremen",
+      "error": null,
+      "bodyChars": null
+    },
+    {
+      "seq": 2,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md?ask=What%20is%20the%20chain%20ID%20of%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 2176,
+      "ms": 179,
+      "sha256": "ea4c2cbbe1f97a0b706f0d0b77bb72a682500475a6b50ecc9dc35efdaa740319",
+      "excerpt": "# What is the chain ID of the Atlantic testnet?\n\nThe Atlantic testnet chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet.md).\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Why 688689 as chainId?](https://docs.pharos.xyz?ask=Why%20688689%20as%20chainId%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Where to find Atlantic chain info?](https://docs.pharos.xyz?ask=Where%20to%20find%20Atlantic%20chain%20info%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [What if I need Pacific chainId?](https://docs.pharos.xyz?ask=What%20if%20I%20need%20Pacific%20chainId%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n\n# Sources:\n\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md)",
+      "error": null,
+      "bodyChars": 2176
+    },
+    {
+      "seq": 3,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/developer-guide/foundry.md?ask=How%20do%20I%20deploy%20a%20contract%20with%20Foundry%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 3038,
+      "ms": 193,
+      "sha256": "0e64ad9a2f1484fab89226303503cc34ee208f83e66bf5a83d63c75d6995fbbd",
+      "excerpt": "# How do I deploy a contract with Foundry?\n\nTo deploy with Foundry on Pharos, compile your contract, create a deployment script, then broadcast it to a Pharos RPC endpoint.\n\n1. Set your deployer key and compile:\n\n```bash\nexport PRIVATE_KEY=<your_private_key>\nforge build\n```\n\n2. Create `script/DeployToken.s.sol`. In the script, read the key and broadcast the deployment:\n\n```solidity\nimport \"forge-std/Script.sol\";\nimport \"../src/Token.sol\";\n\ncontract DeployToken is Script {\n    function run() external {\n        uint256 key = vm.envUint(\"PRIVATE_KEY\");\n        vm.startBroadcast(key);\n        Token token = new Token(1_000_000);\n        vm.stopBroadcast();\n    }\n}\n```\n\nAdjust the contract and constructor arguments to match yours.\n\n3. Broadcast the script:\n\n```bash\nforge script script/DeployToken.s.sol --rpc-url <PHAROS_RPC_URL> --broadcast\n```\n\nUse an RPC URL for your target Pharos network, and ensure the deployer has enough native tokens for gas. See [Write Your First Token](/developer-guide/foundry/write-your-first-token.md) for the full Foundry example.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an H",
+      "error": null,
+      "bodyChars": 3038
+    },
+    {
+      "seq": 4,
+      "method": "GET",
+      "url": "https://docs.pharos.xyz/developer-guide/hardhat.md?ask=How%20do%20I%20deploy%20an%20Anchor%20program%20to%20Solana%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
+      "purpose": "ask",
+      "status": 200,
+      "contentType": "text/markdown; charset=utf-8",
+      "bytes": 2733,
+      "ms": 148,
+      "sha256": "c52d107114142038fbc88f3e35f24723bc6e5c43ff914ff57a3af58452ff959d",
+      "excerpt": "# How do I deploy an Anchor program to Solana?\n\nI cannot find instructions for deploying an Anchor program to Solana in the Pharos documentation. The [Rust](/developer-guide/rust.md) covers Pharos’s Rust/WASM toolchain, not Anchor or Solana deployment.\n\n# Suggested Follow-up Questions:\n\nIf you need more information, consider asking one of these follow-up questions by performing an HTTP GET request on the URL:\n\n- [Where is Anchor deployment documented?](https://docs.pharos.xyz?ask=Where%20is%20Anchor%20deployment%20documented%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Do you have Solana deployment steps in Pharos docs?](https://docs.pharos.xyz?ask=Do%20you%20have%20Solana%20deployment%20steps%20in%20Pharos%20docs%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.)\n- [Which doc covers Solana/Anchor workflows?](https://docs.pharos.xyz?ask=Which%20doc%20covers%20Solana%2FAnchor%20workflows%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20",
+      "error": null,
+      "bodyChars": 2731
+    }
+  ]
+}
