@@ -6,8 +6,11 @@
 // An event is shown once, the first time it appears; the overlap between consecutive windows only
 // counts as duplicates. The cursor moves only on a good answer that reaches past it.
 
-/** Events kept on screen, newest first. */
-export const FEED_LIMIT = 50;
+/**
+ * Events kept in memory, newest first: a long session's history. The page renders only a bounded
+ * slice of it; past this many, the oldest are dropped and counted in `dropped`.
+ */
+export const FEED_LIMIT = 2_000;
 /** Dedup memory: keys remembered, oldest forgotten first. */
 export const SEEN_LIMIT = 5_000;
 
@@ -17,7 +20,7 @@ const HASH = /^0x[0-9a-f]{64}$/;
 const DIGITS = /^(?:0|[1-9]\d*)$/;
 
 export function createFeed() {
-  return { lastChecked: null, startBlock: null, items: [], seen: new Map(), shown: 0, newSinceStart: 0, duplicates: 0, retracted: 0 };
+  return { lastChecked: null, startBlock: null, items: [], seen: new Map(), shown: 0, newSinceStart: 0, duplicates: 0, retracted: 0, dropped: 0 };
 }
 
 /**
@@ -63,7 +66,9 @@ export function applyWindow(feed, data, { first = false } = {}) {
     }
   }
 
-  feed.items = [...[...result.added].reverse(), ...feed.items].slice(0, FEED_LIMIT);
+  const items = [...[...result.added].reverse(), ...feed.items];
+  feed.dropped += Math.max(0, items.length - FEED_LIMIT);
+  feed.items = items.slice(0, FEED_LIMIT);
   feed.shown += result.added.length;
   if (!first) feed.newSinceStart += result.added.length;
   feed.lastChecked = String(to);

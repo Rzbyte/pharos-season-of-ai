@@ -1,55 +1,95 @@
-/* Task 02 page: the monitor's own pieces, in the `task` layer of lab.css. Everything else (tokens,
-   shell, panel, status, rows, actions, disclosure) is the shared design system. */
-@layer task {
-  .controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
-  .controls .btn { min-height: 44px; }
-  .controls .btn-primary { padding: 0 18px; }
-  .btn:disabled { cursor: default; color: var(--text-3); border-color: var(--line); background: none; }
-  .btn-primary:disabled { border-color: var(--line-strong); background: var(--surface-2); color: var(--text-3); }
-  .btn:disabled:hover { border-color: var(--line); background: none; }
-  .btn-primary:disabled:hover { border-color: var(--line-strong); background: var(--surface-2); }
-  @media (max-width: 379px) {
-    #monitor .panel-head { flex-wrap: wrap; }
-    .controls { width: 100%; justify-content: stretch; }
-    .controls .btn { flex: 1; justify-content: center; }
-  }
-  #monitor .figure { font-variant-numeric: tabular-nums; }
-  #window-meta { margin-top: var(--space-1); }
-  body[data-state="paused"] #monitor .figure, body[data-state="error"] #monitor .figure { color: var(--text-2); }
+/* Task 02 page: the monitor's own pieces, in the `task` layer of lab.css. Tokens, shell, panel, status,
+   buttons, actions and the proof disclosure are the shared design system.
 
-  /* The feed: one card per event, newest first. A new event carries an accent edge and a "New"
-     badge; events found by the first check say "At start". */
-  .feed { display: grid; gap: var(--space-3); }
-  .feed-empty { color: var(--text-2); font-size: var(--fs-small); }
-  /* Initial events: secondary, collapsed under the new ones. */
-  .initial { margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--line); }
-  .initial .disclosure-title { font-size: var(--fs-body); }
-  .initial .disclosure-body { padding-top: var(--space-4); }
-  .event-badge:empty { display: none; }
-  .event {
-    container: event / inline-size; display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-4);
-    border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+   Layout: phones and tablets read top to bottom (what is watched and whether it runs, then this
+   session's events, then the initial history). From 960px the monitor sits in a narrow left column
+   that stays in view, and the events take the wide right column, so the latest event is on the
+   first screen. Events are rows in one surface, not a wall of cards; the latest is the largest. */
+@layer task {
+  .workspace { display: grid; gap: var(--space-8); padding-block: var(--space-6) var(--section-y); }
+  .control-col .task-title { font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.25rem); }
+  .control-col, .feed-col { display: grid; gap: var(--space-6); align-content: start; min-width: 0; }
+  @media (min-width: 960px) {
+    .workspace { grid-template-columns: minmax(300px, 4fr) minmax(0, 7fr); gap: 48px; align-items: start; }
   }
-  .event[data-fresh] { border-left: 3px solid var(--accent); }
-  .event-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
-  .event-kind { font-family: var(--caption); font-size: var(--fs-label); letter-spacing: .02em; text-transform: uppercase; color: var(--text-2); }
+  /* The monitor stays in view while the feed scrolls, only where the column (with its notes) fits. */
+  @media (min-width: 960px) and (min-height: 820px) {
+    .control-col { position: sticky; top: var(--space-6); }
+  }
+
+  /* ── the monitor: what is watched, whether it runs, the one control ── */
+  .monitor { display: grid; gap: var(--space-4); }
+  .watch { display: grid; gap: 2px; min-width: 0; }
+  .watch-name { font-size: var(--fs-h2); font-weight: 600; line-height: 1.3; color: var(--text); }
+  .watch-event code { font-size: var(--fs-meta); color: var(--text-2); overflow-wrap: anywhere; }
+  .watch-contract { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: var(--space-2); }
+  .watch-contract code { font-size: var(--fs-meta); color: var(--text-3); }
+  .state { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--line); }
+  .state .status { font-size: var(--fs-body); }
+  .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .facts > div { display: grid; gap: 2px; min-width: 0; }
+  .facts dt { font-size: var(--fs-meta); color: var(--text-3); }
+  .facts dd { font-size: var(--fs-body); color: var(--text); font-variant-numeric: tabular-nums; }
+  .facts .fact-block { font-size: 1.375rem; font-weight: 600; line-height: 1.2; }
+  /* One height in both states, so Stop/Start never shifts what follows. */
+  .toggle { width: 100%; min-height: 48px; }
+  .monitor .note { margin-top: 0; }
+  .monitor-meta { font-size: var(--fs-meta); color: var(--text-3); }
+  body[data-state="paused"] .fact-block, body[data-state="error"] .fact-block { color: var(--text-2); }
+
+  /* ── event lists ── */
+  .block-head { display: grid; gap: 2px; margin-bottom: var(--space-3); }
+  .block-title { font-size: var(--fs-h2); line-height: 1.3; letter-spacing: -.01em; }
+  .block-count { color: var(--text-2); font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
+  .block-title:focus-visible { outline-offset: 4px; }
+  .feed-empty {
+    padding: var(--space-4); border: 1px dashed var(--line-strong); border-radius: var(--radius);
+    color: var(--text-2); font-size: var(--fs-small);
+  }
+  .events { container: events / inline-size; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .events > li + li { border-top: 1px solid var(--line); }
+  @media (max-width: 599px) {
+    .events, .feed-empty { margin-inline: calc(-1 * var(--pad-x)); border-inline: 0; border-radius: 0; }
+  }
+
+  .event { display: grid; gap: 6px; min-width: 0; padding: 14px var(--panel-pad); }
+  .event[data-new] { box-shadow: inset 3px 0 0 var(--accent); }
+  .event-eyebrow { display: flex; flex-wrap: wrap; gap: 0 8px; font-size: var(--fs-meta); color: var(--text-3); }
+  .event-latest { font-family: var(--caption); font-size: var(--fs-label); letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+  .event-found:not(:empty)::before { content: "·"; content: "·" / ""; margin-right: 8px; }
+  .event-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+  .event-kind { font-family: var(--caption); font-size: var(--fs-label); letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
   .event[data-kind="Mint"] .event-kind { color: var(--success); }
   .event[data-kind="Burn"] .event-kind { color: var(--warning); }
-  .event-amount { font-size: 1.25rem; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
+  .event-amount { font-size: 1.125rem; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
   .event-unit { font-size: .75em; color: var(--text-2); }
-  .event-badge { margin-left: auto; font-size: var(--fs-meta); color: var(--text-3); }
-  .event[data-fresh] .event-badge { color: var(--accent); font-weight: 600; }
-  .event-path { display: flex; flex-wrap: wrap; gap: 0 8px; font-family: var(--mono); font-size: var(--fs-small); color: var(--text); }
-  .event-arrow { color: var(--text-3); }
-  .event-meta { font-size: var(--fs-meta); }
-  .event-tx { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-small); }
-  .event-tx-label { color: var(--text-3); }
-  .event-hash { color: var(--text-2); }
-  .event-tx .actions, .event-tx .action { margin-top: 0; }
-  .event[data-removed] { border-left-color: var(--error); }
+  .event-badge { margin-left: auto; font-size: var(--fs-meta); font-weight: 600; color: var(--accent); }
+  .event-badge:empty { display: none; }
+  /* Path on its own line, then block and the transaction link; one line once the list is wide. */
+  .event-sub { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; min-width: 0; }
+  .event-path { grid-column: 1 / -1; min-width: 0; font-family: var(--mono); font-size: var(--fs-small); color: var(--text); overflow-wrap: anywhere; }
+  .event-dir, .event-arrow { font-family: var(--sans); color: var(--text-3); }
+  .event-block { font-size: var(--fs-meta); color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .event-log { color: var(--text-3); }
+  /* The latest event: the first thing to read in the feed. */
+  .event[data-latest] { padding-block: 18px; }
+  .event[data-latest] .event-amount { font-size: 1.75rem; line-height: 1.15; letter-spacing: -.01em; }
   .event[data-removed] .event-amount { text-decoration: line-through; color: var(--text-2); }
-  .event[data-removed] .event-badge { color: var(--error); font-weight: 600; }
-  @media (min-width: 760px) { .feed { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .event[data-removed] .event-badge { color: var(--error); }
+  @container events (min-width: 560px) {
+    .event-sub { grid-template-columns: minmax(0, 1fr) auto auto; }
+    .event-path { grid-column: auto; }
+  }
+
+  .more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); margin-top: var(--space-3); }
+
+  /* Initial history: context, so quieter than the session. */
+  .initial { display: grid; gap: var(--space-3); padding-top: var(--space-5); border-top: 1px solid var(--line); }
+  .initial .block-head { margin-bottom: 0; }
+  .initial .block-title { font-size: var(--fs-body); }
+  .initial > .btn { justify-self: start; }
+  .initial .event-amount { font-size: 1rem; }
+  .initial .more { margin-top: 0; }
 
   @media (prefers-reduced-motion: no-preference) {
     .event.arrive { animation: settle .45s var(--ease) backwards; }

@@ -120,6 +120,8 @@ describe("applyWindow", () => {
     const feed = createFeed();
     applyWindow(feed, window(1, 1000, Array.from({ length: FEED_LIMIT + 5 }, (_, i) => event(i + 1))), { first: true });
     assert.equal(feed.items.length, FEED_LIMIT);
+    assert.equal(feed.dropped, 5, "dropped events are counted, not lost silently");
+    assert.equal(feed.shown, FEED_LIMIT + 5, "and the total still counts them");
     assert.equal(feed.items[0].blockNumber, String(FEED_LIMIT + 5));
     const many = createFeed();
     applyWindow(many, window(1, 10_000, Array.from({ length: SEEN_LIMIT + 3 }, (_, i) => event(i + 1))), { first: true });
@@ -151,18 +153,35 @@ describe("static files", () => {
     for (const [, id] of script.matchAll(/\$\("([^"]+)"\)/g)) assert.ok(ids.has(id), `#${id} missing`);
   });
 
-  test("the hierarchy the brief asks for: title, watching, status, last checked block, start/stop, events", async () => {
+  test("the hierarchy: what is watched, whether it runs, the latest events, the initial history, then proof", async () => {
     const html = await read("public/index.html");
-    const order = [">Event / Log Monitor</h1>", "Circle USDC <span aria-hidden=\"true\">·</span>", 'id="status"', ">Last checked block<", ">Start monitoring<", ">Stop<", ">New events<"];
+    const order = [
+      ">Event / Log Monitor</h1>",
+      ">Circle USDC</p>",
+      "<code>Transfer(address,address,uint256)</code>",
+      'id="status"',
+      ">Last checked block<",
+      'id="toggle"',
+      ">This session</h2>",
+      'id="feed"',
+      ">Initial history</h2>",
+      ">Proof &amp; technical details</h2>",
+    ];
     const at = order.map((needle) => html.indexOf(needle));
     assert.ok(at.every((index) => index !== -1), JSON.stringify(at));
-    assert.ok(at[0] < at[2] && at[2] < at[3] && at[3] < at[6]);
-    assert.match(html, /View in Explorer/);
-    // Initial events: after the new-events list, collapsed (no open attribute), secondary heading.
-    const initial = html.indexOf('<details class="disclosure initial" id="initial" hidden>');
-    assert.ok(initial > html.indexOf('id="feed"'), "initial events come after the new events list");
-    assert.match(html, /<h3 class="disclosure-title" id="initial-h">Initial events<\/h3>/);
-    assert.doesNotMatch(html, /id="initial"[^>]*\bopen\b/);
+    assert.deepEqual([...at].sort((a, b) => a - b), at, "in this order");
+    assert.match(html, />View transaction</);
+    // One control, not a pair of buttons; initial history starts collapsed and unrendered.
+    assert.doesNotMatch(html, /id="(start|stop)"/);
+    assert.match(html, /<button class="btn" id="initial-toggle" type="button" aria-expanded="false" aria-controls="initial-feed">Show initial events<\/button>/);
+    assert.match(html, /<ol class="events" id="initial-feed" aria-labelledby="initial-h" hidden><\/ol>/);
+    assert.match(html, /<ol class="events" id="feed" aria-labelledby="session-h"><\/ol>/);
+  });
+
+  test("no copy that only restates the interface", async () => {
+    const html = await read("public/index.html");
+    assert.doesNotMatch(html, /class="task-about"|class="jump"/, "the about paragraph and jump links are gone");
+    assert.equal((html.match(/every <span id="interval">/g) ?? []).length, 0, "the interval is stated once, in the status");
   });
 
   test("scripts write text, never HTML", async () => {

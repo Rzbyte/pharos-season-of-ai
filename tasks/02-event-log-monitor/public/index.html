@@ -17,7 +17,7 @@
 <script type="module" src="/assets/monitor.js"></script>
 </head>
 <body data-state="starting">
-<a class="skip" href="#feed-h">Skip to the events</a>
+<a class="skip" href="#session-h">Skip to the events</a>
 
 
 <header class="topbar">
@@ -35,69 +35,67 @@
 </header>
 
 <main id="main" class="rail" data-api="/api/events" data-task="02" data-interval="5">
-  <section class="hero" aria-labelledby="title">
-    <div class="task-head">
-      <p class="label">Task <span class="task-n">02</span> / Event / Log Monitor</p>
-      <h1 class="task-title" id="title">Event / Log Monitor</h1>
-      <p class="task-via">Transfer events via <strong class="nowrap">Pharos Chain MCP</strong></p>
-    </div>
+  <div class="workspace">
+    <div class="control-col">
+      <div class="task-head">
+        <p class="label">Task <span class="task-n">02</span> / Event / Log Monitor</p>
+        <h1 class="task-title" id="title">Event / Log Monitor</h1>
+        <p class="task-via">Transfer events via <strong class="nowrap">Pharos Chain MCP</strong></p>
+      </div>
 
-    <section class="panel" id="monitor" aria-labelledby="monitor-h">
-      <div class="beacon" aria-hidden="true"></div>
-      <div class="panel-head">
-        <h2 class="label" id="monitor-h">Monitor</h2>
-        <div class="controls">
-          <button class="btn btn-primary" id="start" type="button" disabled>Start monitoring</button>
-          <button class="btn" id="stop" type="button">Stop</button>
+      <section class="panel monitor" id="monitor" aria-labelledby="monitor-h">
+        <div class="beacon" aria-hidden="true"></div>
+        <h2 class="sr" id="monitor-h">Monitor</h2>
+        <div class="watch">
+          <p class="label">Watching</p>
+          <p class="watch-name">Circle USDC</p>
+          <p class="watch-event"><code>Transfer(address,address,uint256)</code></p>
+          <p class="watch-contract"><code id="address" title="0xC879C018dB60520F4355C26eD1a6D572cdAC1815" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</code><span class="sr" id="address-sr">Contract address 0xC879C018dB60520F4355C26eD1a6D572cdAC1815</span><a class="action" id="contract-explorer" hidden><span>View contract</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></p>
         </div>
-      </div>
-      <p class="status" id="status" role="status" data-tone="active"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="status-word">Starting</span><span class="status-detail" id="status-detail">first check through Pharos Chain MCP</span></p>
-      <p class="note" data-tone="error" id="status-note" hidden></p>
-      <p class="note" id="gap-note" hidden></p>
-      <noscript><p class="note">This monitor runs in the browser with JavaScript. The same data is at /api/events as JSON.</p></noscript>
-
-      <p class="label figure-label">Last checked block</p>
-      <p class="figure"><span class="figure-num" id="last-block">—</span></p>
-      <p class="meta" id="window-meta"><span>Blocks <b id="window">—</b></span><span>checked <b id="checked-at">—</b></span></p>
-
-      <dl class="rows">
-        <div><dt>Watching</dt><dd>Circle USDC <span aria-hidden="true">·</span><span class="sr">,</span> Transfer</dd></div>
-        <div><dt>Events</dt><dd><span id="count-new">0</span> new<span class="sub" id="count-detail">since monitoring started</span></dd></div>
-        <div><dt>Checks</dt><dd>every <span id="interval">5</span> s<span class="sub">paused while this tab is in the background</span></dd></div>
-      </dl>
-
-      <div class="contract">
-        <p class="label">Contract</p>
-        <div class="hex-cell"><p class="hex" id="address" aria-hidden="true">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p></div>
-        <p class="sr" id="address-sr">0xC879C018dB60520F4355C26eD1a6D572cdAC1815</p>
-        <div class="actions"><a class="action" id="contract-explorer" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div>
-      </div>
-    </section>
-
-    <div class="hero-about">
-      <p class="task-about">Polls Pharos Mainnet for <code>Transfer(address,address,uint256)</code> logs of Circle's USDC contract, filtered by the contract address and the Transfer topic, and shows each event once, decoded into from, to and amount.</p>
-      <p class="jump"><a href="#feed-h">New events</a><a href="#proof">Proof &amp; technical details</a></p>
+        <div class="state">
+          <p class="status" id="status" role="status" data-tone="active"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="status-word">Starting</span><span class="status-detail" id="status-detail">first check</span></p>
+          <dl class="facts">
+            <div><dt>Last checked block</dt><dd class="fact-block" id="last-block">—</dd></div>
+            <div><dt>Checked</dt><dd id="checked-ago">—</dd></div>
+          </dl>
+          <button class="btn toggle" id="toggle" type="button" data-action="stop">Stop monitoring</button>
+          <p class="note" data-tone="error" id="status-note" hidden></p>
+          <p class="note" id="gap-note" hidden></p>
+          <noscript><p class="note">This monitor runs in the browser with JavaScript. The same data is at /api/events as JSON.</p></noscript>
+          <p class="monitor-meta">Pauses while this tab is hidden and resumes when you return.</p>
+        </div>
+      </section>
     </div>
-  </section>
 
-  <section class="section" id="events" aria-labelledby="feed-h">
-    <div class="section-head">
-      <h2 class="section-title" id="feed-h" tabindex="-1">New events</h2>
-      <p class="section-lede"><span id="new-count">0</span> since monitoring started</p>
+    <div class="feed-col">
+      <section class="block" id="session" aria-labelledby="session-h">
+        <div class="block-head">
+          <h2 class="block-title" id="session-h" tabindex="-1">This session</h2>
+          <p class="block-count" id="session-count">No events detected yet</p>
+        </div>
+        <p class="feed-empty" id="feed-empty">Each USDC Transfer mined from now on appears here once, newest first.</p>
+        <ol class="events" id="feed" aria-labelledby="session-h"></ol>
+        <div class="more" id="session-more" hidden>
+          <button class="btn" id="session-older" type="button" aria-controls="feed">Show older events</button>
+          <button class="btn-quiet" id="session-newest" type="button" aria-controls="feed" hidden>Show newest only</button>
+        </div>
+      </section>
+
+      <section class="block initial" id="initial" aria-labelledby="initial-h" hidden>
+        <div class="block-head">
+          <h2 class="block-title" id="initial-h" tabindex="-1">Initial history</h2>
+          <p class="block-count" id="initial-count"></p>
+        </div>
+        <button class="btn" id="initial-toggle" type="button" aria-expanded="false" aria-controls="initial-feed">Show initial events</button>
+        <ol class="events" id="initial-feed" aria-labelledby="initial-h" hidden></ol>
+        <div class="more" id="initial-more" hidden>
+          <button class="btn" id="initial-older" type="button" aria-controls="initial-feed">Show more initial events</button>
+        </div>
+      </section>
+      <p class="sr" id="feed-live" aria-live="polite"></p>
+      <template id="event-template"><li class="event"><p class="event-eyebrow" hidden><span class="event-latest">Latest</span><span class="event-found"></span></p><div class="event-top"><span class="event-kind"></span><span class="event-amount"><span class="event-num"></span> <span class="event-unit"></span></span><span class="event-badge"></span></div><div class="event-sub"><p class="event-path"></p><p class="event-block"></p><a class="action event-link" hidden><span>View transaction</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></li></template>
     </div>
-    <p class="feed-empty" id="feed-empty">None yet. Each Transfer mined from now on appears here once, newest first.</p>
-    <ol class="feed" id="feed" aria-labelledby="feed-h"></ol>
-    <details class="disclosure initial" id="initial" hidden>
-      <summary>
-        <h3 class="disclosure-title" id="initial-h">Initial events</h3>
-        <span class="disclosure-hint" id="initial-count"></span>
-        <span class="disclosure-icon" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      </summary>
-      <div class="disclosure-body"><ol class="feed" id="initial-feed" aria-labelledby="initial-h"></ol></div>
-    </details>
-    <p class="sr" id="feed-live" aria-live="polite"></p>
-    <template id="event-template"><li class="event"><div class="event-head"><span class="event-kind"></span><span class="event-amount"><span class="event-num"></span> <span class="event-unit"></span></span><span class="event-badge"></span></div><p class="event-path"><span class="event-from"></span><span class="event-arrow" aria-hidden="true">→</span><span class="sr"> to </span><span class="event-to"></span></p><p class="meta event-meta"><span>Block <b class="event-block"></b></span><span>Log <b class="event-log"></b></span></p><div class="event-tx"><span class="event-tx-label">Tx</span><code class="event-hash"></code><a class="action" hidden><span>View in Explorer</span><svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></div></li></template>
-  </section>
+  </div>
 
   <section class="section section-compact" aria-labelledby="proof-h">
     <details class="disclosure" id="proof">
