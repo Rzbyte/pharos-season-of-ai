@@ -1,8 +1,9 @@
 // Task 04 page: docs search, on the same search as the pharos-docs CLI.
 //
-// Every question goes to this site's GET /api/search, which runs the CLI's own search() and provider
-// against docs.pharos.xyz and returns the same result (schema pharos-docs-result/1). Nothing here
-// answers on its own: the page only lays that result out. Every value is written as text, never HTML.
+// Every question goes to this site's GET /api/search, which runs the CLI's own search() and canonical
+// provider, the Pharos Developer Docs MCP (askQuestion), and returns the same result (schema
+// pharos-docs-result/1). Nothing here answers on its own: the page only lays that result out. Every
+// value is written as text, never HTML.
 //
 // States, on <body data-state>: idle (nothing asked yet), searching, answer, no-answer, error, and
 // note (a version, history or option message).
@@ -281,8 +282,13 @@ function metaLine(result) {
   const line = el("div", "turn-meta");
   const meta = result.meta;
   if (meta) {
-    const pages = meta.pagesConsulted?.length ?? 0;
-    line.append(el("span", "", `${pages} docs ${pages === 1 ? "page" : "pages"} asked · ${meta.requests} ${meta.requests === 1 ? "request" : "requests"} · ${(meta.elapsedMs / 1000).toFixed(1)} s`));
+    const requests = `${meta.requests} ${meta.requests === 1 ? "request" : "requests"}`;
+    const seconds = `${(meta.elapsedMs / 1000).toFixed(1)} s`;
+    if (meta.transport === "docs-mcp") line.append(el("span", "", `Developer Docs MCP (askQuestion) · ${requests} · ${seconds}`));
+    else {
+      const pages = meta.pagesConsulted?.length ?? 0;
+      line.append(el("span", "", `${pages} docs ${pages === 1 ? "page" : "pages"} asked · ${requests} · ${seconds}`));
+    }
   }
   const toggle = el("button", "btn-quiet json-toggle", "JSON");
   toggle.type = "button";

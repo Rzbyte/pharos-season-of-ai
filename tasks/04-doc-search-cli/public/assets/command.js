@@ -32,9 +32,10 @@ export function parseCommand(input) {
 export const REASONS = {
   no_matching_page: "No page in the Pharos Developer Docs matches this question.",
   page_unavailable: "The matching docs page could not be read.",
-  not_in_docs: "The matching docs page says it does not cover this.",
-  weak_match: "The matching docs page does not answer this question directly.",
-  value_not_found: "The matching docs page does not state this value, and values are never filled in from memory.",
+  not_in_docs: "The Pharos Developer Docs say they do not cover this.",
+  weak_match: "The docs do not answer this question directly.",
+  value_not_found: "The docs do not state this value, and values are never filled in from memory.",
+  unsourced: "The docs answered without citing a docs.pharos.xyz page, so the answer is not shown.",
 };
 
 /** A history that remembers the last `size` commands, with up/down navigation. */

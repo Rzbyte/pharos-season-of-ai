@@ -95,8 +95,9 @@ describe("static page", () => {
     assert.match(html, /<button class="action ws-about-open" id="about-open" type="button" aria-haspopup="dialog" aria-controls="about-sheet">/);
     assert.match(html, /<details class="disclosure cli" id="cli">/);
     assert.doesNotMatch(html, /<details[^>]*\sopen/);
-    // The transport disclosure stays word for word.
-    assert.match(html, /Not MCP: a public Developer Docs MCP endpoint is not documented yet\./);
+    // The transport, stated plainly: the Developer Docs MCP and its two calls, nothing else.
+    assert.match(html, /<dt>Transport<\/dt><dd class="kv-text">The Pharos Developer Docs MCP at <code>docs\.pharos\.xyz\/~gitbook\/mcp<\/code>, over Streamable HTTP: JSON-RPC <code>tools\/list<\/code> to check that <code>askQuestion<\/code> is offered, then <code>tools\/call askQuestion<\/code> with the question\./);
+    assert.doesNotMatch(html, /Not MCP|\?ask=|sitemap\.md/);
     // No terminal: no prompt, no log, no command echo.
     assert.doesNotMatch(html, /\$ pharos-docs<\/label>|role="log"|Documentation Terminal/);
   });
@@ -126,6 +127,8 @@ describe("static page", () => {
     assert.match(script, /"I couldn't verify this in the Pharos Developer Docs\."/);
     assert.match(script, /REASONS\[result\.reason\]/);
     assert.match(script, /const MAX_TURNS = 6;/);
+    // The meta line names what answered, as the CLI's last line does.
+    assert.match(script, /if \(meta\.transport === "docs-mcp"\) line\.append\(el\("span", "", `Developer Docs MCP \(askQuestion\) · \$\{requests\} · \$\{seconds\}`\)\);/);
   });
 
   test("no fake filesystem, editor, chat or auth", async () => {

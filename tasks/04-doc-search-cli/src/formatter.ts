@@ -31,10 +31,23 @@ function sourceLines(sources: Source[]): string[] {
   return sources.flatMap((source, index) => [`${String(index + 1).padStart(2, "0")}  ${oneLine(source.title)}`, `    ${source.url}`]);
 }
 
+/** The last line: what answered, over what, how many requests, how long. */
 function meta(result: SearchResult): string {
-  const pages = result.meta.pagesConsulted.length;
   const seconds = (result.meta.elapsedMs / 1000).toFixed(1);
+  const requests = `${result.meta.requests} ${result.meta.requests === 1 ? "request" : "requests"}`;
+  if (result.meta.transport === "docs-mcp") return `Developer Docs MCP (askQuestion) · ${requests} to ${endpointLabel(result.meta.endpoint)} · ${seconds} s`;
+  const pages = result.meta.pagesConsulted.length;
   return `${pages} docs ${pages === 1 ? "page" : "pages"} asked · ${result.meta.requests} HTTPS ${result.meta.requests === 1 ? "request" : "requests"} to docs.pharos.xyz · ${seconds} s`;
+}
+
+/** "https://docs.pharos.xyz/~gitbook/mcp" -> "docs.pharos.xyz/~gitbook/mcp". */
+function endpointLabel(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    return `${url.host}${url.pathname}`;
+  } catch {
+    return endpoint;
+  }
 }
 
 function indent(text: string): string {
@@ -49,9 +62,10 @@ function oneLine(text: string): string {
   return text.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/** One line per request, for --verbose. */
+/** One line per request, for --verbose. An MCP request names its JSON-RPC method and tool. */
 export function formatRequest(record: RequestRecord): string {
   const size = record.bytes ? ` ${(record.bytes / 1024).toFixed(1)} kB` : "";
   const outcome = record.error ? ` ${record.error}` : ` ${record.status}${record.contentType ? ` ${record.contentType.split(";")[0]}` : ""}${size}`;
-  return `[${record.purpose}] GET ${record.url} ->${outcome} (${record.ms} ms)`;
+  const tool = record.rpc?.method === "tools/call" && typeof record.rpc.params?.name === "string" ? ` ${record.rpc.params.name}` : "";
+  return `[${record.purpose}${tool}] ${record.method} ${record.url} ->${outcome} (${record.ms} ms)`;
 }

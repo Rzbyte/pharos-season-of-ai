@@ -1,16 +1,22 @@
-import { DEFAULT_MAX_PAGES, MAX_ANSWER_CHARS, MAX_QUESTION_CHARS, TOOL_NAME, VERSION } from "./constants.js";
+import { DEFAULT_MAX_PAGES, DOCS_ORIGIN, MAX_ANSWER_CHARS, MAX_QUESTION_CHARS, TOOL_NAME, VERSION } from "./constants.js";
 import { choosePages, nearbyTopics, rankPages } from "./page-ranker.js";
-import { ProviderError, type DocsProvider } from "./providers/provider.js";
-import { combineAnswers, dedupeSources, judge, type Verdict } from "./source-gate.js";
+import { answersQuestions, ProviderError, type DocsAnswer, type DocsAnswerProvider, type DocsProvider } from "./providers/provider.js";
+import { combineAnswers, dedupeSources, judge, judgeAnswer, type Verdict } from "./source-gate.js";
 import { clip } from "./text.js";
 import type { ErrorKind, NoAnswerReason, PageResponse, RankedPage, SearchResult, Source } from "./types.js";
 
-/** Passed as &goal= with every question: what the answer is for. */
+/** askQuestion's goal, with every question: the goal the live Developer Docs MCP was verified with. */
+export const MCP_GOAL = "Answer a developer question using the Pharos Developer Docs";
+/** docs-http development transport only: passed as &goal= with every question. */
 export const GOAL = "A concise, factual answer for a developer, using only the Pharos documentation, with the page it comes from.";
 
 export interface SearchOptions {
-  provider: DocsProvider;
+  /** The Developer Docs MCP (canonical), or the docs-http development transport when asked for explicitly. */
+  provider: DocsAnswerProvider | DocsProvider;
+  /** docs-http only: pages asked per question. */
   maxPages?: number;
+  /** Called with the MCP answer as received, before the gate (the CLI's transcript records it). */
+  onAnswer?: (answer: DocsAnswer) => void;
 }
 
 /** Why a question was refused before any request. */
@@ -23,9 +29,14 @@ export function checkQuestion(input: string): string | null {
 }
 
 /**
- * question -> docs index -> the smallest relevant page(s) -> each asked with ?ask= -> the source gate
- * -> one result with its sources. At most `maxPages` pages are asked (one unless the question has
- * several parts). Never throws: failures come back as status "error" or "no_answer".
+ * The canonical path (the Developer Docs MCP): question -> askQuestion -> the source gate -> one result
+ * with the official pages the answer cites. An MCP failure is an error result; nothing falls back to
+ * another transport.
+ *
+ * The docs-http development path: question -> docs index -> the smallest relevant page(s) -> each asked
+ * with ?ask= -> the source gate -> one result with its sources. At most `maxPages` pages are asked.
+ *
+ * Never throws: failures come back as status "error" or "no_answer".
  */
 export async function search(input: string, options: SearchOptions): Promise<SearchResult> {
   const started = performance.now();
@@ -45,7 +56,9 @@ export async function search(input: string, options: SearchOptions): Promise<Sea
     meta: {
       tool: TOOL_NAME,
       version: VERSION,
+      provider: provider.name,
       transport: provider.transport,
+      endpoint: answersQuestions(provider) ? provider.endpoint : DOCS_ORIGIN,
       pagesConsulted: consulted,
       requests: provider.requests().length,
       elapsedMs: Math.round(performance.now() - started),
@@ -54,6 +67,18 @@ export async function search(input: string, options: SearchOptions): Promise<Sea
 
   const problem = checkQuestion(input);
   if (problem) return result({ status: "error", error: { kind: "usage", message: problem } });
+
+  if (answersQuestions(provider)) {
+    let answer: DocsAnswer;
+    try {
+      answer = await provider.answer(question, MCP_GOAL);
+    } catch (error) {
+      return result({ status: "error", error: toError(error) });
+    }
+    options.onAnswer?.(answer);
+    const verdict = judgeAnswer(answer, question);
+    return result({ status: verdict.status, answer: verdict.answer, sources: verdict.sources, reason: verdict.reason, suggestions: verdict.suggestions });
+  }
 
   let ranked: RankedPage[];
   try {
@@ -129,7 +154,8 @@ function toError(error: unknown): { kind: ErrorKind; message: string } {
 export const REASON_TEXT: Record<NoAnswerReason, string> = {
   no_matching_page: "No page in the Pharos Developer Docs matches this question.",
   page_unavailable: "The matching docs page could not be read.",
-  not_in_docs: "The matching docs page says it does not cover this.",
-  weak_match: "The matching docs page does not answer this question directly.",
-  value_not_found: "The matching docs page does not state this value, and values are never filled in from memory.",
+  not_in_docs: "The Pharos Developer Docs say they do not cover this.",
+  weak_match: "The docs do not answer this question directly.",
+  value_not_found: "The docs do not state this value, and values are never filled in from memory.",
+  unsourced: "The docs answered without citing a docs.pharos.xyz page, so the answer is not shown.",
 };

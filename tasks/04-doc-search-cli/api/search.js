@@ -1,31 +1,35 @@
 // Vercel function behind the docs search page: GET /api/search?q=<question>.
 //
-// It runs the same search core and the same provider as the CLI (dist/src, compiled from src/ during
-// `npm ci`), so the docs search page and `pharos-docs "<question>"` return the same result schema from
-// the same requests: HTTPS GET to https://docs.pharos.xyz (sitemap.md, then <page>.md?ask=...). Not MCP.
-// The docs origin is fixed here and nothing is read from the environment, so a deployment setting
-// cannot point it anywhere else.
-import { DOCS_ORIGIN, INDEX_TTL_MS, MAX_QUESTION_CHARS } from "../dist/src/constants.js";
-import { DocsHttpProvider } from "../dist/src/providers/docs-http.js";
+// It runs the same search core and the same canonical provider as the CLI (dist/src, compiled from src/
+// during `npm ci`): the Pharos Developer Docs MCP at https://docs.pharos.xyz/~gitbook/mcp, one JSON-RPC
+// tools/call askQuestion per question (POST, Streamable HTTP), after a tools/list check that askQuestion
+// is offered. The MCP answers stateless POSTs, so nothing has to live between invocations; a verified
+// tool list is only remembered on a warm instance to save a request. There is no other transport here and
+// no fallback: an MCP failure is a 502 with the reason.
+// The endpoint is fixed here and nothing is read from the environment, so a deployment setting cannot
+// point it anywhere else.
+import { MAX_QUESTION_CHARS, MCP_ENDPOINT, TOOLS_TTL_MS } from "../dist/src/constants.js";
+import { DeveloperDocsMcpProvider } from "../dist/src/providers/developer-docs-mcp.js";
 import { checkQuestion, search } from "../dist/src/search.js";
 
-/** The docs index, kept between requests on a warm instance. */
+/** Per MCP request. Two requests at most per question (tools/list on a cold instance, askQuestion) stay within the function's 60 s. */
+const TIMEOUT_MS = 25_000;
+
+/** The verified tool list, kept between requests on a warm instance. */
 const memo = new Map();
 
-/** One question. Tests pass a local fake docs origin. Returns { status, body }. */
-export async function answer(question, { fetchOrigin = DOCS_ORIGIN, timeoutMs = 20_000 } = {}) {
+/** One question. Tests pass a local fake MCP endpoint. Returns { status, body }. */
+export async function answer(question, { mcpUrl = MCP_ENDPOINT, timeoutMs = TIMEOUT_MS } = {}) {
   const problem = typeof question === "string" ? checkQuestion(question) : "Ask a question with ?q=.";
   if (problem) return { status: 400, body: { schema: "pharos-docs-result/1", status: "error", question: String(question ?? ""), error: { kind: "usage", message: problem } } };
-  // One provider per question: it reuses a remembered index, or reads it itself (and that request is
-  // counted in the result like any other), so a failing index is tried once, not twice.
-  const hit = memo.get(fetchOrigin);
-  const fresh = hit && Date.now() - hit.at < INDEX_TTL_MS ? hit.pages : undefined;
-  const provider = new DocsHttpProvider({ fetchOrigin, timeoutMs, index: fresh });
+  // One provider per question: it reuses a remembered tool list, or lists the tools itself (and that
+  // request is counted in the result like any other).
+  const hit = memo.get(mcpUrl);
+  const fresh = hit && Date.now() - hit.at < TOOLS_TTL_MS ? hit.tools : undefined;
+  const provider = new DeveloperDocsMcpProvider({ endpoint: mcpUrl, timeoutMs, tools: fresh });
   const result = await search(question, { provider });
-  if (!fresh && result.status !== "error") {
-    const pages = await provider.index().catch(() => null);
-    if (pages) memo.set(fetchOrigin, { at: Date.now(), pages });
-  }
+  if (result.status === "error") memo.delete(mcpUrl);
+  else if (!fresh && provider.verifiedTools()) memo.set(mcpUrl, { at: Date.now(), tools: provider.verifiedTools() });
   const status = result.status === "error" ? (result.error?.kind === "usage" ? 400 : 502) : 200;
   return { status, body: result };
 }
@@ -54,5 +58,5 @@ export function createHandler(options = {}) {
   };
 }
 
-/** The deployed handler: always the official docs site. */
+/** The deployed handler: always the official Developer Docs MCP. */
 export default createHandler();

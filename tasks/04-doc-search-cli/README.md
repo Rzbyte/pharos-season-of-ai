@@ -1,41 +1,44 @@
 # Task 04: Doc-Search CLI
 
-`pharos-docs` asks the official **Pharos Developer Docs** a natural-language question and prints a short answer with the pages it comes from. When the docs do not answer the question, it says so instead of guessing. A browser docs search page runs the same search code.
+`pharos-docs` asks the official **Pharos Developer Docs** a natural-language question through the **Pharos Developer Docs MCP** (`https://docs.pharos.xyz/~gitbook/mcp`) and prints a short answer with the docs pages it comes from. When the docs do not answer the question, it says so instead of guessing. A browser docs search page runs the same search code.
 
 ```console
-$ pharos-docs "what is the Atlantic testnet chain ID?"
+$ pharos-docs "What is the Atlantic chain ID?"
 ```
 
 ## Requirements
 
 - [x] **Accepts a natural-language question.** `pharos-docs "<question>"`, quoted or not. See [Usage](#usage).
-- [x] **Returns a concise answer with source links.** A few sentences or rows from the docs, then numbered `docs.pharos.xyz` sources. See [Text output](#text-output).
+- [x] **Returns a concise answer with source links.** The answer from the Developer Docs MCP, then numbered `docs.pharos.xyz` sources taken from that answer. See [Text output](#text-output).
 - [x] **Says so when there is no good answer.** "No good answer found in the Pharos Developer Docs.", with the reason and nearby topics; never an invented answer. See [No-answer behavior](#no-answer-behavior).
-- [x] **README with installation, usage and at least 3 example queries with output.** <!-- req-examples --> Installation and usage are below; the three examples are filled in by `npm run proof` from real runs only. See [Examples](#examples).
+- [ ] **README with installation, usage and at least 3 example queries with output.** <!-- req-examples --> Installation and usage are below; the three examples are filled in by `npm run proof` from live runs against the Developer Docs MCP only. See [Examples](#examples).
 
 <!-- proof-status:start -->
-**Live proof:** captured 2026-10-15T01:45:10Z against `https://docs.pharos.xyz` by `npm run proof`, and verified from the saved requests and response bodies (`npm run verify-proof`).
-
-- **Simple factual query** ("What is the chain ID of the Atlantic testnet?"): answered, 2 HTTPS requests to docs.pharos.xyz, 10/10 checks passed. Transcript: [proof/query-a.json](proof/query-a.json).
-- **Multi-step developer workflow** ("How do I set up Foundry and deploy a contract to the Atlantic testnet?"): answered, 3 HTTPS requests to docs.pharos.xyz, 10/10 checks passed. Transcript: [proof/query-b.json](proof/query-b.json).
-- **Not covered by the docs** ("How do I deploy an Anchor program to Solana?"): no_answer (not_in_docs), 3 HTTPS requests to docs.pharos.xyz, 10/10 checks passed. Transcript: [proof/query-c.json](proof/query-c.json).
+**Live MCP proof: pending.** The three examples have not yet been captured through the Developer Docs MCP. `npm run proof` captures and verifies them from a machine that can reach `https://docs.pharos.xyz` (see [Running the proof](#running-the-proof-from-termux-or-any-machine-with-internet-access)), then fills in this section and the examples. The earlier proof, made over the docs-http development transport (not MCP), is archived in [proof/archive/docs-http-2026-10-15/](proof/archive/docs-http-2026-10-15/) and is not this task's proof.
 <!-- proof-status:end -->
 
-## Transport: what this actually calls
+## Transport: the Pharos Developer Docs MCP
 
-**This is not an MCP client.** The Developer Docs MCP server's tool schema, a public MCP endpoint and an A2A agent card for external clients are not publicly documented, so this tool does not use one, and does not reverse-engineer one.
+Every question goes to the MCP server the docs site serves at **`https://docs.pharos.xyz/~gitbook/mcp`**, over MCP's Streamable HTTP transport: one JSON-RPC 2.0 request per HTTP POST.
 
-It uses the **dynamic query interface that the Pharos docs themselves document**, over plain HTTPS:
-
-| Request | What for |
+| JSON-RPC request (POST) | What for |
 |---|---|
-| `GET https://docs.pharos.xyz/sitemap.md` | The page list, read once and cached for 6 hours |
-| `GET https://docs.pharos.xyz/<page>.md?ask=<question>&goal=<goal>` | One page, asked the question (one page by default, at most three) |
-| `GET https://docs.pharos.xyz/<page>` | Only when the `.md` page is missing or empty: the HTML page |
+| `tools/list` | Check that `askQuestion` is offered and takes a string `question` (and optionally `goal`). Once, then cached: 6 hours on disk for the CLI, on a warm instance for the web endpoint |
+| `tools/call` `askQuestion` `{ question, goal }` | The question. The answer is text, then a `# Sources` list of `docs.pharos.xyz` pages |
 
-Following the docs' own guidance, it prefers `.md` pages, reads the smallest relevant page first, falls back to the HTML page when the markdown is missing, uses `sitemap.md` to find pages, and never pulls `llms-full.txt`. Network values (chain IDs, addresses, endpoints, gas figures) are only ever shown as copied from a page fetched for that question; none is stored in the code.
+What was verified against the live endpoint, and is all this client relies on:
 
-Results, `--verbose` and the proof transcripts call these requests what they are: `transport: "docs-http"`, "HTTPS requests to docs.pharos.xyz".
+- `GET` answers `405` with `{"jsonrpc":"2.0","error":{"code":-32000,"message":"Method not allowed."},"id":null}`; the client only POSTs.
+- `POST` with `Content-Type: application/json` and `Accept: application/json, text/event-stream` works, with no session and no authentication; none is invented here.
+- Responses are server-sent events: `event: message`, then `data:` with the JSON-RPC response.
+- `tools/list` returns `searchDocumentation` (`query`), `getPage` (`url`), `askQuestion` (`question`, optional `goal`) and `sendFeedback`. Only `askQuestion` is called.
+- `askQuestion` answers with the answer text and a Sources section of official `docs.pharos.xyz` links; for a topic the docs do not cover, it says so ("No. The Pharos Developer Docs don't cover …") and still lists nearby pages.
+
+The goal sent with every question is the one the live call was verified with: `Answer a developer question using the Pharos Developer Docs`.
+
+The client is about 200 lines with no MCP SDK (`src/providers/mcp-http.ts`): it POSTs one JSON-RPC request with a per-request timeout, refuses redirects, reads at most 2 MB, parses the event stream by the WHATWG rules, skips notifications, and accepts only a JSON-RPC 2.0 response with its own request id and exactly one of `result` or `error`. A JSON-RPC error, an HTTP error, a tool error (`isError`), a result without text content, a malformed stream or a timeout is an error with its kind and reason. Nothing falls back to another transport.
+
+Results, `--verbose` and the proof transcripts say what was used: `provider: "developer-docs-mcp"`, `transport: "docs-mcp"`, `endpoint: "https://docs.pharos.xyz/~gitbook/mcp"`.
 
 ## Installation
 
@@ -56,11 +59,12 @@ Without `npm link`, run `node dist/src/cli.js "<question>"` or `npm start -- "<q
 $ pharos-docs "<question>" [options]
 
       --json             Print the result as JSON (schema pharos-docs-result/1)
-      --max-pages <n>    Ask at most n docs pages (1-3). Default: 2
-      --timeout <ms>     Per-request timeout. Default: 20000
-      --no-cache         Re-read the docs index instead of using the local copy
-  -v, --verbose          Print every docs request on stderr
-      --transcript <f>   Save every request and the result as JSON (used by the proof)
+      --timeout <ms>     Per-request timeout. Default: 30000 (20000 with docs-http)
+      --no-cache         List the MCP tools again instead of using the local copy
+  -v, --verbose          Print every request on stderr
+      --transcript <f>   Save every request, raw response and the result as JSON (used by the proof)
+      --transport <t>    docs-mcp (default) or docs-http (development only, see below)
+      --max-pages <n>    docs-http only: ask at most n docs pages (1-3). Default: 2
   -h, --help             Show help
       --version          Show the version
 ```
@@ -73,18 +77,18 @@ Output is plain text, with no colors or cursor codes, so it reads the same in a 
 
 ```text
 Answer
-  <the answer: a few sentences or rows, verbatim from the page>
+  <the answer, as askQuestion gave it, as plain text>
 
 Sources
 01  <page title>
     https://docs.pharos.xyz/<page>
 
-1 docs page asked · 2 HTTPS requests to docs.pharos.xyz · 1.2 s
+Developer Docs MCP (askQuestion) · 2 requests to docs.pharos.xyz/~gitbook/mcp · <seconds> s
 ```
 
 ### `--json` output
 
-One object, always the same keys in the same order:
+One object, always the same keys in the same order (values here show the shape):
 
 ```json
 {
@@ -99,56 +103,58 @@ One object, always the same keys in the same order:
   "meta": {
     "tool": "pharos-docs",
     "version": "1.0.0",
-    "transport": "docs-http",
-    "pagesConsulted": [{ "title": "…", "url": "…", "requestUrl": "…", "kind": "page", "outcome": "used" }],
+    "provider": "developer-docs-mcp",
+    "transport": "docs-mcp",
+    "endpoint": "https://docs.pharos.xyz/~gitbook/mcp",
+    "pagesConsulted": [],
     "requests": 2,
-    "elapsedMs": 1180
+    "elapsedMs": 1900
   }
 }
 ```
 
-`status` is `answered`, `no_answer` or `error`. For `no_answer`, `answer` is `null`, `sources` is empty, `reason` says why and `suggestions` lists nearby documented pages. For `error`, `error` is `{ kind, message }`.
+`status` is `answered`, `no_answer` or `error`. For `no_answer`, `answer` is `null`, `sources` is empty, `reason` says why and `suggestions` lists nearby documented pages. For `error`, `error` is `{ kind, message }`. `requests` counts the JSON-RPC requests (2 with a fresh tool list, 1 with a cached one). `pagesConsulted` is used by docs-http only.
 
 ## How it works
 
 ```text
 question
-  -> docs index (sitemap.md, cached)
-  -> rank pages by title, path and section            (page-ranker.ts)
-  -> ask 1 page, or 2-3 for a multi-part question     (providers/docs-http.ts, ?ask=)
-  -> source gate: is the answer in what came back?    (source-gate.ts)
+  -> tools/list, unless a verified list is cached       askQuestion offered? (providers/developer-docs-mcp.ts)
+  -> tools/call askQuestion { question, goal }           JSON-RPC POST, event-stream response (providers/mcp-http.ts)
+  -> the answer text, split from its Sources list        (text.ts answerAndSources)
+  -> source gate: an answer, with official pages?        (source-gate.ts judgeAnswer)
   -> one result: answer + docs.pharos.xyz sources, or no_answer with the reason
 ```
 
 ```text
 src/
-  cli.ts, run.ts         the CLI: arguments, output, exit codes, --transcript
-  search.ts              the pipeline above, and the result schema
-  providers/provider.ts  DocsProvider: the transport interface
-  providers/docs-http.ts DocsHttpProvider: the docs' HTTPS query interface
-  docs-index.ts          sitemap.md -> pages; the CLI's disk cache
-  page-ranker.ts         which page(s) to ask
-  source-gate.ts         what may be shown as an answer, and which URLs may be sources
-  text.ts                tokenizing, markdown/HTML reading
-  formatter.ts           text and JSON output
+  cli.ts, run.ts                   the CLI: arguments, output, exit codes, --transcript
+  search.ts                        the pipeline, and the result schema
+  providers/mcp-http.ts            the MCP client: JSON-RPC over POST, event stream, validation
+  providers/developer-docs-mcp.ts  DeveloperDocsMcpProvider: tools/list, askQuestion (canonical)
+  providers/provider.ts            the provider interfaces
+  providers/http.ts                bounded body reading and error wording, shared
+  providers/docs-http.ts           DocsHttpProvider: the docs-http development transport (not MCP)
+  docs-index.ts, page-ranker.ts    docs-http only: sitemap.md and which pages to ask
+  source-gate.ts                   what may be shown as an answer, and which URLs may be sources
+  text.ts                          markdown reading, the answer/Sources split
+  formatter.ts                     text and JSON output
   proof.ts, run-proof.ts, verify-proof.ts, probe.ts
-api/search.js            GET /api/search?q=: the docs search page's endpoint, same core
-public/                  the docs search page
+api/search.js                      GET /api/search?q=: the docs search page's endpoint, MCP only
+public/                            the docs search page
 ```
-
-**Page ranking** (deterministic, no model). Every page in the index is scored on the question's words in its title (3), path (2) and section (1). Documented synonyms count half: "chain ID" relates to the network pages, "price feed" to the oracle pages. The topic words of how-to verbs count fully, so "deploy" points to the Foundry and Hardhat guides. Ties go to the deeper, more specific page. One page is asked by default. A second (at most three) is asked only for a multi-part question ("set up X and deploy to Y") when it covers a question word the first does not, or when it scores within 15% of the first.
 
 ### Source gating
 
-An answer is shown only when the source gate can trace it to text the docs returned for this question:
+pharos-docs has no language model. The answer text comes from the Developer Docs MCP; pharos-docs decides whether to show it and with which sources, and never adds text or links:
 
-- **A page's own content** (markdown, or HTML reduced to text): the answer is its best-matching passages (paragraphs, list items, table rows, code), **verbatim**. The best passage must cover at least half the question's words, counting its section heading and the page title.
-- **A short answer the docs compose for `?ask=`**, or a JSON body: shown as given, only if it covers the same share of the question and does not say the docs lack the information ("I couldn't find…", "is not documented…"). Only the answer segment counts: the leading `#` heading that restates the question is metadata, and the answer stops at the first generated section (`Suggested Follow-up Questions`, `Related Questions`, `Sources`, `See also` and similar). Text and links after that point are never part of the answer.
-- **Value questions** (chain ID, contract address, endpoint, gas figure): the answer must contain a value of that kind copied from the fetched page; otherwise the result is `value_not_found`. No such value exists anywhere in this code to fall back on.
-- **Several pages, one answer.** When two or three pages answer, the best answer is shown whole and each later one adds only the statements (sentences, list items, rows) it does not repeat. A statement counts as already said when every number, hex value and URL in it was already shown and at least 80% of its words (stemmed, without stopwords) appear in one earlier statement, or in two consecutive ones. A different value is never folded in. Kept statements are verbatim and in order. If only one page has anything to show, its answer stands alone; otherwise each part is labelled with its page title. Plain text comparison, no model, the same output every run.
-- **Sources** are only `https://docs.pharos.xyz` pages that were asked in this run and whose answer was used, deduplicated by canonical URL, in answer order. A page whose answer repeated another's still stated it, so it stays a source. A page the answer only links to, a "see also" link, or a generated follow-up question was never read, so it is not a source. A simple one-page question has one source. The proof checks every source was asked in that run.
-
-There is no language model in this tool.
+- **Answer and sources are read structurally.** The answer is everything before the Sources heading (`# Sources`, `Sources:`, `**Sources**`, `References` and similar), without a restated question heading or a generated follow-up list. The sources are the docs pages the answer links to, then the links under its Sources heading, in that order. Markdown is reduced to plain text; numbered steps keep their numbers and code keeps its lines as written (placeholders and indentation included). The shown answer is at most 700 characters.
+- **Only official pages are sources.** An `https://docs.pharos.xyz` page, by canonical URL, each once; any other host, plain `http`, or a look-alike host is dropped. The first five are shown. No URL comes from anywhere but the MCP's answer.
+- **No docs page cited, no answer shown.** An answer whose links include no `docs.pharos.xyz` page is a no-answer (`unsourced`); its text is not shown.
+- **"The docs don't cover this" is a no-answer** (`not_in_docs`), with the first three pages it listed as nearby topics. The rule reads the answer's opening (its first sentence, or the first two when the first is a short opener such as "No.") for a statement about the documentation: that the docs (docs, documentation, the Pharos Developer Docs, the docs site) do not cover, mention, include or document it; that it is not covered or documented in them; that there is no information or guide about it; that nothing in the docs covers it; that it could not be found; or that it is outside the docs' scope. Typographic apostrophes count ("don’t"). The rule names no topic, product or question; tests run it on made-up topics.
+- **A negative fact about Pharos is an answer.** "No. Pharos does not support X" is about the product, not the docs, so it is shown with its sources. So is an answer that answers first and notes a gap in the docs later.
+- **On topic.** The answer, with the titles of the pages it cites, must contain at least half the question's words (`weak_match` otherwise).
+- **Value questions** (chain ID, contract address, endpoint, a number): the answer must state a value of that kind (`value_not_found` otherwise). No such value exists anywhere in this code to fall back on.
 
 ### No-answer behavior
 
@@ -165,205 +171,108 @@ Nearby documented topics
 
 | `reason` | When |
 |---|---|
-| `no_matching_page` | No page in the index relates to the question (no page is asked) |
-| `not_in_docs` | The docs' answer says the docs do not cover it |
-| `weak_match` | The page does not answer the question directly |
-| `value_not_found` | The page does not state the value asked for |
-| `page_unavailable` | The matching page could not be read |
+| `not_in_docs` | The answer says the Pharos Developer Docs do not cover the question |
+| `weak_match` | The answer does not address the question |
+| `value_not_found` | The question asks for a value the answer does not state |
+| `unsourced` | The answer cites no `docs.pharos.xyz` page |
+| `no_matching_page`, `page_unavailable` | docs-http only |
 
-A docs site that cannot be reached, a timeout or a malformed response is an **error** (exit 3), not a no-answer: the tool cannot say the docs lack something it could not read.
+An MCP that cannot be reached, an HTTP or JSON-RPC error, a tool error, a malformed response or a timeout is an **error** (exit 3), not a no-answer: the tool cannot say the docs lack something it could not read. It is never answered another way.
 
 ## Examples
 
-Three real runs against `https://docs.pharos.xyz`, captured by `npm run proof` and verified from their saved requests and response bodies. Nothing below is written by hand.
+Three runs against the live Developer Docs MCP, captured by `npm run proof` and verified from their saved JSON-RPC requests and raw responses. Nothing below is written by hand; until the proof is captured, these sections are empty.
 
 <!-- example-a:start -->
-**Simple factual query**
-
-```console
-$ pharos-docs "What is the chain ID of the Atlantic testnet?"
-Answer
-  The Atlantic testnet chain ID is 688689. See Atlantic Testnet.
-
-Sources
-01  Atlantic Testnet
-    https://docs.pharos.xyz/getting-started/network/atlantic-testnet
-
-1 docs page asked · 2 HTTPS requests to docs.pharos.xyz · 1.4 s
-```
+_Pending: written by `npm run proof` from a live run._
 <!-- example-a:end -->
 
 <!-- example-b:start -->
-**Multi-step developer workflow**
-
-```console
-$ pharos-docs "How do I set up Foundry and deploy a contract to the Atlantic testnet?"
-Answer
-  Install Foundry, then use the Pharos token example:
-
-  git clone https://github.com/PharosNetwork/examples
-  cd examples/token/foundry/contract
-  forge install OpenZeppelin/openzeppelin-contracts --no-git
-  forge build
-  forge test
-
-  The example contract is src/Token.sol; its deployment script is script/DeployToken.s.sol. Set a testnet-funded deployer key, then broadcast the script to Atlantic:
-
-  export PRIVATE_KEY=
-  forge script script/DeployToken.s.sol \
-  --rpc-url https://atlantic.dplabs-internal.com \
-  --broadcast
-
-  Atlantic’s chain ID is 688689. The explorer is atlantic.pharosscan.xyz. Make sure the deployer has enough testnet tokens for gas.…
-
-Sources
-01  Atlantic Testnet
-    https://docs.pharos.xyz/getting-started/network/atlantic-testnet
-02  Write Your First Uniswap Contract
-    https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract
-
-2 docs pages asked · 3 HTTPS requests to docs.pharos.xyz · 0.6 s
-```
+_Pending: written by `npm run proof` from a live run._
 <!-- example-b:end -->
 
 <!-- example-c:start -->
-**Not covered by the docs**
-
-```console
-$ pharos-docs "How do I deploy an Anchor program to Solana?"
-No good answer found in the Pharos Developer Docs.
-  The matching docs page says it does not cover this.
-
-Nearby documented topics
-01  Foundry
-    https://docs.pharos.xyz/developer-guide/foundry
-02  Hardhat
-    https://docs.pharos.xyz/developer-guide/hardhat
-03  Validator Node Deployment
-    https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment
-
-  Try rephrasing the question, or open one of the pages above.
-
-2 docs pages asked · 3 HTTPS requests to docs.pharos.xyz · 0.6 s
-```
+_Pending: written by `npm run proof` from a live run._
 <!-- example-c:end -->
 
 `--json` for the first example:
 
 <!-- json-example:start -->
-```console
-$ pharos-docs "What is the chain ID of the Atlantic testnet?" --json
-{
-  "schema": "pharos-docs-result/1",
-  "status": "answered",
-  "question": "What is the chain ID of the Atlantic testnet?",
-  "answer": "The Atlantic testnet chain ID is 688689. See Atlantic Testnet.",
-  "sources": [
-    {
-      "title": "Atlantic Testnet",
-      "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet"
-    }
-  ],
-  "reason": null,
-  "suggestions": [],
-  "error": null,
-  "meta": {
-    "tool": "pharos-docs",
-    "version": "1.0.0",
-    "transport": "docs-http",
-    "pagesConsulted": [
-      {
-        "title": "Atlantic Testnet",
-        "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet",
-        "requestUrl": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md?ask=What%20is%20the%20chain%20ID%20of%20the%20Atlantic%20testnet%3F&goal=A%20concise%2C%20factual%20answer%20for%20a%20developer%2C%20using%20only%20the%20Pharos%20documentation%2C%20with%20the%20page%20it%20comes%20from.",
-        "kind": "answer",
-        "outcome": "used"
-      }
-    ],
-    "requests": 2,
-    "elapsedMs": 1360
-  }
-}
-```
+_Pending: written by `npm run proof` from a live run._
 <!-- json-example:end -->
 
 ## Web demo
 
-`public/` is a docs search page for the same tool, laid out as a workspace exactly the screen's height: one box ("Ask the docs…") stays at the bottom, and each question is answered in the thread above it with its source pages, or a plain "No good answer found." Only the thread scrolls; a new question is brought to its top, and the last six are kept. A question may also be typed in the CLI form, `pharos-docs "question"`, and `--json` shows the raw result; every answer also has a JSON toggle. How it answers, CLI usage and the proof links sit beside the thread on a wide screen and open from About on a phone. `help` opens the CLI usage, `clear` (or New) empties the thread, and ↑/↓ recall earlier questions. Every question goes to `GET /api/search?q=`, which runs **the same `search()` and `DocsHttpProvider` as the CLI** and returns the same `pharos-docs-result/1` object; the page only lays it out. Nothing is canned. Good answers are cached at the edge for 5 minutes (`s-maxage=300`); errors are never cached.
+`public/` is a docs search page for the same tool, laid out as a workspace exactly the screen's height: one box ("Ask the docs…") stays at the bottom, and each question is answered in the thread above it with its source pages, or a plain "No good answer found." Only the thread scrolls; a new question is brought to its top, and the last six are kept. A question may also be typed in the CLI form, `pharos-docs "question"`, and `--json` shows the raw result; every answer also has a JSON toggle. How it answers, CLI usage and the proof links sit beside the thread on a wide screen and open from About on a phone. `help` opens the CLI usage, `clear` (or New) empties the thread, and ↑/↓ recall earlier questions.
 
-Deploy: `vercel.json` in this folder (project root `tasks/04-doc-search-cli`). Not deployed yet.
+Every question goes to `GET /api/search?q=`, which runs **the same `search()` and `DeveloperDocsMcpProvider` as the CLI** and returns the same `pharos-docs-result/1` object; the page only lays it out. The endpoint is MCP only and fixed in code (no setting can point it elsewhere): a verified tool list is remembered on a warm instance and forgotten after an error, each MCP request has 25 s (the function has 60 s), and an MCP failure is a `502` with the reason. Good answers are cached at the edge for 5 minutes (`s-maxage=300`); errors are never cached.
 
 ## Proof
 
 ```sh
-npm run probe          # optional: how docs.pharos.xyz answers (sitemap, ?ask= response shape) -> proof/probe.json
-npm run proof          # the three examples, verified, written into this README
+npm run probe          # tools/list and one askQuestion against the live MCP -> proof/mcp-probe.json
+npm run proof          # the three examples through the real CLI, verified, written into this README
 npm run verify-proof   # re-check the committed proof files, offline
 ```
 
-`npm run proof` runs the three example questions through the real CLI against `https://docs.pharos.xyz` with `--no-cache --transcript`. It saves for each:
+`npm run proof` runs the three example questions through the real CLI against `https://docs.pharos.xyz/~gitbook/mcp` with `--no-cache --transcript`. It saves for each:
 
-- `proof/query-<a|b|c>.json`: every request (URL, purpose, status, content type, size, sha256, and the full body of each page response), then the result;
+- `proof/query-<a|b|c>.json` (`pharos-docs-mcp-transcript/1`): the endpoint, provider and transport; the tool list and the selected tool; every JSON-RPC request exactly as POSTed, with its HTTP status, content type, size, sha256 and the raw event stream received; the answer as `askQuestion` returned it (text, answer part, listed sources); the result; start and finish times. No headers or credentials are recorded (none are sent);
 - `sample-output/query-<a|b|c>.txt`: the printed output;
 - `sample-output/query-a.json`: the `--json` result of the first example.
 
-The verifier then checks each run from the raw requests and bodies:
+The verifier then checks each run from its transcript, trusting nothing the result says about itself:
 
-- every request was an HTTPS GET to `docs.pharos.xyz`, labelled `docs-http`, not MCP;
-- the index was read live (`/sitemap.md`, 200);
-- every `?ask=` request is exactly `<page>.md?ask=<encoded question>&goal=<encoded goal>`, and there are at most three;
+- every request was a JSON-RPC 2.0 POST to `https://docs.pharos.xyz/~gitbook/mcp`, each with its own id;
+- the transcript and the result both say `developer-docs-mcp`, `docs-mcp` and the official endpoint;
+- every saved response re-reads as a JSON-RPC result for its own request id;
+- the tools were listed live in that run, and `askQuestion` was offered with a string `question`;
+- `askQuestion` was called exactly once, with the question (and the goal pharos-docs sends);
 - the result has the schema's keys in order, and the expected status (answered, answered, no answer);
-- every source is a `docs.pharos.xyz` page asked in that run (never a page only linked to, or a generated follow-up question), with no duplicates;
-- every number, hex value and URL in the answer appears verbatim in a fetched body and in the part of it an answer may come from (the retained answer segment, not the restated question or the follow-ups), and at least 90% of its words do. The verifier re-reads each saved body with the same parser the search used;
-- for the no-answer run, no answer and no source were produced;
+- the result is recomputed from the saved event stream: the same parser and gate give exactly this answer, these sources, this status and reason;
+- every source is a `docs.pharos.xyz` page the MCP's answer listed, with no duplicates; for the no-answer run, no answer and no source;
 - the saved output shows the answer and every source URL, or the no-answer message.
 
 Only when every check passes does it write the examples and the proof status above. If one fails, the README is left unchanged and the reason is printed.
 
-### Running it from Termux (or any machine with internet access)
+### Running the proof from Termux (or any machine with internet access)
 
 ```sh
 cd ~/pharos-season-of-ai
-git fetch origin task-04-doc-search-cli
-git checkout task-04-doc-search-cli
-git pull origin task-04-doc-search-cli
+git fetch origin fix-task-04-docs-mcp
+git checkout fix-task-04-docs-mcp
+git pull origin fix-task-04-docs-mcp
 cd tasks/04-doc-search-cli
 npm ci
+node dist/src/cli.js "What is the Atlantic chain ID?" --no-cache
+node dist/src/cli.js "How do I deploy a contract with Foundry?" --no-cache
+node dist/src/cli.js "How do I deploy an Anchor program to Solana?" --no-cache
+node dist/src/cli.js "What is the Atlantic chain ID?" --json --no-cache
 npm run probe
 npm run proof
+npm run verify-proof
 ```
 
 Then commit `proof/`, `sample-output/` and `README.md`.
 
+## Development transport: docs-http (not MCP)
+
+`--transport docs-http` asks the docs' public HTTP query interface instead: `GET /sitemap.md` for the page list, then `GET /<page>.md?ask=<question>&goal=<goal>` for one to three ranked pages, answered extractively or from the composed answer. It predates the MCP integration and is kept for development and comparison only. It is never the default, nothing falls back to it, the web endpoint does not include it, and it says what it is wherever it runs: a note on stderr, `provider` and `transport` `docs-http` in results, and `pharos-docs-transcript/1` transcripts that call its requests plain HTTP GETs. Its proof from before the MCP integration is kept in [proof/archive/docs-http-2026-10-15/](proof/archive/docs-http-2026-10-15/) as history.
+
 ## Tests
 
 ```sh
-npm test               # unit, provider, search, CLI (real binary), proof verifier, static checks
+npm test               # MCP client and provider, source gate, search, CLI (real binary), proof verifier, static checks
 npm run test:web       # /api/search and the docs search page
 NODE_PATH="$(npm root -g)" npm run test:browser   # Chromium via a global Playwright install; skipped without it
 ```
 
-All network calls in tests go to an in-process fake docs site with made-up values (for example the chain ID `424242`), never to the real docs. The real docs are exercised only by `npm run probe` and `npm run proof`.
+All network calls in tests go to in-process fakes with made-up values (for example the chain ID `424242`), never to the real docs: a fake Developer Docs MCP with the verified wire format (405 on GET, event-stream responses, the four tools) and failure modes (timeouts, HTTP and JSON-RPC errors, malformed streams, wrong ids, tool errors, oversized bodies, a missing `askQuestion`), and a fake docs site for docs-http. The real MCP is exercised only by `npm run probe` and `npm run proof`.
 
 ## Known limitations
 
-- **No public Developer Docs MCP transport.** The external MCP endpoint, its tool schema and an A2A agent card are not publicly documented, so this tool uses the docs' documented HTTPS query interface instead. It does not claim MCP.
-- **The `?ask=` response format is not specified publicly.** The provider reads every documented shape without a model: the page's own markdown (answered extractively), a short composed answer (shown only if it passes the gate), JSON, or the HTML page. Live, the composed answer arrives as Markdown with the question restated as an `#` heading and a generated `# Suggested Follow-up Questions:` list after the answer; both are cut off by heading name, so a renamed generated section would need adding to that list. `npm run probe` shows which shape the live site returns.
-- **Ranking uses page titles, paths and sections only.** A question phrased in words no page title or path uses can miss its page; the result then says no matching page was found, with nearby topics.
-- **English questions.** The tokenizer and synonyms are English.
-
-## Swapping in an official MCP transport later
-
-Everything above the transport talks to one interface, `DocsProvider` in `src/providers/provider.ts`:
-
-```ts
-interface DocsProvider {
-  readonly name: string;
-  readonly transport: string;            // "docs-http" today
-  index(): Promise<DocPage[]>;          // the page list
-  ask(page: DocPage, question: string, goal: string): Promise<PageResponse>;
-  requests(): RequestRecord[];
-}
-```
-
-When a public Developer Docs MCP endpoint and tool schema are documented, an `McpDocsProvider` can implement `index()` and `ask()` with MCP tool calls, return the same `PageResponse`, and report `transport: "mcp"`. It is then passed to `search()` in `run.ts` and `api/search.js`. Ranking, the source gate, the CLI, the docs search page, the result schema and the tests stay as they are, and the proof verifier gets an MCP check alongside its HTTP one.
+- **The answer text is composed by the docs' MCP.** `askQuestion` returns "a synthesized answer with links to source pages" (its own description). pharos-docs shows it only through the gate above and only with `docs.pharos.xyz` pages that answer gives; it does not fetch those pages to re-check each statement. The proof shows each result follows exactly from the saved MCP response, not that the response itself is right.
+- **The `askQuestion` output format is not formally specified.** What is relied on is what was verified: the answer, then a `# Sources` list of Markdown links. Other spellings of the heading are read too; an answer without a Sources section is judged by its own links.
+- **"Not covered" is read from wording.** The rule is generic, but it is a rule about phrasing: a refusal worded in a way it does not recognise still has to pass the on-topic check, and could in principle be shown as an answer. Proof C checks the live behavior.
+- **Long source lists are cut.** `askQuestion` can list many pages under Sources; the first five official ones are shown (three as nearby topics).
+- **English questions.**

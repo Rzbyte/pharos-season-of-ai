@@ -1,5 +1,6 @@
-import { DOCS_HOST, MAX_ANSWER_CHARS } from "./constants.js";
+import { DOCS_HOST, MAX_ANSWER_CHARS, MAX_SOURCES, MAX_SUGGESTIONS } from "./constants.js";
 import { docsPath, pageUrl } from "./docs-index.js";
+import type { DocsAnswer } from "./providers/provider.js";
 import { answerSegment, clip, hasValue, markdownBlocks, pageBody, plainInline, questionTerms, stripControls, terms, valueKind, type Block } from "./text.js";
 import type { NoAnswerReason, PageResponse, Source } from "./types.js";
 
@@ -106,16 +107,32 @@ export function retainedText(response: Pick<PageResponse, "kind" | "text">): str
   return response.kind === "page" ? pageBody(response.text) : answerSegment(response.text);
 }
 
-/** Markdown answer -> compact plain text: headings dropped to plain lines, list markers kept as "- ". */
+/**
+ * Markdown answer -> compact plain text: headings dropped to plain lines, bullets kept as "- ", numbered
+ * steps keep their numbers, and code lines kept as written (only the fences go), so a command keeps its
+ * placeholders and indentation.
+ */
 export function cleanAnswer(text: string): string {
+  let fence: string | null = null;
   return text
     .replace(/\r\n?/g, "\n")
     .replace(/^---\n[\s\S]*?\n---\n/, "")
     .split("\n")
     .map((line) => {
-      const item = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/.exec(line);
+      const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+      if (fence !== null) {
+        if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+        return fence === null ? "" : stripControls(line).trimEnd();
+      }
+      if (marker) {
+        fence = marker;
+        return "";
+      }
+      const step = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
+      if (step) return `${step[1]}. ${plainInline(step[2]!)}`;
+      const item = /^\s*[-*+]\s+(.*)$/.exec(line);
       if (item) return `- ${plainInline(item[1]!)}`;
-      if (/^\s*(```|~~~)/.test(line) || /^\s*\{%.*%\}\s*$/.test(line)) return "";
+      if (/^\s*\{%.*%\}\s*$/.test(line)) return "";
       return plainInline(line.replace(/^\s*#{1,6}\s+/, "").replace(/^\s*>\s?/, ""));
     })
     .join("\n")
@@ -264,3 +281,100 @@ export function combineAnswers(parts: Array<{ title: string; answer: string }>):
   return blocks.length === 1 ? blocks[0]!.text : blocks.map(({ title, text }) => `${title}:\n${text}`).join("\n\n");
 }
 
+// ---------------------------------------------------------------------------
+// The Developer Docs MCP: one answer across the docs, with the sources it lists
+
+/** The documentation as the subject of a sentence: "the (official) (Pharos) (Developer) docs / documentation". */
+const DOCS = String.raw`(?:the\s+)?(?:official\s+)?(?:pharos\s+)?(?:developer\s+)?(?:(?:docs|documentation|knowledge\s+base)(?:\s+(?:site|pages?|portal))?|doc\s+pages?)`;
+/** What an info-type "no ... about X" names: information, a guide, instructions, a page. */
+const INFO = String.raw`(?:information|documentation|mention|guide|guidance|details|instructions|tutorial|page|section|reference)s?`;
+
+/**
+ * Statements that the documentation does not cover a question. Each one is about the docs (or the search
+ * of them), never about the product, so a factual negative ("No. Pharos does not support X.") stays an
+ * answer. Generic: no topic, product or question is named here.
+ */
+/** What the docs would do with a topic: cover it, mention it, document it. */
+const COVER = String.raw`(?:cover|contain|mention|include|describe|document|explain|address|discuss|have|specify|reference|detail|provide)`;
+/** "is not", "isn't", "are not", "aren't", "it's not", "they're not". */
+const IS_NOT = String.raw`(?:\b(?:is|are|was|were)|'s|'re)(?:\s+not|n't)`;
+
+const NON_COVERAGE = new RegExp(
+  [
+    // "The Pharos Developer Docs don't cover X", "the documentation does not mention X"
+    String.raw`\b${DOCS}\s+(?:(?:currently|also)\s+)?(?:do|does|did)(?:\s+not|n't)\s+(?:(?:currently|appear\s+to|seem\s+to)\s+)?${COVER}\b`,
+    // "The Pharos docs focus on EVM tooling and don't include X": the docs stay the subject
+    String.raw`\b${DOCS}\s+(?:\w+\s+){1,8}?and\s+(?:do|does)(?:\s+not|n't)\s+${COVER}\b`,
+    // "X is not covered in the docs", "it's not mentioned in the Pharos documentation"
+    String.raw`${IS_NOT}\s+(?:(?:currently|explicitly)\s+)?(?:covered|mentioned|described|addressed|discussed|included|explained|specified|documented)\s+(?:anywhere\s+)?(?:in|by|within)\s+${DOCS}`,
+    // "X is not documented"
+    String.raw`${IS_NOT}\s+(?:(?:currently|explicitly)\s+)?documented\b`,
+    // "The docs have no guide for X"
+    String.raw`\b${DOCS}\s+(?:has|have|contains?|includes?)\s+no\s+(?:\w+\s+){0,2}?${INFO}\b`,
+    // "There is no documentation about X", "there's no information on X", "there isn't any guide for X"
+    String.raw`\bthere(?:\s+is|\s+are|'s)\s+no\s+(?:\w+\s+){0,2}?${INFO}\s+(?:about|on|for|regarding|covering|that|in)\b`,
+    String.raw`\bthere\s+(?:is|are)(?:\s+not|n't)\s+any\s+(?:\w+\s+){0,2}?${INFO}\s+(?:about|on|for|regarding|covering|that|in)\b`,
+    // "Nothing in the Pharos docs covers X"
+    String.raw`\b(?:nothing|none)\s+(?:of\s+|in\s+)${DOCS}\s+(?:covers?|mentions?|describes?|explains?|addresses?|discusses?|documents?)\b`,
+    // "I couldn't find anything about X", "I don't see any mention of X"
+    String.raw`\bi\s+(?:could\s*not|couldn't|cannot|can't|did\s*not|didn't|was\s+unable\s+to|am\s+unable\s+to|wasn't\s+able\s+to)\s+(?:find|locate)\b`,
+    String.raw`\bi\s+(?:do\s*not|don't)\s+see\s+(?:any|anything)\b`,
+    // "outside the scope of the Pharos docs"
+    String.raw`\boutside\s+(?:of\s+)?(?:the\s+)?scope\s+of\s+${DOCS}`,
+  ].join("|"),
+  "i",
+);
+
+/**
+ * An answer's opening: its first sentence, and the second too when the first is only a short opener
+ * with no value in it ("No.", "Unfortunately not.", "Short answer: no."). Typographic quotes become
+ * plain ones, so "don’t" reads as "don't". A note about a gap in the docs after a real first sentence
+ * ("It is X. The docs don't mention Y.") is not part of it.
+ */
+export function opening(text: string): string {
+  const plain = text.replace(/[\u2018\u2019\u02bc\u2032]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\s+/g, " ").trim();
+  const [first = "", second = ""] = plain.split(/(?<=[.!?])\s+/);
+  const opener = second !== "" && first.split(" ").length <= 4 && !/\d/.test(first);
+  return (opener ? `${first} ${second}` : first).slice(0, 400);
+}
+
+/** Whether an answer opens by saying the documentation does not cover what was asked. */
+export function explicitNonCoverage(text: string): boolean {
+  return NON_COVERAGE.test(opening(text));
+}
+
+export interface AnswerVerdict {
+  status: "answered" | "no_answer";
+  answer: string | null;
+  sources: Source[];
+  reason: NoAnswerReason | null;
+  /** Pages the answer listed, offered as nearby topics when there is no answer. */
+  suggestions: Source[];
+}
+
+/**
+ * Judge one Developer Docs MCP answer against the question. Shown only when it is on topic, states the
+ * kind of value asked for, and cites at least one docs.pharos.xyz page; its sources are the official
+ * pages it gives (links in the answer, then its Sources list; the first MAX_SOURCES), nothing else. An
+ * answer that opens by saying the docs do not cover the question is a no-answer, with the first pages it
+ * listed as nearby topics.
+ */
+export function judgeAnswer(answer: DocsAnswer, question: string): AnswerVerdict {
+  const official = dedupeSources(answer.sources);
+  const text = cleanAnswer(answer.body);
+  const none = (reason: NoAnswerReason, suggestions = official.slice(0, MAX_SUGGESTIONS)): AnswerVerdict => ({ status: "no_answer", answer: null, sources: [], reason, suggestions });
+  if (explicitNonCoverage(text)) return none("not_in_docs");
+  const { direct } = questionTerms(question);
+  const words = new Set(terms(text));
+  const titleWords = new Set(official.flatMap((source) => terms(source.title)));
+  // The same bar as everywhere else: the answer (with the titles of the pages it cites) covers half the question's words.
+  const covered = direct.filter((word) => words.has(word) || titleWords.has(word)).length;
+  if (text.length < 15 || !coversEnough(covered, direct.length)) return none("weak_match");
+  const kind = valueKind(question);
+  if (kind && !hasValue(text, kind)) return none("value_not_found");
+  if (official.length === 0) return none("unsourced", []);
+  let shown = clip(text, MAX_ANSWER_CHARS);
+  // A long answer that states the value past the clip point: show the lines that hold it instead.
+  if (kind && !hasValue(shown, kind)) shown = clip(text.split("\n").filter((line) => hasValue(line, kind)).join("\n"), MAX_ANSWER_CHARS);
+  return { status: "answered", answer: shown, sources: official.slice(0, MAX_SOURCES), reason: null, suggestions: [] };
+}

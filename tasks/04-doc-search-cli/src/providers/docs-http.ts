@@ -3,9 +3,10 @@ import { DEFAULT_TIMEOUT_MS, DOCS_ORIGIN, MAX_RESPONSE_BYTES, SITEMAP_PATH, USER
 import { parseSitemap } from "../docs-index.js";
 import { answerSegment, htmlToText, linksIn } from "../text.js";
 import type { DocPage, PageResponse, RequestRecord } from "../types.js";
+import { hostOf, messageOf, readCapped, type FetchLike } from "./http.js";
 import { ProviderError, type DocsProvider } from "./provider.js";
 
-export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+export type { FetchLike } from "./http.js";
 
 export interface DocsHttpOptions {
   /**
@@ -22,13 +23,18 @@ export interface DocsHttpOptions {
 }
 
 /**
- * The official dynamic documentation query interface of the Pharos docs, over HTTPS:
+ * DEVELOPMENT TRANSPORT, NOT MCP, NOT THE TASK 04 RUNTIME. Used only when asked for explicitly
+ * (`pharos-docs --transport docs-http`); nothing falls back to it. The canonical provider is
+ * DeveloperDocsMcpProvider (the Developer Docs MCP).
+ *
+ * The docs site's dynamic documentation query interface, over HTTPS:
  *
  *   GET https://docs.pharos.xyz/sitemap.md                               the page list
  *   GET https://docs.pharos.xyz/<page>.md?ask=<question>&goal=<goal>     one page, asked one question
  *   GET https://docs.pharos.xyz/<page>                                   the HTML page, only if the .md is missing
  *
- * These are plain HTTP requests to the public docs site. They are not MCP calls.
+ * These are plain HTTP requests to the public docs site. They are not MCP calls, and results say so
+ * (transport "docs-http").
  */
 export class DocsHttpProvider implements DocsProvider {
   readonly name = "docs-http";
@@ -99,7 +105,7 @@ export class DocsHttpProvider implements DocsProvider {
 
   private async get(url: string, purpose: RequestRecord["purpose"]): Promise<Fetched> {
     const started = performance.now();
-    const record: RequestRecord = { seq: this.log.length + 1, method: "GET", url, purpose, status: null, contentType: null, bytes: 0, ms: 0, sha256: null, excerpt: null, body: null, error: null };
+    const record: RequestRecord = { seq: this.log.length + 1, method: "GET", url, purpose, rpc: null, status: null, contentType: null, bytes: 0, ms: 0, sha256: null, excerpt: null, body: null, error: null };
     this.log.push(record);
     const finish = () => {
       record.ms = Math.round(performance.now() - started);
@@ -235,37 +241,4 @@ export function parseJsonBody(body: string): { text: string; sources: Array<{ ti
     })
     .filter((entry): entry is { title: string | null; url: string } => entry !== null);
   return { text: text.trim(), sources };
-}
-
-async function readCapped(response: Response, max: number): Promise<string> {
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > max) throw new Error(`The response is ${declared} bytes; the limit is ${max}.`);
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel().catch(() => undefined);
-      throw new Error(`The response is larger than ${max} bytes.`);
-    }
-    chunks.push(value);
-  }
-  return new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks));
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
-
-function messageOf(error: unknown): string {
-  const cause = error instanceof Error && error.cause instanceof Error ? `: ${error.cause.message}` : "";
-  return error instanceof Error ? `${error.message}${cause}` : String(error);
 }

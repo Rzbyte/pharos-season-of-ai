@@ -45,9 +45,9 @@ before(async () => {
   const { makeLog } = await import(at(`${TASK_DIRS["02"]}/dist/tests/fixtures.js`));
   const head = 20_248_479n;
   const chain02 = await startFakePharosMcp({ head, logs: [makeLog({ block: head - 10n, index: 0 }), makeLog({ block: head - 5n, index: 1 })] });
-  // Task 04: the real handler on its fake docs site.
-  const { startFakeDocs } = await import(at(`${TASK_DIRS["04"]}/dist/tests/fake-docs.js`));
-  const docs = await startFakeDocs();
+  // Task 04: the real handler on its fake Developer Docs MCP.
+  const { startFakeMcp } = await import(at(`${TASK_DIRS["04"]}/dist/tests/fake-mcp.js`));
+  const docs = await startFakeMcp();
   fakes.push(chain01, ai, chain02, docs);
 
   const handler = async (path, args) => (await import(at(path))).createHandler(args);
@@ -56,7 +56,7 @@ before(async () => {
     inspect: await handler(`${TASK_DIRS["01"]}/api/inspect.js`, chain01.url),
     explain: await handler(`${TASK_DIRS["01"]}/api/explain.js`, { apiKey: "sk-site-test", providerUrl: ai.url, log: () => undefined }),
     events: await handler(`${TASK_DIRS["02"]}/api/events.js`, chain02.url),
-    search: await handler(`${TASK_DIRS["04"]}/api/search.js`, { fetchOrigin: docs.url }),
+    search: await handler(`${TASK_DIRS["04"]}/api/search.js`, { mcpUrl: docs.url }),
   };
   const counted = Object.fromEntries(Object.entries(apis).map(([name, fn]) => [name, (req, res) => (apiHits.push(name), fn(req, res))]));
   site = await createSiteServer({ root: out, apis: counted });
@@ -189,6 +189,7 @@ describe("APIs on the one domain", () => {
     const result = await (await get("/api/search?q=What%20is%20the%20chain%20ID%20of%20the%20Atlantic%20testnet%3F")).json();
     assert.equal(result.schema, "pharos-docs-result/1");
     assert.equal(result.status, "answered");
+    assert.equal(result.meta.transport, "docs-mcp");
   });
 });
 

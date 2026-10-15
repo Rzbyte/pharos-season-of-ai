@@ -1,7 +1,7 @@
 // Browser tests for the docs search page, in Chromium.
 //   NODE_PATH="$(npm root -g)" node --test tests/web-browser.test.mjs
 // Playwright is used where it is installed globally; without it the suite is skipped and says why.
-// The real api/search.js runs against the in-process fake docs site (made-up values).
+// The real api/search.js runs against the in-process fake Developer Docs MCP (made-up values).
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import { extname } from "node:path";
 import { after, afterEach, before, describe, test } from "node:test";
 import { createHandler } from "../api/search.js";
-import { startFakeDocs } from "../dist/tests/fake-docs.js";
+import { startFakeMcp } from "../dist/tests/fake-mcp.js";
 
 let chromium = null;
 let skip = false;
@@ -32,8 +32,8 @@ describe("the docs search page in a browser", { skip }, () => {
   const contexts = [];
 
   before(async () => {
-    fake = await startFakeDocs();
-    const api = createHandler({ fetchOrigin: fake.url, timeoutMs: 5000 });
+    fake = await startFakeMcp();
+    const api = createHandler({ mcpUrl: fake.url, timeoutMs: 5000 });
     const root = new URL("../public/", import.meta.url);
     server = createServer(async (req, res) => {
       const path = new URL(req.url, "http://localhost").pathname;
@@ -97,14 +97,14 @@ describe("the docs search page in a browser", { skip }, () => {
     const { page, errors } = await open();
     const turn = await ask(page, 'pharos-docs "What is the chain ID of the Atlantic testnet?"');
     assert.equal(await turn.locator(".turn-q").textContent(), "You asked: What is the chain ID of the Atlantic testnet?");
-    assert.equal(await turn.locator(".answer").innerText(), "Chain ID: 424242");
+    assert.equal(await turn.locator(".answer").innerText(), "The Atlantic testnet chain ID is 424242 (test fixture).");
     const link = turn.locator(".sources a");
     assert.equal(await link.count(), 1);
     assert.equal(await link.getAttribute("href"), "https://docs.pharos.xyz/getting-started/network/atlantic-testnet");
     assert.equal(await link.getAttribute("target"), "_blank");
     assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
     assert.equal(await link.locator(".source-meta").innerText(), "docs.pharos.xyz/getting-started/network/atlantic-testnet");
-    assert.match(await turn.locator(".turn-meta").innerText(), /^1 docs page asked · \d+ requests? · \d+\.\d s/);
+    assert.match(await turn.locator(".turn-meta").innerText(), /^Developer Docs MCP \(askQuestion\) · \d+ requests? · \d+\.\d s/);
     assert.equal(await state(page), "answer");
     assert.equal(await page.locator(".try").isHidden(), true, "the examples go once something is asked");
     assert.equal(apiCalls, 1);
@@ -112,11 +112,14 @@ describe("the docs search page in a browser", { skip }, () => {
     assert.deepEqual(errors, []);
   });
 
-  test("a several-page answer names each page above its part", async () => {
+  test("a how-to keeps its numbered steps and its command; each page it cites is a source row", async () => {
     const { page } = await open();
-    const turn = await ask(page, "How do I set up Foundry and deploy a contract to the Atlantic testnet?");
-    assert.deepEqual(await turn.locator(".answer-from").allInnerTexts(), ["Foundry", "Atlantic Testnet"]);
-    assert.equal(await turn.locator(".sources a").count(), 2);
+    const turn = await ask(page, "How do I deploy a contract with Foundry?");
+    const text = await turn.locator(".answer").innerText();
+    assert.match(text, /1\. Install Foundry with foundryup\.\n2\. Deploy it with forge create/);
+    assert.match(text, /forge create src\/Counter\.sol:Counter --rpc-url \$RPC_URL --private-key \$PRIVATE_KEY/);
+    assert.equal(await turn.locator(".answer-from").count(), 0);
+    assert.deepEqual(await turn.locator(".sources .source-title").allInnerTexts(), ["Foundry", "Atlantic Testnet"]);
   });
 
   test("no answer: says so plainly, with the reason, nearby pages and Try another question", async () => {
@@ -182,9 +185,8 @@ describe("the docs search page in a browser", { skip }, () => {
 
   test("an example runs its question; Ask is busy while it is out; a failure offers Try again", async () => {
     const { page } = await open();
-    // Both pages the question can match never answer, so the search ends in an upstream error.
-    fake.set("/developer-guide/foundry", "hang");
-    fake.set("/developer-guide/hardhat", "hang");
+    // askQuestion never answers, so the search ends in a timeout error.
+    fake.set("hang", "tools/call");
     await page.click(".chip >> nth=0");
     await page.waitForFunction(() => document.body.dataset.state === "searching");
     assert.equal(await page.getAttribute("#go", "aria-disabled"), "true");
@@ -221,7 +223,7 @@ describe("the docs search page in a browser", { skip }, () => {
 
   test("a one-page answer keeps its own lines: no heading made from a line ending in a colon", async () => {
     const { page } = await open();
-    fake.set("/getting-started/network/atlantic-testnet", { answer: "To reach the Atlantic testnet, set the chain ID:\nchainId = 424242\nThen connect." });
+    fake.answer("To reach the Atlantic testnet, set the chain ID:\nchainId = 424242\nThen connect.\n\n# Sources\n\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet)\n");
     const turn = await ask(page, "What is the chain ID of the Atlantic testnet?");
     assert.equal(await turn.locator(".answer-from").count(), 0);
     assert.equal(await turn.locator(".answer-text").innerText(), "To reach the Atlantic testnet, set the chain ID:\nchainId = 424242\nThen connect.");

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>04 · Docs Search · Pharos Agent Lab</title>
-<meta name="description" content="Pharos Agent Lab, task 04: ask the official Pharos Developer Docs a question and get a short answer with its source pages, or a plain no-answer. The same search as the pharos-docs CLI.">
+<meta name="description" content="Pharos Agent Lab, task 04: ask the official Pharos Developer Docs a question through the Pharos Developer Docs MCP and get a short answer with its source pages, or a plain no-answer. The same search as the pharos-docs CLI.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#EFF1F2" media="(prefers-color-scheme: light)">
@@ -71,8 +71,8 @@
           <h2 class="about-title" id="about-h">How it answers</h2>
           <dl class="kv">
             <div><dt>Source</dt><dd class="kv-text">Only the official Pharos Developer Docs at docs.pharos.xyz. Every answer lists the pages it comes from.</dd></div>
-            <div><dt>Transport</dt><dd class="kv-text">HTTPS GET to the docs' public query interface: <code>sitemap.md</code> for the page list, then <code>&lt;page&gt;.md?ask=&lt;question&gt;</code> for one or two pages. Not MCP: a public Developer Docs MCP endpoint is not documented yet.</dd></div>
-            <div><dt>No answer</dt><dd class="kv-text">When the matching page does not answer, or does not state the value asked for, the result is "No good answer found", never a guess.</dd></div>
+            <div><dt>Transport</dt><dd class="kv-text">The Pharos Developer Docs MCP at <code>docs.pharos.xyz/~gitbook/mcp</code>, over Streamable HTTP: JSON-RPC <code>tools/list</code> to check that <code>askQuestion</code> is offered, then <code>tools/call askQuestion</code> with the question. The pages the answer lists under Sources become its source links.</dd></div>
+            <div><dt>No answer</dt><dd class="kv-text">When the answer says the docs do not cover the question, does not state the value asked for, or cites no docs page, the result is "No good answer found", never a guess.</dd></div>
             <div><dt>Same as the CLI</dt><dd class="kv-text">This page calls the same search code as <code>pharos-docs</code> and gets the same result, as JSON with <code>--json</code>.</dd></div>
           </dl>
           <details class="disclosure cli" id="cli">

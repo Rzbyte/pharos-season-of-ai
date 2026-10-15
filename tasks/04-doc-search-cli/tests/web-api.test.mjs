@@ -1,19 +1,21 @@
-// GET /api/search against the in-process fake docs site. Needs dist/ (npm run build).
+// GET /api/search against the in-process fake Developer Docs MCP. Needs dist/ (npm run build).
 //   node --test tests/web-api.test.mjs
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { after, afterEach, before, describe, test } from "node:test";
 import { answer, createHandler } from "../api/search.js";
-import { startFakeDocs } from "../dist/tests/fake-docs.js";
+import { MCP_ENDPOINT } from "../dist/src/constants.js";
+import { startFakeMcp } from "../dist/tests/fake-mcp.js";
 
-let fake;
+let mcp;
 before(async () => {
-  fake = await startFakeDocs();
+  mcp = await startFakeMcp();
 });
 after(async () => {
-  await fake.close();
+  await mcp.close();
 });
-afterEach(() => fake.reset());
+afterEach(() => mcp.reset());
 
 async function get(handler, path, method = "GET") {
   const server = createServer(handler);
@@ -27,71 +29,83 @@ async function get(handler, path, method = "GET") {
 }
 
 describe("/api/search", () => {
-  test("answers with the same result schema as the CLI, sources on docs.pharos.xyz", async () => {
-    const { status, headers, body } = await get(createHandler({ fetchOrigin: fake.url }), "/api/search?q=What%20is%20the%20chain%20ID%20of%20the%20Atlantic%20testnet%3F");
+  test("answers through the Developer Docs MCP, with the CLI's result schema and sources on docs.pharos.xyz", async () => {
+    const { status, headers, body } = await get(createHandler({ mcpUrl: mcp.url }), "/api/search?q=What%20is%20the%20Atlantic%20chain%20ID%3F");
     assert.equal(status, 200);
     assert.deepEqual(Object.keys(body), ["schema", "status", "question", "answer", "sources", "reason", "suggestions", "error", "meta"]);
     assert.equal(body.status, "answered");
-    assert.equal(body.answer, "Chain ID: 424242");
+    assert.equal(body.answer, "The Atlantic testnet chain ID is 424242 (test fixture).");
     assert.deepEqual(body.sources, [{ title: "Atlantic Testnet", url: "https://docs.pharos.xyz/getting-started/network/atlantic-testnet" }]);
-    assert.equal(body.meta.transport, "docs-http");
+    assert.deepEqual([body.meta.provider, body.meta.transport, body.meta.endpoint], ["developer-docs-mcp", "docs-mcp", mcp.url]);
+    assert.deepEqual(
+      mcp.requests.map((request) => [request.httpMethod, request.rpc?.method, request.rpc?.params?.name ?? null]),
+      [
+        ["POST", "tools/list", null],
+        ["POST", "tools/call", "askQuestion"],
+      ],
+    );
     assert.equal(headers.get("cache-control"), "public, s-maxage=300, stale-while-revalidate=600");
   });
 
-  test("the docs index is reused between requests", async () => {
-    const handler = createHandler({ fetchOrigin: fake.url });
-    await get(handler, "/api/search?q=deploy%20with%20foundry");
-    await get(handler, "/api/search?q=deploy%20with%20hardhat");
-    assert.equal(fake.requests.filter((request) => request.path === "/sitemap.md").length, 0, "already cached from the first test on this origin");
+  test("the deployed handler is fixed to the official endpoint; no setting can point it elsewhere", async () => {
+    const source = await readFile(new URL("../api/search.js", import.meta.url), "utf8");
+    assert.equal(MCP_ENDPOINT, "https://docs.pharos.xyz/~gitbook/mcp");
+    assert.match(source, /\{ mcpUrl = MCP_ENDPOINT, timeoutMs = TIMEOUT_MS \} = \{\}/);
+    assert.match(source, /export default createHandler\(\);/);
+    assert.doesNotMatch(source, /process\.env|docs-http|DocsHttpProvider/);
   });
 
-  test("a no-answer is a 200 with status no_answer", async () => {
-    const { status, body } = await answer("Who won the 2018 football world cup?", { fetchOrigin: fake.url });
+  test("a warm instance lists the tools once; after an MCP error it lists them again", async () => {
+    const fresh = await startFakeMcp();
+    try {
+      const cold = await answer("What is the Atlantic chain ID?", { mcpUrl: fresh.url });
+      assert.equal(cold.body.meta.requests, 2, "tools/list and askQuestion");
+      const warm = await answer("How do I deploy a contract with Foundry?", { mcpUrl: fresh.url });
+      assert.equal(warm.body.meta.requests, 1, "askQuestion only");
+      assert.deepEqual(fresh.requests.map((request) => request.rpc.method), ["tools/list", "tools/call", "tools/call"]);
+      fresh.set("http-500", "tools/call");
+      assert.equal((await answer("What is the Atlantic chain ID?", { mcpUrl: fresh.url })).status, 502);
+      fresh.reset();
+      assert.equal((await answer("What is the Atlantic chain ID?", { mcpUrl: fresh.url })).body.meta.requests, 2);
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  test("a question the docs do not cover is a 200 with status no_answer and the nearby pages", async () => {
+    const { status, body } = await answer("How do I deploy an Anchor program to Solana?", { mcpUrl: mcp.url });
     assert.equal(status, 200);
-    assert.deepEqual([body.status, body.answer, body.reason], ["no_answer", null, "no_matching_page"]);
+    assert.deepEqual([body.status, body.answer, body.sources, body.reason], ["no_answer", null, [], "not_in_docs"]);
+    assert.deepEqual(body.suggestions.map((page) => page.title), ["Overview", "Foundry"]);
   });
 
-  test("a missing or oversized question is a 400 before any docs request", async () => {
+  test("a missing or oversized question is a 400 before any MCP request", async () => {
     for (const path of ["/api/search", "/api/search?q=", "/api/search?q=%20%20", `/api/search?q=${"x".repeat(400)}`]) {
-      const { status, headers, body } = await get(createHandler({ fetchOrigin: fake.url }), path);
+      const { status, headers, body } = await get(createHandler({ mcpUrl: mcp.url }), path);
       assert.equal(status, 400, path);
       assert.equal(body.error.kind, "usage");
       assert.equal(headers.get("cache-control"), "no-store");
     }
-    assert.equal(fake.requests.length, 0);
+    assert.equal(mcp.requests.length, 0);
   });
 
-  test("an unreachable docs site is a 502 that is never cached", async () => {
-    const { status, headers, body } = await get(createHandler({ fetchOrigin: "http://127.0.0.1:9", timeoutMs: 1000 }), "/api/search?q=deploy%20a%20contract");
-    assert.equal(status, 502);
-    assert.equal(body.status, "error");
-    assert.equal(headers.get("cache-control"), "no-store");
-  });
-
-  test("a cold start counts its index request; a failing index is tried once, not twice", async () => {
-    const fresh = await startFakeDocs();
-    try {
-      const cold = await answer("What is the chain ID of the Atlantic testnet?", { fetchOrigin: fresh.url });
-      assert.equal(cold.body.meta.requests, 2, "sitemap.md and the page");
-      fresh.reset();
-      const warm = await answer("What is the chain ID of the Atlantic testnet?", { fetchOrigin: fresh.url });
-      assert.equal(warm.body.meta.requests, 1);
-    } finally {
-      await fresh.close();
-    }
-    const broken = await startFakeDocs();
-    try {
-      broken.set("/sitemap.md", { status: 503 });
-      const { status } = await answer("deploy a contract", { fetchOrigin: broken.url });
-      assert.equal(status, 502);
-      assert.equal(broken.requests.filter((request) => request.path === "/sitemap.md").length, 1);
-    } finally {
-      await broken.close();
-    }
+  test("the MCP unreachable, failing or too slow: a 502 with the reason, never cached, nothing else tried", async () => {
+    const down = await get(createHandler({ mcpUrl: "http://127.0.0.1:9/~gitbook/mcp", timeoutMs: 1000 }), "/api/search?q=deploy%20a%20contract");
+    assert.equal(down.status, 502);
+    assert.deepEqual([down.body.status, down.body.error.kind, down.body.answer, down.body.meta.transport], ["error", "upstream_unreachable", null, "docs-mcp"]);
+    assert.equal(down.headers.get("cache-control"), "no-store");
+    mcp.set("rpc-error", "tools/call");
+    const failing = await answer("What is the Atlantic chain ID?", { mcpUrl: mcp.url });
+    assert.equal(failing.status, 502);
+    assert.match(failing.body.error.message, /error -32603: Fixture failure/);
+    mcp.reset();
+    mcp.set("hang", "tools/call");
+    const slow = await answer("What is the Atlantic chain ID?", { mcpUrl: mcp.url, timeoutMs: 1000 });
+    assert.deepEqual([slow.status, slow.body.error.kind], [502, "timeout"]);
   });
 
   test("only GET", async () => {
-    const { status, headers } = await get(createHandler({ fetchOrigin: fake.url }), "/api/search?q=x", "POST");
+    const { status, headers } = await get(createHandler({ mcpUrl: mcp.url }), "/api/search?q=x", "POST");
     assert.equal(status, 405);
     assert.equal(headers.get("allow"), "GET");
   });

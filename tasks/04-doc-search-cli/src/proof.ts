@@ -1,18 +1,150 @@
-import { DOCS_HOST, DOCS_ORIGIN, HARD_MAX_PAGES, TOOL_NAME } from "./constants.js";
+import { ASK_TOOL, DOCS_HOST, DOCS_ORIGIN, HARD_MAX_PAGES, MCP_ENDPOINT, TOOL_NAME } from "./constants.js";
 import { docsPath, pageUrl } from "./docs-index.js";
+import { askTool, parseToolList, toolText, type McpTool } from "./providers/developer-docs-mcp.js";
 import { interpret } from "./providers/docs-http.js";
-import { GOAL } from "./search.js";
-import { officialSourceUrl, retainedText } from "./source-gate.js";
+import { jsonRpcMessages, responseFor } from "./providers/mcp-http.js";
+import type { DocsAnswer } from "./providers/provider.js";
+import { GOAL, MCP_GOAL } from "./search.js";
+import { judgeAnswer, officialSourceUrl, retainedText } from "./source-gate.js";
+import { answerAndSources } from "./text.js";
 import type { RequestRecord, SearchResult } from "./types.js";
 
-/** The three README examples: a simple fact, a multi-step workflow, and one the docs should not answer. */
+/** The three README examples, asked of the Developer Docs MCP: a fact, a how-to, and one the docs do not cover. */
 export const PROOF_QUERIES = [
-  { id: "a", label: "Simple factual query", question: "What is the chain ID of the Atlantic testnet?", expect: "answered" },
-  { id: "b", label: "Multi-step developer workflow", question: "How do I set up Foundry and deploy a contract to the Atlantic testnet?", expect: "answered" },
+  { id: "a", label: "Simple factual query", question: "What is the Atlantic chain ID?", expect: "answered" },
+  { id: "b", label: "Procedural how-to query", question: "How do I deploy a contract with Foundry?", expect: "answered" },
   { id: "c", label: "Not covered by the docs", question: "How do I deploy an Anchor program to Solana?", expect: "no_answer" },
 ] as const;
 
-export interface Transcript {
+export interface Check {
+  name: string;
+  ok: boolean;
+  detail: string;
+}
+
+const RESULT_KEYS = ["schema", "status", "question", "answer", "sources", "reason", "suggestions", "error", "meta"];
+
+// ---------------------------------------------------------------------------
+// The canonical proof: runs through the Pharos Developer Docs MCP
+
+/** What `pharos-docs --transcript` saves for a run through the Developer Docs MCP. */
+export interface McpTranscript {
+  format: string;
+  tool: { name: string; version: string };
+  provider: string;
+  transport: string;
+  endpoint: string;
+  toolsFromCache: boolean;
+  tools: McpTool[] | null;
+  /** The tool every question goes to: askQuestion. */
+  selectedTool: string;
+  startedAt: string;
+  finishedAt: string;
+  argv: string[];
+  requests: RequestRecord[];
+  answer: DocsAnswer | null;
+  result: SearchResult;
+}
+
+/**
+ * Check one MCP proof run from its own transcript: every request a JSON-RPC POST to the official Developer
+ * Docs MCP, the tools listed live with askQuestion among them, askQuestion called once with the question,
+ * every saved response well formed, and the result exactly what the saved askQuestion response gives
+ * through the source gate, recomputed here from the saved bytes. Nothing trusts the result's own account.
+ */
+export function verifyMcpRun(transcript: McpTranscript, output: string, expect: string): Check[] {
+  const checks: Check[] = [];
+  const check = (name: string, ok: boolean, detail: string) => void checks.push({ name, ok, detail });
+  const { requests, result } = transcript;
+
+  check("transcript", transcript.format === "pharos-docs-mcp-transcript/1" && transcript.tool?.name === TOOL_NAME, `${transcript.format}, ${transcript.tool?.name} ${transcript.tool?.version}`);
+  const ids = requests.map((r) => r.rpc?.id);
+  check(
+    "official Developer Docs MCP only",
+    transcript.endpoint === MCP_ENDPOINT && requests.length > 0 && requests.every((r) => r.method === "POST" && r.url === MCP_ENDPOINT && r.rpc?.jsonrpc === "2.0") && new Set(ids).size === ids.length,
+    `${requests.length} JSON-RPC POST requests, all to ${MCP_ENDPOINT}`,
+  );
+  check(
+    "transport stated as MCP",
+    transcript.transport === "docs-mcp" && transcript.provider === "developer-docs-mcp" && result.meta.transport === "docs-mcp" && result.meta.provider === "developer-docs-mcp" && result.meta.endpoint === MCP_ENDPOINT,
+    `provider "${result.meta.provider}", transport "${result.meta.transport}", endpoint ${result.meta.endpoint}`,
+  );
+
+  // Every saved response re-read: a JSON-RPC answer with its request's id, no error.
+  const results = new Map<RequestRecord, unknown>();
+  const unreadable: string[] = [];
+  for (const r of requests) {
+    try {
+      if (r.status !== 200 || r.body === null || !r.rpc) throw new Error(`HTTP ${r.status}`);
+      results.set(r, responseFor(jsonRpcMessages(r.body, r.contentType), r.rpc.id));
+    } catch (error) {
+      unreadable.push(`#${r.seq} ${r.rpc?.method ?? "?"}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  check("JSON-RPC responses well formed", unreadable.length === 0, unreadable.length ? unreadable.join("; ") : `${requests.length} responses, each a JSON-RPC result for its own request id`);
+
+  const list = requests[0];
+  let tools: McpTool[] | null = null;
+  try {
+    tools = list?.rpc?.method === "tools/list" ? parseToolList(results.get(list)) : null;
+    if (tools) askTool(tools);
+  } catch {
+    tools = null;
+  }
+  check(
+    "tools listed live, askQuestion offered",
+    !transcript.toolsFromCache && tools !== null && JSON.stringify(tools) === JSON.stringify(transcript.tools),
+    tools ? `tools/list -> ${tools.map((tool) => tool.name).join(", ")}` : "no live tools/list with a usable askQuestion",
+  );
+
+  const calls = requests.filter((r) => r.rpc?.method === "tools/call");
+  const call = calls[0];
+  const args = (call?.rpc?.params?.arguments ?? {}) as Record<string, unknown>;
+  check(
+    "askQuestion called once, with the question",
+    transcript.selectedTool === ASK_TOOL && calls.length === 1 && call?.rpc?.params?.name === ASK_TOOL && args.question === result.question && (args.goal === undefined || args.goal === MCP_GOAL),
+    call ? `tools/call ${String(call.rpc?.params?.name)} { question: ${JSON.stringify(args.question)}${args.goal !== undefined ? ", goal" : ""} }` : "no tools/call",
+  );
+
+  check("result schema", JSON.stringify(Object.keys(result)) === JSON.stringify(RESULT_KEYS) && result.schema === "pharos-docs-result/1", Object.keys(result).join(", "));
+  check(`status is ${expect}`, result.status === expect, `status ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
+
+  // The answer as the gate saw it, recomputed from the saved askQuestion response.
+  let derived: DocsAnswer | null = null;
+  try {
+    const text = toolText(call ? results.get(call) : undefined);
+    derived = { tool: ASK_TOOL, text, ...answerAndSources(text) };
+  } catch {
+    derived = null;
+  }
+  const verdict = derived ? judgeAnswer(derived, result.question) : null;
+  const same =
+    verdict !== null &&
+    JSON.stringify(derived) === JSON.stringify(transcript.answer) &&
+    JSON.stringify([verdict.status, verdict.answer, verdict.sources, verdict.reason, verdict.suggestions]) === JSON.stringify([result.status, result.answer, result.sources, result.reason, result.suggestions]);
+  check("result recomputed from the saved MCP response", same, same ? "the saved askQuestion text gives exactly this answer, sources and status through the gate" : "the saved response does not give this result");
+
+  if (result.status === "answered") {
+    const listed = new Set((derived?.sources ?? []).map((source) => officialSourceUrl(source.url)).filter(Boolean));
+    const bad = result.sources.filter((source) => officialSourceUrl(source.url) !== source.url || !listed.has(source.url));
+    check(
+      "sources are official pages the answer lists",
+      result.sources.length > 0 && bad.length === 0 && new Set(result.sources.map((source) => source.url)).size === result.sources.length,
+      bad.length ? `not listed by the answer, or not a docs page: ${bad.map((source) => source.url).join(", ")}` : `${result.sources.length} docs.pharos.xyz ${result.sources.length === 1 ? "page" : "pages"}, each listed in the MCP answer`,
+    );
+  } else {
+    check("no answer invented", result.answer === null && result.sources.length === 0 && result.reason !== null, result.reason ? `reason ${result.reason}` : "no reason");
+  }
+
+  const printed = result.status === "answered" ? result.sources.every((s) => output.includes(s.url)) && output.startsWith("Answer\n") : output.startsWith("No good answer found in the Pharos Developer Docs.");
+  check("saved output matches the result", printed, result.status === "answered" ? "Answer and every source URL printed" : "the no-answer message printed");
+  return checks;
+}
+
+// ---------------------------------------------------------------------------
+// The docs-http development transport (not MCP): its transcripts, as archived under proof/archive/
+
+export interface HttpTranscript {
   format: string;
   tool: { name: string; version: string };
   transport: string;
@@ -25,19 +157,11 @@ export interface Transcript {
   result: SearchResult;
 }
 
-export interface Check {
-  name: string;
-  ok: boolean;
-  detail: string;
-}
-
-const RESULT_KEYS = ["schema", "status", "question", "answer", "sources", "reason", "suggestions", "error", "meta"];
-
 /**
- * Check one proof run from its own transcript: where every request went, what it asked, and whether the
- * answer's facts are in what the docs returned. Nothing here trusts the result's description of itself.
+ * Check one docs-http run from its own transcript: where every request went, what it asked, and whether
+ * the answer's facts are in what the docs returned. Nothing here trusts the result's description of itself.
  */
-export function verifyRun(transcript: Transcript, output: string, expect: string): Check[] {
+export function verifyHttpRun(transcript: HttpTranscript, output: string, expect: string): Check[] {
   const checks: Check[] = [];
   const check = (name: string, ok: boolean, detail: string) => void checks.push({ name, ok, detail });
   const { requests, result } = transcript;

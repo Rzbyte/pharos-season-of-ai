@@ -1,4 +1,5 @@
 // Text handling shared by the ranker and the answer extractor. Deterministic, no model.
+import { DOCS_ORIGIN } from "./constants.js";
 
 const STOPWORDS = new Set(
   (
@@ -319,6 +320,46 @@ export function answerSegment(text: string): string {
   const first = lines.findIndex((line) => line.trim() !== "");
   if (first !== -1 && /^\s*#\s+\S/.test(lines[first]!)) lines.splice(0, first + 1);
   return cutAt(lines, (name) => FOLLOW_UP_SECTION.test(name) || NAV_SECTION.test(name)).join("\n").trim();
+}
+
+/** The heading of the section that lists an answer's sources. */
+const SOURCES_SECTION = /^(?:sources?|references?|citations?)$/;
+
+/**
+ * An answer and the sources it gives, read structurally: the answer is everything before its Sources
+ * section (without a restated question heading, stopped before any generated follow-up list); the
+ * sources are the links the answer itself makes, then the links in its Sources section (up to the next
+ * heading), in that order. Links are returned as written (made absolute against the docs site); which
+ * of them are official pages is the source gate's call.
+ */
+export function answerAndSources(text: string): { body: string; sources: Array<{ title: string | null; url: string }>; sourceSection: boolean } {
+  const lines = bodyLines(text);
+  const at = lines.findIndex((line) => {
+    const name = sectionName(line);
+    return name !== null && SOURCES_SECTION.test(name);
+  });
+  const body = answerSegment((at === -1 ? lines : lines.slice(0, at)).join("\n"));
+  if (at === -1) return { body, sources: listedLinks(body), sourceSection: false };
+  const rest = lines.slice(at + 1);
+  const end = rest.findIndex((line) => {
+    const name = sectionName(line);
+    return /^\s*#{1,6}\s+\S/.test(line) || (name !== null && FOLLOW_UP_SECTION.test(name));
+  });
+  return { body, sources: [...listedLinks(body), ...listedLinks((end === -1 ? rest : rest.slice(0, end)).join("\n"))], sourceSection: true };
+}
+
+/** Markdown links ("[title](url)") and bare URLs, in order, each with its label when it has one. */
+function listedLinks(text: string): Array<{ title: string | null; url: string }> {
+  const links: Array<{ title: string | null; url: string }> = [];
+  for (const match of text.matchAll(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)|(https?:\/\/[^\s)<>"']+)/g)) {
+    const href = (match[2] ?? match[3] ?? "").replace(/[.,;:]+$/, "");
+    try {
+      links.push({ title: match[1] ? plainInline(match[1]) || null : null, url: new URL(href, `${DOCS_ORIGIN}/`).href });
+    } catch {
+      // not a URL; ignore
+    }
+  }
+  return links;
 }
 
 /** A full page, without any generated follow-up question list appended to it. */

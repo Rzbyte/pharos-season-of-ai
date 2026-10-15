@@ -46,7 +46,9 @@ export type NoAnswerReason =
   | "page_unavailable"
   | "not_in_docs"
   | "weak_match"
-  | "value_not_found";
+  | "value_not_found"
+  /** The docs answered without citing any docs.pharos.xyz page, so the answer is not shown. */
+  | "unsourced";
 
 export type ErrorKind = "usage" | "index_unavailable" | "timeout" | "upstream_unreachable" | "upstream_error" | "malformed_response" | "unexpected";
 
@@ -65,20 +67,35 @@ export interface SearchResult {
   meta: {
     tool: string;
     version: string;
-    /** "docs-http" today: the official dynamic docs query interface over HTTPS, not MCP. */
+    /** Which provider answered: "developer-docs-mcp" (canonical) or "docs-http" (development only). */
+    provider: string;
+    /** What carried the requests, stated plainly: "docs-mcp" (MCP over Streamable HTTP) or "docs-http" (HTTPS GET, not MCP). */
     transport: string;
+    /** Where the requests went: the MCP endpoint, or the docs origin for docs-http. */
+    endpoint: string;
     pagesConsulted: Array<{ title: string; url: string; requestUrl: string; kind: PageResponse["kind"] | null; outcome: string }>;
     requests: number;
     elapsedMs: number;
   };
 }
 
+/** One JSON-RPC 2.0 request, exactly as POSTed to the MCP endpoint. */
+export interface JsonRpcRequest {
+  jsonrpc: "2.0";
+  id: number;
+  method: string;
+  params?: Record<string, unknown>;
+}
+
 /** One HTTP request a provider made, for --verbose and the proof transcript. */
 export interface RequestRecord {
   seq: number;
-  method: "GET";
+  /** POST for MCP (JSON-RPC over Streamable HTTP); GET for the docs-http development transport. */
+  method: "GET" | "POST";
   url: string;
-  purpose: "index" | "ask" | "html-fallback";
+  purpose: "index" | "ask" | "html-fallback" | "tools/list" | "tools/call";
+  /** The JSON-RPC request sent (MCP only; null for a GET). */
+  rpc: JsonRpcRequest | null;
   status: number | null;
   contentType: string | null;
   bytes: number;
@@ -87,7 +104,10 @@ export interface RequestRecord {
   sha256: string | null;
   /** First part of the body (the index), for the proof transcript. */
   excerpt: string | null;
-  /** The whole body of a page request (ask or HTML fallback), so the proof can check every answer against it. */
+  /**
+   * The whole response body: every MCP response (the raw event stream), and every page request (ask or
+   * HTML fallback), so the proof can check every answer against what was received.
+   */
   body: string | null;
   error: string | null;
 }
