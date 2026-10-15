@@ -77,6 +77,7 @@
   .gap-query > summary:hover, .gap-query > summary:active { color: var(--text); }
   .gap-query[open] > summary .chev svg { transform: rotate(180deg); }
   .query-note { margin-bottom: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .gap-details { margin-bottom: var(--space-3); max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); }
   .gap-evidence { margin-top: 6px; }
   .shot { position: relative; display: grid; gap: var(--space-1); justify-items: start; width: 10rem; max-width: 100%; text-decoration: none; }
   .shot img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }

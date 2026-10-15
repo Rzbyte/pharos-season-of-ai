@@ -67,8 +67,12 @@
           "text": "eth_chainId returned 0xa8231, which is 688689."
         },
         {
+          "kind": "query",
+          "text": "That worked.\n\nThe RPC returned:\n\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0xa8231\"}\n\nI noticed this is different from the expected value you gave me, which was 0xa82f1.\n\nWhat should I do next?"
+        },
+        {
           "kind": "answer",
-          "text": "An expected chain ID given earlier did not match; Docs MCP acknowledged and corrected it."
+          "text": "Docs MCP acknowledged that its expected value was wrong and corrected it."
         }
       ]
     },
@@ -109,33 +113,35 @@
   "gaps": [
     {
       "title": "Incorrect expected chain ID",
-      "happened": "Docs MCP first gave an expected Atlantic chain ID that did not match the network. The RPC returned 0xa8231 (688689), and Docs MCP then acknowledged and corrected the value.",
-      "fix": "For live network parameters such as the chain ID, RPC URL and contract addresses, retrieve or check the current Live Data page instead of relying on stored or inferred values.",
-      "queryNote": "The query that led to the chain ID check:",
+      "happened": "Docs MCP expected 0xa82f1; the Atlantic RPC returned 0xa8231 (688689). It then corrected itself.",
+      "fix": "Check live values such as the chain ID against the current Live Data page.",
       "queries": [
-        "I think we got a bit sidetracked into troubleshooting Foundry.\n\nMy original goal is simpler: I want to use only the official Pharos Developer Docs to get from zero to successfully reading a value from a smart contract on Pharos from my phone.\n\nIf Foundry is not required for that, I'd rather use the simplest documented approach that works from Termux.\n\nWhat is the next step toward making an actual read-only contract call?\n\nPlease keep it step by step and only use information from the official Developer Docs."
+        "That worked.\n\nThe RPC returned:\n\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0xa8231\"}\n\nI noticed this is different from the expected value you gave me, which was 0xa82f1.\n\nWhat should I do next?"
       ],
-      "evidenceUrl": "https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C"
+      "evidenceUrl": "https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C",
+      "details": "This applies to every live network parameter: chain ID, RPC URL and contract addresses. Retrieve or verify the current Live Data page instead of relying on stored or inferred values."
     },
     {
-      "title": "Tooling path did not fit the environment or the goal",
-      "happened": "The goal was one read-only call from Android + Termux. The path went through installing Foundry, a missing ~/.bashrc, PATH fixes and an ARM64 execution failure. Direct JSON-RPC with curl was much simpler, and it worked.",
-      "fix": "Ask about the environment and the goal first. For read-only work, offer the JSON-RPC/curl path straight away. For Android, Termux, ARM64 or other setups Foundry does not support, say so before the install steps.",
+      "title": "Tooling path did not fit the goal",
+      "happened": "A single read from Termux went through Foundry, .bashrc and PATH fixes, then an ARM64 failure. curl worked.",
+      "fix": "Ask about the environment and goal first; offer JSON-RPC with curl for read-only work.",
       "queries": [
         "I'm new to Pharos and I want to build something simple.\nI'm doing this entirely from my phone, using Android and Termux, so I don't have a normal desktop development setup.\nCan you guide me step by step using only the official Pharos Developer Docs?\nMy goal is to get to the point where I can read a value from a smart contract on Pharos.\nPlease start from the beginning and don't assume I already know the setup or tools I need.\nJust give me the first step for now. I'll try it on my phone and tell you what happens.",
         "I followed your fallback exactly:\n\nexport PATH=\"$HOME/.foundry/bin:$PATH\"\nfoundryup\n\nbut it still failed with:\n\nbash: /data/data/com.termux/files/home/.foundry/bin/foundryup: cannot execute: required file not found\n\nI'm still using Android + Termux on ARM64.\n\nWhat should I do next using only the official Pharos Developer Docs?"
       ],
-      "evidenceUrl": "https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C"
+      "evidenceUrl": "https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C",
+      "details": "The path was: install Foundry, source ~/.bashrc (Termux has none), add ~/.foundry/bin to PATH, then \"cannot execute: required file not found\" on ARM64. For Android, Termux, ARM64 or other setups Foundry does not support, say so before the install steps."
     },
     {
       "title": "No complete contract-read example",
-      "happened": "The docs explain how eth_call works, but no single example says which contract it reads, the function signature and selector, the return type, how to decode the hex, and what the value means. Docs MCP confirmed the docs do not currently provide one.",
-      "fix": "Add one canonical read-only example: a named deployed contract with its purpose and current address, the function signature, selector and calldata, the return type, a raw eth_call response, the decoded value, and what that value means.",
+      "happened": "The docs explain eth_call, but no example says which contract, function and value were read.",
+      "fix": "Add one canonical read-only example, from the contract to the decoded value.",
       "queries": [
         "That worked. I got a result back from the eth_call.\n\nBut I don't actually understand what I just read.\n\nWhat contract is the example address, what function does the selector call, and what does the returned value mean?\n\nPlease explain it using only the official Pharos Developer Docs.",
         "I understand how eth_call works now, but I still want an example where I can actually understand and verify what I read without leaving the official Pharos Developer Docs.\n\nDo the official Developer Docs provide a documented contract with:\n- its purpose or name\n- a real deployed address\n- a specific read-only function\n- the function's return type\n- and an explanation of what the returned value means?\n\nIf yes, please guide me through that example.\n\nIf not, please say clearly that the docs don't currently provide one."
       ],
-      "evidenceUrl": "https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C"
+      "evidenceUrl": "https://drive.google.com/drive/folders/1YE5OXTxgh1xyxhrWz2drJuabZeMd5K7C",
+      "details": "Docs MCP confirmed the docs do not currently provide one. The example should name the deployed contract and its purpose, and give its current address, the function signature, selector and calldata, the return type, a raw eth_call response, the decoded value, and what that value means."
     }
   ],
   "links": {

@@ -39,12 +39,15 @@ describe("the content", () => {
     assert.deepEqual(evidence.links, { proof: PROOF, video: VIDEO });
     assert.equal(evidence.gaps.length, 3);
     assert.ok(evidence.gaps.every((gap) => gap.queries.length >= 1 && gap.evidenceUrl === PROOF && !gap.evidence), "exact queries; evidence is the proof folder, no local screenshots");
-    // The five real queries, each asked once in the log.
+    // The six real queries, each asked once in the log.
     const asked = evidence.journey.flatMap((step) => step.log.filter((entry) => entry.kind === "query").map((entry) => entry.text));
-    assert.equal(asked.length, 5);
-    assert.equal(new Set(asked).size, 5);
+    assert.equal(asked.length, 6);
+    assert.equal(new Set(asked).size, 6);
     for (const gap of evidence.gaps) for (const query of gap.queries) assert.ok(asked.includes(query), "a gap's query is one of the logged queries");
     assert.match(asked[0], /^I'm new to Pharos and I want to build something simple\./);
+    // Gap 1 carries the exact query that exposed the wrong expected chain ID, and nothing else.
+    assert.deepEqual(evidence.gaps[0].queries, ['That worked.\n\nThe RPC returned:\n\n{"jsonrpc":"2.0","id":1,"result":"0xa8231"}\n\nI noticed this is different from the expected value you gave me, which was 0xa82f1.\n\nWhat should I do next?']);
+    assert.equal(evidence.gaps[0].queryNote, undefined);
     assert.match(JSON.stringify(evidence), /0xa8231/);
     assert.match(JSON.stringify(evidence), /688689/);
   });
@@ -88,6 +91,22 @@ describe("the page", () => {
     assert.doesNotMatch(html, /\b(?:TODO|TBD|lorem|placeholder|coming soon|planned)\b/i);
     assert.doesNotMatch(html, /<img\b|<dialog\b/, "no screenshots are in the repository, so none are shown");
     assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/, "no inline script");
+  });
+
+  test("each gap's default view is short: one line of what happened, one of the fix; the rest is in its disclosure", () => {
+    for (const gap of evidence.gaps) {
+      assert.ok(gap.title.length <= 40, gap.title);
+      for (const key of ["happened", "fix"]) assert.ok(gap[key].length <= 120 && gap[key].split(/(?<=\.) /).length <= 2, `${gap.title}: ${key} is ${gap[key].length} characters`);
+      assert.ok(gap.details, "the longer explanation is kept, behind the disclosure");
+    }
+    const gaps = [...html.matchAll(/<li class="gap">([\s\S]*?)<\/li>/g)].map(([, gap]) => gap);
+    for (const gap of gaps) {
+      const [visible, hidden] = gap.split('<details class="gap-query">');
+      assert.doesNotMatch(visible, /gap-details|class="query"/, "details and queries are not in the default view");
+      assert.match(hidden, /^<summary>Exact quer(?:y|ies \(\d\)) and details/);
+      assert.match(hidden, /<p class="gap-details">/);
+    }
+    assert.doesNotMatch(html, /led to the chain ID check/);
   });
 
   test("proof, video and each gap's evidence point at the real Drive links, in a new tab", () => {

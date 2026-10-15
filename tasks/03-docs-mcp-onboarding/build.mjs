@@ -47,6 +47,7 @@ export function validate(data) {
     for (const key of ["title", "happened", "fix"]) need(isText(gap?.[key]), `gaps[${index}].${key} is required`);
     need(Array.isArray(gap?.queries) && gap.queries.length > 0 && gap.queries.every(isText), `gaps[${index}].queries lists the exact queries`);
     need(gap?.queryNote === undefined || isText(gap.queryNote), `gaps[${index}].queryNote is text`);
+    need(gap?.details === undefined || isText(gap.details), `gaps[${index}].details is text`);
     need(gap?.evidenceUrl === undefined || isHttps(gap.evidenceUrl), `gaps[${index}].evidenceUrl is an https URL`);
     const shot = gap?.evidence;
     if (shot !== null && shot !== undefined) {
@@ -150,7 +151,9 @@ export function renderMain(data) {
           const shot = gap.evidence
             ? `<a class="shot" href="${esc(gap.evidence.full)}" data-evidence data-alt="${esc(gap.evidence.alt)}"><img src="${esc(gap.evidence.thumb)}" alt="" width="160" height="100" loading="lazy" decoding="async"><span class="shot-word">View evidence</span><span class="sr">: ${esc(gap.evidence.alt)}</span></a>`
             : "";
-          const queries = `<details class="gap-query"><summary>${gap.queries.length === 1 ? "Exact query" : `Exact queries (${gap.queries.length})`}${ICON.chev}</summary>${gap.queryNote ? `<p class="query-note">${esc(gap.queryNote)}</p>` : ""}${gap.queries.map((query) => `<blockquote class="query">${esc(query)}</blockquote>`).join("")}</details>`;
+          // The default view stays one line each; the longer explanation waits with the queries.
+          const label = `${gap.queries.length === 1 ? "Exact query" : `Exact queries (${gap.queries.length})`}${gap.details ? " and details" : ""}`;
+          const queries = `<details class="gap-query"><summary>${label}${ICON.chev}</summary>${gap.details ? `<p class="gap-details">${esc(gap.details)}</p>` : ""}${gap.queryNote ? `<p class="query-note">${esc(gap.queryNote)}</p>` : ""}${gap.queries.map((query) => `<blockquote class="query">${esc(query)}</blockquote>`).join("")}</details>`;
           const evidence = !gap.evidence && gap.evidenceUrl ? outLink(gap.evidenceUrl, "action gap-evidence", `<span>Evidence</span>${ICON.out}`) : "";
           return `      <li class="gap"><div class="gap-text"><h3 class="gap-title"><span class="gap-n">${index + 1}</span>${esc(gap.title)}</h3><p class="gap-happened">${esc(gap.happened)}</p><p class="gap-fix"><span class="gap-label">Suggested fix</span>${esc(gap.fix)}</p><div class="gap-more">${queries}${evidence}</div></div>${shot}</li>`;
         }),
