@@ -1,4 +1,4 @@
-// Browser tests for the documentation terminal, in Chromium.
+// Browser tests for the docs search page, in Chromium.
 //   NODE_PATH="$(npm root -g)" node --test tests/web-browser.test.mjs
 // Playwright is used where it is installed globally; without it the suite is skipped and says why.
 // The real api/search.js runs against the in-process fake docs site (made-up values).
@@ -23,7 +23,7 @@ try {
 const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2" };
 const WIDTHS = [[320, 640], [360, 740], [390, 844], [768, 1024], [1280, 860]];
 
-describe("the documentation terminal in a browser", { skip }, () => {
+describe("the docs search page in a browser", { skip }, () => {
   let fake;
   let server;
   let browser;
@@ -72,111 +72,152 @@ describe("the documentation terminal in a browser", { skip }, () => {
     await page.goto(base);
     return { page, errors };
   }
-  /** Type a command and press Enter; wait for its entry to finish. */
-  async function command(page, line) {
-    const before = await page.locator(".entry").count();
-    await page.fill("#cmd", line);
-    await page.press("#cmd", "Enter");
-    await page.waitForFunction((n) => document.querySelectorAll(".entry").length > n && !document.querySelector(".out-pending"), before);
-    return page.locator(".entry").last();
+  /** Ask in the box and press Enter; wait for that turn to finish. */
+  async function ask(page, line) {
+    const before = await page.locator(".turn").count();
+    await page.fill("#q", line);
+    await page.press("#q", "Enter");
+    await page.waitForFunction((n) => document.querySelectorAll(".turn").length > n && !document.querySelector(".turn[aria-busy]"), before, { timeout: 15_000 });
+    return page.locator(".turn").last();
   }
+  const state = (page) => page.evaluate(() => document.body.dataset.state);
 
-  test("a question runs through the real search and renders Answer and Sources", async () => {
+  test("idle: the title, one box and three examples; nothing asked yet", async () => {
     const { page, errors } = await open();
-    const entry = await command(page, 'pharos-docs "What is the chain ID of the Atlantic testnet?"');
-    assert.equal(await entry.locator(".cmd").innerText(), '$ pharos-docs "What is the chain ID of the Atlantic testnet?"');
-    assert.equal(await entry.locator(".out-answer").innerText(), "Chain ID: 424242");
-    const link = entry.locator(".sources a");
-    assert.equal(await link.getAttribute("href"), "https://docs.pharos.xyz/getting-started/network/atlantic-testnet");
-    assert.equal(await link.getAttribute("target"), "_blank");
-    assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
-    assert.match(await entry.locator(".out-meta").innerText(), /1 docs page asked/);
-    assert.equal(apiCalls, 1);
-    assert.equal(await page.inputValue("#cmd"), "", "the command line is cleared");
+    assert.equal(await state(page), "idle");
+    assert.equal(await page.locator("#thread").isHidden(), true);
+    assert.deepEqual(await page.locator(".chip").allInnerTexts(), ["Deploy with Foundry", "Atlantic RPC", "Use Chainlink"]);
+    assert.equal(await page.getAttribute("#q", "placeholder"), "Ask the docs…");
+    assert.equal(await page.locator("#cli-body").isHidden(), true);
+    assert.equal(apiCalls, 0);
     assert.deepEqual(errors, []);
   });
 
-  test("a bare question works too; a no-answer says so with nearby topics", async () => {
-    const { page } = await open();
-    const entry = await command(page, "How do I deploy an Anchor program to Solana?");
-    assert.equal(await entry.locator(".out-none").innerText(), "No good answer found in the Pharos Developer Docs.");
-    assert.equal(await entry.locator(".out-answer").count(), 0);
-    assert.ok((await entry.locator(".sources a").count()) >= 1);
+  test("a question runs through the real search: the question, a clean answer, source rows", async () => {
+    const { page, errors } = await open();
+    const turn = await ask(page, 'pharos-docs "What is the chain ID of the Atlantic testnet?"');
+    assert.equal(await turn.locator(".turn-q").textContent(), "You asked: What is the chain ID of the Atlantic testnet?");
+    assert.equal(await turn.locator(".answer").innerText(), "Chain ID: 424242");
+    const link = turn.locator(".sources a");
+    assert.equal(await link.count(), 1);
+    assert.equal(await link.getAttribute("href"), "https://docs.pharos.xyz/getting-started/network/atlantic-testnet");
+    assert.equal(await link.getAttribute("target"), "_blank");
+    assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
+    assert.equal(await link.locator(".source-meta").innerText(), "docs.pharos.xyz/getting-started/network/atlantic-testnet");
+    assert.match(await turn.locator(".turn-meta").innerText(), /^1 docs page asked · \d+ requests? · \d+\.\d s/);
+    assert.equal(await state(page), "answer");
+    assert.equal(await page.locator(".try").isHidden(), true, "the examples go once something is asked");
+    assert.equal(apiCalls, 1);
+    assert.equal(await page.inputValue("#q"), "", "the box is ready for a follow-up");
+    assert.deepEqual(errors, []);
   });
 
-  test("--json shows the raw result", async () => {
+  test("a several-page answer names each page above its part", async () => {
     const { page } = await open();
-    const entry = await command(page, '"What is the chain ID of the Atlantic testnet?" --json');
-    const json = JSON.parse(await entry.locator(".out-json").innerText());
-    assert.equal(json.schema, "pharos-docs-result/1");
-    assert.equal(json.status, "answered");
+    const turn = await ask(page, "How do I set up Foundry and deploy a contract to the Atlantic testnet?");
+    assert.deepEqual(await turn.locator(".answer-from").allInnerTexts(), ["Foundry", "Atlantic Testnet"]);
+    assert.equal(await turn.locator(".sources a").count(), 2);
   });
 
-  test("help, clear and history never call the API; an unknown option is an error", async () => {
+  test("no answer: says so plainly, with the reason, nearby pages and Try another question", async () => {
     const { page } = await open();
-    assert.ok((await (await command(page, "help")).locator(".help dt").count()) >= 4);
-    assert.match(await (await command(page, "pharos-docs q --nope")).locator(".out-error").innerText(), /Unknown option --nope/);
+    const turn = await ask(page, "How do I deploy an Anchor program to Solana?");
+    assert.equal(await turn.locator(".state-title").innerText(), "No good answer found.");
+    assert.equal(await turn.locator(".state-text").innerText(), "I couldn't verify this in the Pharos Developer Docs.");
+    assert.equal(await turn.locator(".answer").count(), 0);
+    assert.ok((await turn.locator(".sources a").count()) >= 1);
+    assert.equal(await state(page), "no-answer");
+    await turn.locator(".retry").click();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "q");
+  });
+
+  test("JSON: --json shows the raw result; every answer has a JSON toggle, built only when opened", async () => {
+    const { page } = await open();
+    const raw = await ask(page, '"What is the chain ID of the Atlantic testnet?" --json');
+    const json = JSON.parse(await raw.locator("pre.json").innerText());
+    assert.deepEqual([json.schema, json.status], ["pharos-docs-result/1", "answered"]);
+    const turn = await ask(page, "What is the chain ID of the Atlantic testnet?");
+    const toggle = turn.locator(".json-toggle");
+    assert.equal(await turn.locator("pre.json").count(), 0);
+    await toggle.click();
+    assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+    assert.equal(JSON.parse(await turn.locator("pre.json").innerText()).schema, "pharos-docs-result/1");
+    await toggle.click();
+    assert.equal(await turn.locator("pre.json").isHidden(), true);
+  });
+
+  test("help opens CLI usage, clear empties the thread, an unknown option is a note: none calls the API", async () => {
+    const { page } = await open();
+    await page.fill("#q", "help");
+    await page.press("#q", "Enter");
+    assert.equal(await page.getAttribute("#cli-toggle", "aria-expanded"), "true");
+    assert.equal(await page.locator("#cli-body").isVisible(), true);
+    assert.match(await (await ask(page, "pharos-docs q --nope")).locator(".turn-note").innerText(), /Unknown option --nope/);
     assert.equal(apiCalls, 0);
-    await page.fill("#cmd", "clear");
-    await page.press("#cmd", "Enter");
-    assert.equal(await page.locator(".entry").count(), 0);
+    await page.fill("#q", "clear");
+    await page.press("#q", "Enter");
+    assert.equal(await page.locator(".turn").count(), 0);
+    assert.equal(await state(page), "idle");
   });
 
-  test("keyboard: Enter runs, ↑/↓ recall history, Escape clears, Ctrl+L empties the log", async () => {
+  test("keyboard: Enter asks, ↑/↓ recall earlier questions, Tab goes from the box to Ask", async () => {
     const { page } = await open();
-    await command(page, "help");
-    await command(page, "pharos-docs --version");
-    await page.focus("#cmd");
+    await ask(page, "pharos-docs --version");
+    await ask(page, "history");
+    await page.focus("#q");
     await page.keyboard.press("ArrowUp");
-    assert.equal(await page.inputValue("#cmd"), "pharos-docs --version");
+    assert.equal(await page.inputValue("#q"), "history");
     await page.keyboard.press("ArrowUp");
-    assert.equal(await page.inputValue("#cmd"), "help");
+    assert.equal(await page.inputValue("#q"), "pharos-docs --version");
     await page.keyboard.press("ArrowDown");
-    assert.equal(await page.inputValue("#cmd"), "pharos-docs --version");
-    await page.keyboard.press("Escape");
-    assert.equal(await page.inputValue("#cmd"), "");
-    await page.keyboard.press("Control+l");
-    assert.equal(await page.locator(".entry").count(), 0);
-    // Tab order: the command line, then Run.
-    await page.focus("#cmd");
+    assert.equal(await page.inputValue("#q"), "history");
+    await page.focus("#q");
     await page.keyboard.press("Tab");
-    assert.equal(await page.evaluate(() => document.activeElement?.id), "run");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "go");
   });
 
-  test("example chips run their question; Run is disabled while a question is out", async () => {
+  test("an example runs its question; Ask is busy while it is out; a failure offers Try again", async () => {
     const { page } = await open();
-    fake.set("/getting-started/network/atlantic-testnet", "hang");
+    // Both pages the question can match never answer, so the search ends in an upstream error.
+    fake.set("/developer-guide/foundry", "hang");
+    fake.set("/developer-guide/hardhat", "hang");
     await page.click(".chip >> nth=0");
-    await page.waitForSelector(".out-pending");
-    assert.equal(await page.locator("#run").isDisabled(), true);
-    assert.equal(await page.locator("#terminal").getAttribute("aria-busy"), "true");
-    assert.equal(await page.locator("#term-state").innerText(), "Asking docs.pharos.xyz");
-    await page.waitForSelector(".out-error", { timeout: 15_000 });
-    assert.equal(await page.locator("#run").isDisabled(), false);
-    assert.match(await page.locator(".out-error").innerText(), /^Error: /);
+    await page.waitForFunction(() => document.body.dataset.state === "searching");
+    assert.equal(await page.getAttribute("#go", "aria-disabled"), "true");
+    assert.equal(await page.locator(".turn[aria-busy] .status-word").innerText(), "Searching");
+    await page.waitForFunction(() => document.body.dataset.state === "error", null, { timeout: 30_000 });
+    assert.equal(await page.getAttribute("#go", "aria-disabled"), "false");
+    const turn = page.locator(".turn").last();
+    assert.equal(await turn.locator(".state-title").innerText(), "Search failed.");
+    await turn.locator(".retry").click();
+    assert.equal(await page.inputValue("#q"), "How do I deploy a contract with Foundry?", "Try again puts the question back");
   });
 
-  test("the log stays bounded", async () => {
+  test("the thread stays bounded at six questions", async () => {
     const { page } = await open();
-    for (let i = 0; i < 24; i += 1) {
-      await page.fill("#cmd", "pharos-docs --version");
-      await page.press("#cmd", "Enter");
+    for (let i = 0; i < 9; i += 1) {
+      await page.fill("#q", `pharos-docs --version`);
+      await page.press("#q", "Enter");
     }
-    assert.equal(await page.locator(".entry").count(), 20);
+    await page.waitForFunction(() => !document.querySelector(".turn[aria-busy]"));
+    assert.equal(await page.locator(".turn").count(), 6);
   });
 
   for (const scheme of ["dark", "light"]) {
     test(`layout at every width, ${scheme}: no overflow, 44px targets, compact type`, async () => {
       for (const [width, height] of WIDTHS) {
         const { page } = await open({ viewport: { width, height }, colorScheme: scheme });
-        await command(page, "How do I set up Foundry and deploy a contract to the Atlantic testnet?");
+        // Chips are 36px to see; their hit area reaches 44px through ::after.
+        const chip = await page.$eval(".chip", (element) => { const after = getComputedStyle(element, "::after"); return element.getBoundingClientRect().height - parseFloat(after.top) - parseFloat(after.bottom); });
+        assert.ok(chip >= 44, `${width}px: chip hit area ${chip}px`);
+        await ask(page, "How do I set up Foundry and deploy a contract to the Atlantic testnet?");
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         assert.equal(overflow, 0, `${width}px overflows by ${overflow}px`);
-        const small = await page.$$eval("button, input, .sources a, .links a", (elements) =>
+        const small = await page.$$eval("button:not(.chip), input, .sources a", (elements) =>
           elements.filter((element) => element.getClientRects().length && element.getBoundingClientRect().height < 44).map((element) => element.id || element.className || element.tagName),
         );
         assert.deepEqual(small, [], `${width}px: targets under 44px`);
-        const sizes = await page.evaluate(() => ({ h1: parseFloat(getComputedStyle(document.querySelector("h1")).fontSize), body: parseFloat(getComputedStyle(document.body).fontSize), meta: parseFloat(getComputedStyle(document.querySelector(".out-meta")).fontSize) }));
+        const sizes = await page.evaluate(() => ({ h1: parseFloat(getComputedStyle(document.querySelector("h1")).fontSize), body: parseFloat(getComputedStyle(document.body).fontSize), meta: parseFloat(getComputedStyle(document.querySelector(".turn-meta")).fontSize) }));
         if (width < 600) assert.ok(sizes.h1 >= 27 && sizes.h1 <= 31, `${width}px: title ${sizes.h1}px`);
         assert.ok(sizes.body >= 15 && sizes.body <= 16, `body ${sizes.body}px`);
         assert.ok(sizes.meta >= 12 && sizes.meta <= 13, `meta ${sizes.meta}px`);

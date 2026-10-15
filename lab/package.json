@@ -1,0 +1,16 @@
+{
+  "name": "pharos-agent-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Pharos Agent Lab landing page: an index of the Season of AI tasks, built from the shared task manifest.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

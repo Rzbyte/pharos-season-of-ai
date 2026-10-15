@@ -1,6 +1,6 @@
 # Task 04: Doc-Search CLI
 
-`pharos-docs` asks the official **Pharos Developer Docs** a natural-language question and prints a short answer with the pages it comes from. When the docs do not answer the question, it says so instead of guessing. A browser terminal runs the same search code.
+`pharos-docs` asks the official **Pharos Developer Docs** a natural-language question and prints a short answer with the pages it comes from. When the docs do not answer the question, it says so instead of guessing. A browser docs search page runs the same search code.
 
 ```console
 $ pharos-docs "what is the Atlantic testnet chain ID?"
@@ -132,8 +132,8 @@ src/
   text.ts                tokenizing, markdown/HTML reading
   formatter.ts           text and JSON output
   proof.ts, run-proof.ts, verify-proof.ts, probe.ts
-api/search.js            GET /api/search?q=: the browser terminal's endpoint, same core
-public/                  the browser terminal
+api/search.js            GET /api/search?q=: the docs search page's endpoint, same core
+public/                  the docs search page
 ```
 
 **Page ranking** (deterministic, no model). Every page in the index is scored on the question's words in its title (3), path (2) and section (1). Documented synonyms count half: "chain ID" relates to the network pages, "price feed" to the oracle pages. The topic words of how-to verbs count fully, so "deploy" points to the Foundry and Hardhat guides. Ties go to the deeper, more specific page. One page is asked by default. A second (at most three) is asked only for a multi-part question ("set up X and deploy to Y") when it covers a question word the first does not, or when it scores within 15% of the first.
@@ -289,7 +289,7 @@ $ pharos-docs "What is the chain ID of the Atlantic testnet?" --json
 
 ## Web demo
 
-`public/` is a browser terminal for the same tool: type `pharos-docs "question"` (or just the question), optionally with `--json`. It also accepts `help`, `clear` and `history`, with ↑/↓ to recall commands. Every question goes to `GET /api/search?q=`, which runs **the same `search()` and `DocsHttpProvider` as the CLI** and returns the same `pharos-docs-result/1` object; the page only renders it. Nothing is canned. Good answers are cached at the edge for 5 minutes (`s-maxage=300`); errors are never cached.
+`public/` is a docs search page for the same tool: one box ("Ask the docs…"), and each question answered below it with its source pages, or a plain "No good answer found." A question may also be typed in the CLI form, `pharos-docs "question"`, and `--json` shows the raw result; every answer also has a JSON toggle. `help` opens the CLI usage, `clear` empties the page, and ↑/↓ recall earlier questions. Every question goes to `GET /api/search?q=`, which runs **the same `search()` and `DocsHttpProvider` as the CLI** and returns the same `pharos-docs-result/1` object; the page only lays it out. Nothing is canned. Good answers are cached at the edge for 5 minutes (`s-maxage=300`); errors are never cached.
 
 Deploy: `vercel.json` in this folder (project root `tasks/04-doc-search-cli`). Not deployed yet.
 
@@ -339,7 +339,7 @@ Then commit `proof/`, `sample-output/` and `README.md`.
 
 ```sh
 npm test               # unit, provider, search, CLI (real binary), proof verifier, static checks
-npm run test:web       # /api/search and the terminal page
+npm run test:web       # /api/search and the docs search page
 NODE_PATH="$(npm root -g)" npm run test:browser   # Chromium via a global Playwright install; skipped without it
 ```
 
@@ -366,4 +366,4 @@ interface DocsProvider {
 }
 ```
 
-When a public Developer Docs MCP endpoint and tool schema are documented, an `McpDocsProvider` can implement `index()` and `ask()` with MCP tool calls, return the same `PageResponse`, and report `transport: "mcp"`. It is then passed to `search()` in `run.ts` and `api/search.js`. Ranking, the source gate, the CLI, the browser terminal, the result schema and the tests stay as they are, and the proof verifier gets an MCP check alongside its HTTP one.
+When a public Developer Docs MCP endpoint and tool schema are documented, an `McpDocsProvider` can implement `index()` and `ask()` with MCP tool calls, return the same `PageResponse`, and report `transport: "mcp"`. It is then passed to `search()` in `run.ts` and `api/search.js`. Ranking, the source gate, the CLI, the docs search page, the result schema and the tests stay as they are, and the proof verifier gets an MCP check alongside its HTTP one.

@@ -1,0 +1,70 @@
+/* Task 04 workspace: docs search. Shared tokens, shell and primitives are in lab.css.
+   One column at reading width: the question box, then each question with its answer and sources,
+   newest last, with the box under them for the next one. Not a terminal and not a chat app. */
+@layer task {
+  /* A reading-width column, aligned with the shell's left edge. */
+  .search-page > * { max-width: 760px; min-width: 0; }
+
+  /* The box: one input and Ask. Examples only before the first question. */
+  .ask { display: grid; gap: var(--space-3); }
+  .ask-box { display: flex; align-items: center; gap: var(--space-2); }
+  .ask-input {
+    flex: 1 1 0; width: 0; min-width: 0; height: 48px; padding: 0 14px; appearance: none; -webkit-appearance: none; border: 1px solid var(--field-line); border-radius: var(--radius);
+    background: var(--field); color: var(--text); font: 400 1rem/1.4 var(--sans);
+  }
+  .ask-input::placeholder { color: var(--text-3); opacity: 1; }
+  .ask-input:hover { border-color: var(--text-3); }
+  .ask-input:focus-visible { outline-offset: 0; border-color: var(--accent); }
+  .ask-input::-webkit-search-cancel-button { display: none; }
+  .ask-go { height: 48px; }
+  .try { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  .try .label { margin-right: var(--space-1); }
+  body:not([data-state="idle"]) .try { display: none; }
+  .chip {
+    position: relative; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 999px;
+    background: none; color: var(--text-2); font-size: var(--fs-small); cursor: pointer;
+  }
+  .chip::after { content: ""; position: absolute; inset: -4px 0; }
+  .chip:hover, .chip:active { color: var(--text); border-color: var(--text-3); background: var(--surface-2); }
+
+  /* The thread: each question, then its answer. Rules between turns, no bubbles. */
+  .thread { display: grid; }
+  .turn { display: grid; gap: var(--space-3); padding-block: var(--space-6); border-top: 1px solid var(--line); min-width: 0; }
+  .turn:first-child { border-top: 0; padding-top: 0; }
+  .turn-q { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); font-size: var(--fs-small); color: var(--text-2); overflow-wrap: anywhere; }
+  .turn-q::before { content: ""; width: 3px; align-self: stretch; border-radius: 2px; background: var(--accent); }
+  .turn-flag { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  .turn-note { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-2); white-space: pre-wrap; }
+  .turn-note-error { color: var(--text); }
+  .turn-label { margin-bottom: calc(-1 * var(--space-1)); }
+
+  /* The answer: editorial, at reading size; a several-page answer names each page above its part. */
+  .answer { display: grid; gap: var(--space-2); font-size: var(--fs-body); line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
+  .answer ul { display: grid; gap: var(--space-1); padding-left: 1.2em; list-style: disc; }
+  .answer-from { margin-top: var(--space-2); font-size: var(--fs-meta); font-weight: 600; color: var(--text-2); }
+  .answer-from:first-child { margin-top: 0; }
+
+  .turn .sources a, .turn .sources .source-text { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 var(--space-3); min-height: var(--target); padding-block: var(--space-2); border-bottom: 1px solid var(--line); text-decoration: none; }
+  .turn .source-text .source-title { color: var(--text-2); }
+
+  .state-block { padding: 0; }
+  .state-reason { color: var(--text-3); font-size: var(--fs-meta); max-width: 52ch; }
+  .retry { margin-top: var(--space-1); }
+
+  .turn-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--space-3); color: var(--text-3); font-size: var(--fs-meta); }
+  .json-toggle { font-size: var(--fs-meta); }
+  .json {
+    max-height: 22rem; overflow: auto; margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); color: var(--text); font: 400 var(--fs-label)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+
+  /* Secondary: CLI usage and how it answers, as two quiet rows. */
+  .secondary { display: grid; }
+  .cli { border-top: 1px solid var(--line); }
+  .cli-head { font-size: 1rem; }
+  .cli-body { display: grid; gap: var(--space-3); padding-bottom: var(--space-6); }
+  .code { margin: 0; padding: var(--space-3); overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font: 400 var(--fs-meta)/1.7 var(--mono); color: var(--text); }
+  .disclosure-title { font-size: 1rem; }
+  .secondary .disclosure { border-top: 1px solid var(--line); }
+  .secondary .disclosure-body .sources { margin-top: 0; }
+}

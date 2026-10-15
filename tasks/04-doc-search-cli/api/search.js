@@ -1,7 +1,7 @@
-// Vercel function behind the browser terminal: GET /api/search?q=<question>.
+// Vercel function behind the docs search page: GET /api/search?q=<question>.
 //
 // It runs the same search core and the same provider as the CLI (dist/src, compiled from src/ during
-// `npm ci`), so the browser terminal and `pharos-docs "<question>"` return the same result schema from
+// `npm ci`), so the docs search page and `pharos-docs "<question>"` return the same result schema from
 // the same requests: HTTPS GET to https://docs.pharos.xyz (sitemap.md, then <page>.md?ask=...). Not MCP.
 // The docs origin is fixed here and nothing is read from the environment, so a deployment setting
 // cannot point it anywhere else.

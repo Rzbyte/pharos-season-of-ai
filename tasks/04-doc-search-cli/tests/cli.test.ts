@@ -200,7 +200,8 @@ describe("what the code never does", () => {
       for (const match of text.matchAll(/\b(?:https?|wss?):\/\/([a-z0-9.-]+)/gi)) {
         assert.ok(
           // localhost: only the base for parsing a request's own path in api/search.js, never requested.
-          ["docs.pharos.xyz", "github.com", "www.w3.org", "localhost"].includes(match[1]!.toLowerCase()),
+          // x.com: the author's profile in the shared footer, a link, never requested.
+          ["docs.pharos.xyz", "github.com", "www.w3.org", "localhost", "x.com"].includes(match[1]!.toLowerCase()),
           `${file}: unexpected host ${match[1]}`,
         );
       }

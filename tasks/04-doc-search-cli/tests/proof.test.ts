@@ -133,9 +133,13 @@ describe("proof verifier", () => {
     }
   });
 
-  test("the real README has every marker, with the examples requirement still open", async () => {
+  test("the real README has every marker, and the live proof has ticked the examples requirement", async () => {
     const readme = await readFile(new URL("../../README.md", import.meta.url), "utf8");
-    assert.match(readme, /- \[ \] \*\*README with installation, usage and at least 3 example queries with output\.\*\* <!-- req-examples -->/);
+    // npm run proof ran live and filled the examples (commit "Task 04: add verified live docs proof").
+    assert.match(readme, /- \[x\] \*\*README with installation, usage and at least 3 example queries with output\.\*\* <!-- req-examples -->/);
+    for (const marker of ["proof-status", "example-a", "example-b", "example-c", "json-example"]) {
+      assert.match(readme, new RegExp(`<!-- ${marker}:start -->[\\s\\S]*?<!-- ${marker}:end -->`), marker);
+    }
     const examples = PROOF_QUERIES.map((q) => ({ id: q.id, label: q.label, question: q.question, output: "Answer\n  x\n" }));
     const next = applyProof(readme, examples, "{}\n", ["**Live proof:** captured"]);
     assert.match(next, /- \[x\] \*\*README with installation/);
