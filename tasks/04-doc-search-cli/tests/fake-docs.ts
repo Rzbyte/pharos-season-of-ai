@@ -121,6 +121,29 @@ Returns the number of the most recent block.
 `,
 };
 
+/**
+ * A composed ?ask= answer in the shape docs.pharos.xyz really returns (seen live for "What is the chain
+ * ID of the Atlantic testnet?"): an H1 restating the question, the answer with a relative docs link, then
+ * an H1 "Suggested Follow-up Questions:" with many generated links to unrelated pages. The value is the
+ * fixture's made-up 424242, not the live one.
+ */
+export const ATLANTIC_ASK_ANSWER = `# What is the chain ID of the Atlantic testnet?
+
+The Atlantic testnet chain ID is **424242**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet.md).
+
+# Suggested Follow-up Questions:
+
+- [What is the RPC URL of the Atlantic testnet?](/getting-started/network/atlantic-testnet.md?ask=What+is+the+RPC+URL+of+the+Atlantic+testnet%3F)
+- [How do I deploy a contract with Foundry?](/developer-guide/foundry.md?ask=How+do+I+deploy+a+contract+with+Foundry%3F)
+- [How do I deploy a contract with Hardhat?](/developer-guide/hardhat.md?ask=How+do+I+deploy+a+contract+with+Hardhat%3F)
+- [Which canonical contracts are deployed on Pharos?](/getting-started/canonical-contracts.md)
+- [Which tokens are listed in the token registry?](/getting-started/token-registry.md)
+- [Which JSON-RPC methods does Pharos support?](/api-and-sdk/json-rpc-methods.md)
+- [What is the Pacific mainnet?](/getting-started/network/pacific-mainnet.md)
+- [How do bridges move assets between networks?](https://docs.pharos.xyz/getting-started/overview.md)
+- [Which RPC providers serve Pharos?](https://docs.pharos.xyz/tooling-and-infrastructure/rpc)
+`;
+
 export async function startFakeDocs(): Promise<FakeDocs> {
   const behaviors = new Map<string, Behavior>();
   const requests: FakeDocs["requests"] = [];

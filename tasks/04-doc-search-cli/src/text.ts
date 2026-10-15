@@ -278,6 +278,54 @@ export function linksIn(text: string, base: string): string[] {
   return [...found];
 }
 
+// A composed ?ask= answer is Markdown shaped like:
+//   # <the question, restated>
+//   <the answer, citing pages>
+//   # Suggested Follow-up Questions:
+//   <generated questions, each linking to some docs page>
+// Only the middle part is the answer. The leading heading is metadata, and the sections the docs
+// generate after it (follow-up questions, related questions, a source or see-also list) are navigation:
+// their text is not the answer and their links are not its sources.
+
+/** Generated follow-up question lists. Never real page content, so cut from pages too. */
+const FOLLOW_UP_SECTION = /^(?:suggested |recommended |possible )?(?:follow[- ]?up|related|further|other|more|similar) questions?$/;
+/** Generated navigation after a composed answer: where it was found, or where to read on. */
+const NAV_SECTION = /^(?:sources?|references?|citations?|see also|related (?:pages?|links?|docs|documentation|topics|articles|resources)|further reading|learn more|read more)$/;
+
+/** The name of a section heading line ("# X", "**X:**", "X:" alone on its line), normalized; else null. */
+function sectionName(line: string): string | null {
+  const match = /^\s*(?:#{1,6}\s+)?(?:\*\*|__)?\s*([A-Za-z][A-Za-z -]{1,60}?)\s*:?\s*(?:\*\*|__)?\s*:?\s*$/.exec(line);
+  return match ? match[1]!.toLowerCase().replace(/\s+/g, " ") : null;
+}
+
+function cutAt(lines: string[], isEnd: (name: string) => boolean): string[] {
+  const end = lines.findIndex((line) => {
+    const name = sectionName(line);
+    return name !== null && isEnd(name);
+  });
+  return end === -1 ? lines : lines.slice(0, end);
+}
+
+function bodyLines(text: string): string[] {
+  return text.replace(/\r\n?/g, "\n").replace(/^---\n[\s\S]*?\n---\n/, "").split("\n");
+}
+
+/**
+ * The answer part of a composed answer: without its leading question heading, and stopped before the
+ * first generated section. Every line of it is a line of the body as fetched.
+ */
+export function answerSegment(text: string): string {
+  const lines = bodyLines(text);
+  const first = lines.findIndex((line) => line.trim() !== "");
+  if (first !== -1 && /^\s*#\s+\S/.test(lines[first]!)) lines.splice(0, first + 1);
+  return cutAt(lines, (name) => FOLLOW_UP_SECTION.test(name) || NAV_SECTION.test(name)).join("\n").trim();
+}
+
+/** A full page, without any generated follow-up question list appended to it. */
+export function pageBody(text: string): string {
+  return cutAt(bodyLines(text), (name) => FOLLOW_UP_SECTION.test(name)).join("\n").trim();
+}
+
 /** Cut text to at most `max` characters at a sentence or line boundary. */
 export function clip(text: string, max: number): string {
   if (text.length <= max) return text;

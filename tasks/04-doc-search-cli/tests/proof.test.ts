@@ -6,7 +6,7 @@ import { after, before, describe, test } from "node:test";
 import { DOCS_ORIGIN } from "../src/constants.js";
 import { applyProof, PROOF_QUERIES, verifyRun, type Transcript } from "../src/proof.js";
 import { run } from "../src/run.js";
-import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
+import { ATLANTIC_ASK_ANSWER, startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
 // Proof-shaped runs against the in-process fake docs site. Their URLs are rewritten to docs.pharos.xyz
 // only so the verifier's other checks can be exercised; nothing here is, or is used as, live proof.
@@ -76,7 +76,7 @@ describe("proof verifier", () => {
     const { transcript, output } = await proofRun(PROOF_QUERIES[0].question);
     const unread = asOfficial(transcript);
     unread.result.sources.push({ title: "Hardhat", url: `${DOCS_ORIGIN}/developer-guide/hardhat` });
-    assert.ok(failedChecks(verifyRun(unread, output, "answered")).includes("sources are official pages read in this run"));
+    assert.ok(failedChecks(verifyRun(unread, output, "answered")).includes("sources are pages asked or cited in the answer"));
 
     const malformed = asOfficial(transcript);
     malformed.requests[1]!.url = malformed.requests[1]!.url.replace("?ask=", "?q=");
@@ -87,6 +87,32 @@ describe("proof verifier", () => {
     const cached = asOfficial(transcript);
     cached.indexFromCache = true;
     assert.ok(failedChecks(verifyRun(cached, output, "answered")).includes("index read live"));
+  });
+
+  test("a real-shape composed answer verifies with one direct source; follow-up links and text are refused", async () => {
+    fake.set("/getting-started/network/atlantic-testnet", { answer: ATLANTIC_ASK_ANSWER });
+    try {
+      const { transcript, output } = await proofRun(PROOF_QUERIES[0].question);
+      const clean = asOfficial(transcript);
+      assert.equal(clean.result.answer, "The Atlantic testnet chain ID is 424242. See Atlantic Testnet.");
+      assert.deepEqual(clean.result.sources.map((s) => s.url), [`${DOCS_ORIGIN}/getting-started/network/atlantic-testnet`]);
+      assert.deepEqual(failedChecks(verifyRun(clean, output, "answered")), []);
+
+      // Pages linked only from the generated follow-up questions, relative and absolute: not sources.
+      for (const url of [`${DOCS_ORIGIN}/developer-guide/hardhat`, `${DOCS_ORIGIN}/tooling-and-infrastructure/rpc`]) {
+        const leaked = asOfficial(transcript);
+        leaked.result.sources.push({ title: "Follow-up", url });
+        assert.ok(failedChecks(verifyRun(leaked, `${output}${url}\n`, "answered")).includes("sources are pages asked or cited in the answer"), url);
+      }
+
+      // Answer text taken from the restated question or the follow-ups is not grounded, though it is in the body.
+      const borrowed = asOfficial(transcript);
+      borrowed.result.answer = "Which canonical contracts are deployed on Pharos? Which tokens are listed in the token registry? How do bridges move assets between networks?";
+      assert.ok(transcript.requests.some((r) => r.body?.includes("How do bridges move assets between networks?")));
+      assert.ok(failedChecks(verifyRun(borrowed, output, "answered")).includes("answer grounded in the fetched docs"));
+    } finally {
+      fake.reset();
+    }
   });
 
   test("the real README has every marker, with the examples requirement still open", async () => {

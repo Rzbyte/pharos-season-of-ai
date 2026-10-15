@@ -1,6 +1,6 @@
 import { DOCS_HOST, MAX_ANSWER_CHARS } from "./constants.js";
 import { docsPath, pageUrl } from "./docs-index.js";
-import { clip, hasValue, markdownBlocks, plainInline, questionTerms, stripControls, terms, valueKind, type Block } from "./text.js";
+import { answerSegment, clip, hasValue, linksIn, markdownBlocks, pageBody, plainInline, questionTerms, stripControls, terms, valueKind, type Block } from "./text.js";
 import type { NoAnswerReason, PageResponse, Source } from "./types.js";
 
 // The source-first gate. An answer is shown only when it can be traced to text the official docs
@@ -72,16 +72,21 @@ export interface Verdict {
 export function judge(response: PageResponse, question: string): Verdict {
   const { direct, related } = questionTerms(question);
   const kind = valueKind(question);
-  // Extra sources only from a composed answer (its links and declared sources). A full page's links
-  // (navigation, "next page", see-also) are not where the answer comes from, so they are not sources.
+  // The text an answer may come from: a composed answer's own segment (no restated question heading,
+  // no generated follow-up questions or navigation), or the page without any follow-up list.
+  const retained = retainedText(response);
+  // Extra sources only from a composed answer: its declared sources and the docs pages its answer
+  // segment links to. A full page's links (navigation, "next page", see-also) and a composed answer's
+  // generated follow-ups are not where the answer comes from, so they are not sources.
+  const cited = response.kind === "page" ? [] : linksIn(retained, response.page.url);
   const extra =
-    response.kind === "page" ? [] : dedupeSources([...response.declaredSources, ...response.links.map((url) => ({ title: null, url }))]).filter((source) => source.url !== response.page.url);
+    response.kind === "page" ? [] : dedupeSources([...response.declaredSources, ...cited.map((url) => ({ title: null, url }))]).filter((source) => source.url !== response.page.url);
   const fail = (reason: NoAnswerReason): Verdict => ({ ok: false, answer: null, reason, sources: [], score: 0 });
 
   if (response.kind === "answer" || response.kind === "json") {
     // An answer the docs composed for this question: shown as given, if it is on topic and says something.
-    if (saysNotInDocs(response.text)) return fail("not_in_docs");
-    const text = cleanAnswer(response.text);
+    if (saysNotInDocs(retained)) return fail("not_in_docs");
+    const text = cleanAnswer(retained);
     const words = new Set(terms(text));
     const titleWords = new Set(terms(response.page.title));
     const overlap = direct.filter((word) => words.has(word)).length + related.filter((word) => words.has(word)).length * 0.5;
@@ -96,10 +101,15 @@ export function judge(response: PageResponse, question: string): Verdict {
   }
 
   // The page itself: answer with its best-matching passages, verbatim.
-  const picked = bestPassages(markdownBlocks(response.text), direct, related, kind, terms(response.page.title));
+  const picked = bestPassages(markdownBlocks(retained), direct, related, kind, terms(response.page.title));
   if (!picked) return fail("weak_match");
   if (kind && !hasValue(picked.text, kind)) return fail("value_not_found");
   return { ok: true, answer: picked.text, reason: null, sources: extra, score: picked.score };
+}
+
+/** The part of a response an answer may be taken from. The proof verifier checks answers against it too. */
+export function retainedText(response: Pick<PageResponse, "kind" | "text">): string {
+  return response.kind === "page" ? pageBody(response.text) : answerSegment(response.text);
 }
 
 /** Markdown answer -> compact plain text: headings dropped to plain lines, list markers kept as "- ". */

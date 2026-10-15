@@ -1,7 +1,9 @@
 import { DOCS_HOST, DOCS_ORIGIN, HARD_MAX_PAGES, TOOL_NAME } from "./constants.js";
-import { docsPath } from "./docs-index.js";
+import { docsPath, pageUrl } from "./docs-index.js";
+import { interpret } from "./providers/docs-http.js";
 import { GOAL } from "./search.js";
-import { officialSourceUrl } from "./source-gate.js";
+import { dedupeSources, officialSourceUrl, retainedText } from "./source-gate.js";
+import { linksIn } from "./text.js";
 import type { RequestRecord, SearchResult } from "./types.js";
 
 /** The three README examples: a simple fact, a multi-step workflow, and one the docs should not answer. */
@@ -68,24 +70,46 @@ export function verifyRun(transcript: Transcript, output: string, expect: string
   check("result schema", JSON.stringify(Object.keys(result)) === JSON.stringify(RESULT_KEYS) && result.schema === "pharos-docs-result/1", Object.keys(result).join(", "));
   check(`status is ${expect}`, result.status === expect, `status ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
 
-  // Sources: official pages that were actually read in this run (or linked from what was read).
+  // Each page body as the search read it (same parser, same segmentation), recomputed from the saved bytes.
   const bodies = requests.filter((r) => r.purpose !== "index" && r.status === 200 && r.body);
-  const readPages = new Set(bodies.map((r) => officialSourceUrl(`${DOCS_ORIGIN}${new URL(r.url).pathname}`)).filter(Boolean));
-  const linked = new Set(bodies.flatMap((r) => [...(r.body ?? "").matchAll(/https:\/\/docs\.pharos\.xyz\/[^\s)<>"']+/g)].map((m) => officialSourceUrl(m[0]))).filter(Boolean));
-  const badSources = result.sources.filter((s) => officialSourceUrl(s.url) !== s.url || !(readPages.has(s.url) || linked.has(s.url)));
+  const readings = bodies.flatMap((r) => {
+    const path = docsPath(new URL(r.url).pathname);
+    if (!path) return [];
+    const url = pageUrl(path);
+    const title = result.meta.pagesConsulted.find((p) => officialSourceUrl(p.url) === url)?.title ?? "";
+    try {
+      const response = interpret({ title, path, url, section: null }, r.url, r.body!, r.contentType, r.purpose === "html-fallback" ? "html" : "md-ask");
+      return [{ response, retained: retainedText(response) }];
+    } catch {
+      return [];
+    }
+  });
+
+  // Sources: the pages asked in this run, plus docs pages cited inside a composed answer's retained
+  // segment. A link that only appears in generated follow-up questions or navigation is not a source.
+  const asked = new Set(readings.map(({ response }) => response.page.url));
+  const cited = new Set(
+    readings
+      .filter(({ response }) => response.kind !== "page")
+      .flatMap(({ response, retained }) => dedupeSources([...response.declaredSources, ...linksIn(retained, response.page.url).map((u) => ({ title: null, url: u }))]).map((s) => s.url)),
+  );
+  const badSources = result.sources.filter((s) => officialSourceUrl(s.url) !== s.url || !(asked.has(s.url) || cited.has(s.url)));
   check(
-    "sources are official pages read in this run",
+    "sources are pages asked or cited in the answer",
     (result.status !== "answered" || result.sources.length > 0) && badSources.length === 0 && new Set(result.sources.map((s) => s.url)).size === result.sources.length,
-    badSources.length ? `not read: ${badSources.map((s) => s.url).join(", ")}` : `${result.sources.length} unique docs.pharos.xyz sources`,
+    badSources.length ? `not asked or cited in a retained answer: ${badSources.map((s) => s.url).join(", ")}` : `${result.sources.length} unique docs.pharos.xyz sources, each asked or cited`,
   );
 
-  // Grounding: every number, hex value and URL in the answer appears verbatim in a fetched body,
-  // and almost every word does too.
+  // Grounding: every number, hex value and URL in the answer appears verbatim both in a fetched body and
+  // in the part of it an answer may come from (not a restated question or a generated follow-up), and
+  // almost every word appears in that part too.
   if (result.status === "answered" && result.answer) {
-    const corpus = bodies.map((r) => r.body!).join("\n");
+    const raw = bodies.map((r) => r.body!).join("\n");
+    const corpus = readings.map(({ retained }) => retained).join("\n");
     const lower = corpus.toLowerCase();
     const values = result.answer.match(/0x[0-9a-fA-F]+|\b\d[\d,.]*\d\b|\b\d\b|https?:\/\/[^\s)]+/g) ?? [];
-    const missingValues = values.filter((value) => !corpus.includes(value) && !corpus.includes(value.replace(/,/g, "")));
+    const verbatim = (text: string, value: string) => text.includes(value) || text.includes(value.replace(/,/g, ""));
+    const missingValues = values.filter((value) => !verbatim(corpus, value) || !verbatim(raw, value));
     const titles = new Set(result.meta.pagesConsulted.flatMap((p) => p.title.toLowerCase().split(/\W+/)));
     const words = (result.answer.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !titles.has(w) && !["parameter", "value"].includes(w));
     const missingWords = words.filter((w) => !lower.includes(w));
@@ -93,7 +117,9 @@ export function verifyRun(transcript: Transcript, output: string, expect: string
     check(
       "answer grounded in the fetched docs",
       missingValues.length === 0 && share >= 0.9,
-      missingValues.length ? `values not in any fetched body: ${missingValues.join(", ")}` : `${values.length} values and ${Math.round(share * 100)}% of words found verbatim in the fetched pages`,
+      missingValues.length
+        ? `values not in the retained answer text of any fetched body: ${missingValues.join(", ")}`
+        : `${values.length} values and ${Math.round(share * 100)}% of words found verbatim in the retained answer text of the fetched bodies`,
     );
   } else {
     check("no answer invented", result.answer === null && result.sources.length === 0, result.reason ? `reason ${result.reason}` : "no answer");

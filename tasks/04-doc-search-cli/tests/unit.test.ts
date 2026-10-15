@@ -5,13 +5,13 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { docsPath, pageUrl, parseSitemap, readIndexCache, writeIndexCache } from "../src/docs-index.js";
 import { choosePages, isMultiPart, MIN_PAGE_SCORE, rankPages } from "../src/page-ranker.js";
-import { classify, DocsHttpProvider, parseJsonBody } from "../src/providers/docs-http.js";
+import { classify, DocsHttpProvider, interpret, parseJsonBody } from "../src/providers/docs-http.js";
 import { ProviderError } from "../src/providers/provider.js";
 import { GOAL } from "../src/search.js";
-import { bestPassages, cleanAnswer, dedupeSources, judge, officialSourceUrl, saysNotInDocs } from "../src/source-gate.js";
-import { clip, hasValue, htmlToText, linksIn, markdownBlocks, questionTerms, stem, terms, valueKind } from "../src/text.js";
+import { bestPassages, cleanAnswer, dedupeSources, judge, officialSourceUrl, retainedText, saysNotInDocs } from "../src/source-gate.js";
+import { answerSegment, clip, hasValue, htmlToText, linksIn, markdownBlocks, pageBody, questionTerms, stem, terms, valueKind } from "../src/text.js";
 import type { DocPage, PageResponse } from "../src/types.js";
-import { PAGES, SITEMAP } from "./fake-docs.js";
+import { ATLANTIC_ASK_ANSWER, PAGES, SITEMAP } from "./fake-docs.js";
 
 const index = parseSitemap(SITEMAP);
 const page = (path: string) => index.find((entry) => entry.path === path)!;
@@ -327,3 +327,80 @@ describe("review fixes (regressions)", () => {
     assert.equal(requested.length, 1);
   });
 });
+
+describe("composed ?ask= answers in the real response shape", () => {
+  const question = "What is the chain ID of the Atlantic testnet?";
+  const atlantic = page("/getting-started/network/atlantic-testnet");
+  const fetched = async () => {
+    const fetch = async () => new Response(ATLANTIC_ASK_ANSWER, { status: 200, headers: { "content-type": "text/markdown; charset=utf-8" } });
+    return new DocsHttpProvider({ fetch, index }).ask(atlantic, question, GOAL);
+  };
+
+  test("the answer is the segment between the question heading and the generated sections", async () => {
+    const response = await fetched();
+    assert.equal(response.kind, "answer");
+    assert.equal(response.text, ATLANTIC_ASK_ANSWER.trim(), "the response keeps the whole body; only the gate narrows it");
+    assert.equal(retainedText(response), "The Atlantic testnet chain ID is **424242**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet.md).");
+    const verdict = judge(response, question);
+    assert.equal(verdict.ok, true);
+    assert.equal(verdict.answer, "The Atlantic testnet chain ID is 424242. See Atlantic Testnet.");
+    assert.doesNotMatch(verdict.answer!, /What is the chain ID/, "the restated question heading is metadata");
+    assert.doesNotMatch(verdict.answer!, /Suggested|Follow-up|Foundry|Hardhat|RPC URL/, "the follow-up questions are not the answer");
+  });
+
+  test("links in the generated follow-ups are not sources; the one direct source is the page asked", async () => {
+    const response = await fetched();
+    assert.deepEqual(response.links, ["https://docs.pharos.xyz/getting-started/network/atlantic-testnet.md"], "only the link inside the answer segment");
+    assert.ok(linksIn(ATLANTIC_ASK_ANSWER, atlantic.url).length >= 10, "the body itself links to many pages");
+    assert.deepEqual(judge(response, question).sources, [], "the answer cites only the page asked, which is the primary source already");
+    // Even a response object carrying every link in the body gets no follow-up link through the gate.
+    const leaky = { ...response, links: linksIn(ATLANTIC_ASK_ANSWER, atlantic.url) };
+    assert.deepEqual(judge(leaky, question).sources, []);
+  });
+
+  test("end to end, a simple one-page query has exactly one source and stays grounded", async () => {
+    const { search } = await import("../src/search.js");
+    const fetch = async (url: string) =>
+      new Response(url.endsWith("/sitemap.md") ? SITEMAP : ATLANTIC_ASK_ANSWER, { status: 200, headers: { "content-type": "text/markdown; charset=utf-8" } });
+    const provider = new DocsHttpProvider({ fetch });
+    const result = await search(question, { provider });
+    assert.equal(result.status, "answered");
+    assert.deepEqual(result.sources, [{ title: "Atlantic Testnet", url: "https://docs.pharos.xyz/getting-started/network/atlantic-testnet" }]);
+    assert.match(result.answer!, /424242/);
+    // Grounded: the value and every line of the answer come from the answer segment of the fetched body.
+    const body = provider.requests().find((r) => r.purpose === "ask")!.body!;
+    const segment = answerSegment(body);
+    assert.ok(body.includes(segment));
+    assert.ok(segment.includes("424242"));
+    for (const word of result.answer!.toLowerCase().match(/[a-z]{4,}/g)!) assert.ok(segment.toLowerCase().includes(word), word);
+  });
+
+  test("a cited docs page inside the answer is kept as a source; deduplicated", () => {
+    const text = `# How do I deploy to the Atlantic testnet?
+
+Deploy the contract with forge create, as in [Foundry](/developer-guide/foundry.md) and [Foundry again](https://docs.pharos.xyz/developer-guide/foundry), using the [Atlantic Testnet](/getting-started/network/atlantic-testnet.md) RPC URL.
+
+## Related Questions
+
+- [How do I deploy with Hardhat?](/developer-guide/hardhat.md)`;
+    const verdict = judge(response("/getting-started/network/atlantic-testnet", text, "answer"), "How do I deploy a contract to the Atlantic testnet?");
+    assert.equal(verdict.ok, true);
+    assert.deepEqual(verdict.sources.map((s) => s.url), ["https://docs.pharos.xyz/developer-guide/foundry"]);
+  });
+
+  test("generated sections end the answer in their usual spellings; real page sections do not", () => {
+    for (const heading of ["# Suggested Follow-up Questions:", "## Follow-up questions", "**Related Questions:**", "Related questions:", "### Sources", "## References", "## See also", "Suggested followup questions"]) {
+      assert.equal(answerSegment(`# Q?\n\nThe answer.\n\n${heading}\n\n- [x](/developer-guide/hardhat.md)`), "The answer.", heading);
+    }
+    assert.equal(answerSegment("The answer, no heading.\n## Steps\n1. One"), "The answer, no heading.\n## Steps\n1. One", "a real section inside the answer stays");
+    assert.equal(pageBody("# Page\n\nText.\n\n## See also\n\nMore text.\n\n# Suggested Follow-up Questions:\n\n- [q](/x.md)"), "# Page\n\nText.\n\n## See also\n\nMore text.", "a page keeps its own sections; only follow-ups go");
+  });
+
+  test("a long follow-up list does not turn a short answer into a page", () => {
+    const long = `${ATLANTIC_ASK_ANSWER}\n${"- [Another generated question about something else?](/developer-guide/hardhat.md)\n".repeat(60)}`;
+    assert.ok(long.length > 3_000);
+    assert.equal(classify(long, page("/getting-started/network/atlantic-testnet")), "answer");
+    assert.equal(interpret(page("/getting-started/network/atlantic-testnet"), "u", long, "text/markdown", "md-ask").links.length, 1);
+  });
+});
+

@@ -139,9 +139,9 @@ public/                  the browser terminal
 An answer is shown only when the source gate can trace it to text the docs returned for this question:
 
 - **A page's own content** (markdown, or HTML reduced to text): the answer is its best-matching passages (paragraphs, list items, table rows, code), **verbatim**. The best passage must cover at least half the question's words, counting its section heading and the page title.
-- **A short answer the docs compose for `?ask=`**, or a JSON body: shown as given, only if it covers the same share of the question and does not say the docs lack the information ("I couldn't find…", "is not documented…").
+- **A short answer the docs compose for `?ask=`**, or a JSON body: shown as given, only if it covers the same share of the question and does not say the docs lack the information ("I couldn't find…", "is not documented…"). Only the answer segment counts: the leading `#` heading that restates the question is metadata, and the answer stops at the first generated section (`Suggested Follow-up Questions`, `Related Questions`, `Sources`, `See also` and similar). Text and links after that point are never part of the answer.
 - **Value questions** (chain ID, contract address, endpoint, gas figure): the answer must contain a value of that kind copied from the fetched page; otherwise the result is `value_not_found`. No such value exists anywhere in this code to fall back on.
-- **Sources** are only `https://docs.pharos.xyz` pages, deduplicated by canonical URL. Links elsewhere are dropped, and the proof checks that every source was actually read in that run.
+- **Sources** are only `https://docs.pharos.xyz` pages, deduplicated by canonical URL: the page asked, plus any docs page the retained answer segment itself cites. Links in generated follow-up questions or navigation are not sources, and links elsewhere are dropped. A simple one-page question has one source. The proof checks every source was asked or cited that way in that run.
 
 There is no language model in this tool.
 
@@ -216,8 +216,8 @@ The verifier then checks each run from the raw requests and bodies:
 - the index was read live (`/sitemap.md`, 200);
 - every `?ask=` request is exactly `<page>.md?ask=<encoded question>&goal=<encoded goal>`, and there are at most three;
 - the result has the schema's keys in order, and the expected status (answered, answered, no answer);
-- every source is a `docs.pharos.xyz` page that was actually read in that run (or linked from one), with no duplicates;
-- every number, hex value and URL in the answer appears verbatim in a fetched page, and at least 90% of its words do;
+- every source is a `docs.pharos.xyz` page asked in that run, or cited inside the retained answer segment of a composed answer (never a link from its generated follow-up questions), with no duplicates;
+- every number, hex value and URL in the answer appears verbatim in a fetched body and in the part of it an answer may come from (the retained answer segment, not the restated question or the follow-ups), and at least 90% of its words do. The verifier re-reads each saved body with the same parser the search used;
 - for the no-answer run, no answer and no source were produced;
 - the saved output shows the answer and every source URL, or the no-answer message.
 
@@ -251,7 +251,7 @@ All network calls in tests go to an in-process fake docs site with made-up value
 ## Known limitations
 
 - **No public Developer Docs MCP transport.** The external MCP endpoint, its tool schema and an A2A agent card are not publicly documented, so this tool uses the docs' documented HTTPS query interface instead. It does not claim MCP.
-- **The `?ask=` response format is not specified publicly.** The provider reads every documented shape without a model: the page's own markdown (answered extractively), a short composed answer (shown only if it passes the gate), JSON, or the HTML page. `npm run probe` shows which one the live site returns.
+- **The `?ask=` response format is not specified publicly.** The provider reads every documented shape without a model: the page's own markdown (answered extractively), a short composed answer (shown only if it passes the gate), JSON, or the HTML page. Live, the composed answer arrives as Markdown with the question restated as an `#` heading and a generated `# Suggested Follow-up Questions:` list after the answer; both are cut off by heading name, so a renamed generated section would need adding to that list. `npm run probe` shows which shape the live site returns.
 - **Ranking uses page titles, paths and sections only.** A question phrased in words no page title or path uses can miss its page; the result then says no matching page was found, with nearby topics.
 - **English questions.** The tokenizer and synonyms are English.
 

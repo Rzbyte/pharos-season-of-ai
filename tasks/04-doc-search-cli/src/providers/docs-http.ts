@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { DEFAULT_TIMEOUT_MS, DOCS_ORIGIN, MAX_RESPONSE_BYTES, SITEMAP_PATH, USER_AGENT } from "../constants.js";
 import { parseSitemap } from "../docs-index.js";
-import { htmlToText, linksIn } from "../text.js";
+import { answerSegment, htmlToText, linksIn } from "../text.js";
 import type { DocPage, PageResponse, RequestRecord } from "../types.js";
 import { ProviderError, type DocsProvider } from "./provider.js";
 
@@ -94,16 +94,7 @@ export class DocsHttpProvider implements DocsProvider {
   }
 
   private read(page: DocPage, requestUrl: string, fetched: Fetched, via: PageResponse["via"]): PageResponse {
-    const type = fetched.contentType ?? "";
-    if (/json/i.test(type)) {
-      const parsed = parseJsonBody(fetched.text);
-      return { page, requestUrl, kind: "json", via, text: parsed.text, links: linksIn(parsed.text, page.url), declaredSources: parsed.sources };
-    }
-    const html = /html/i.test(type) || /^\s*<(!doctype|html)/i.test(fetched.text);
-    const text = html ? htmlToText(fetched.text) : fetched.text.trim();
-    // An HTML page is the page itself, never an answer composed for the question.
-    const kind = via === "html" || html ? "page" : classify(text, page);
-    return { page, requestUrl, kind, via, text, links: linksIn(text, page.url), declaredSources: [] };
+    return interpret(page, requestUrl, fetched.text, fetched.contentType, via);
   }
 
   private async get(url: string, purpose: RequestRecord["purpose"]): Promise<Fetched> {
@@ -182,6 +173,25 @@ interface Fetched {
   contentType: string | null;
 }
 
+/**
+ * How a fetched body is read: a JSON answer, a composed Markdown answer, or the page itself. Pure, so the
+ * proof verifier reads a saved body exactly the way the search did.
+ */
+export function interpret(page: DocPage, requestUrl: string, body: string, contentType: string | null, via: PageResponse["via"]): PageResponse {
+  const type = contentType ?? "";
+  if (/json/i.test(type)) {
+    const parsed = parseJsonBody(body);
+    return { page, requestUrl, kind: "json", via, text: parsed.text, links: linksIn(answerSegment(parsed.text), page.url), declaredSources: parsed.sources };
+  }
+  const html = /html/i.test(type) || /^\s*<(!doctype|html)/i.test(body);
+  const text = html ? htmlToText(body) : body.trim();
+  // An HTML page is the page itself, never an answer composed for the question.
+  const kind = via === "html" || html ? "page" : classify(text, page);
+  // A composed answer cites only what its own answer segment links to; generated follow-up questions
+  // and navigation after it are not where the answer came from.
+  return { page, requestUrl, kind, via, text, links: linksIn(kind === "page" ? text : answerSegment(text), page.url), declaredSources: [] };
+}
+
 /** At least a few words of real content: an empty or whitespace body counts as no page. */
 function meaningful(text: string): boolean {
   return text.replace(/\s+/g, "").length >= 20;
@@ -196,7 +206,8 @@ export function classify(text: string, page: DocPage): "answer" | "page" {
   const firstHeading = /^\s*#\s+(.+)$/m.exec(text)?.[1];
   const norm = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   if (firstHeading && norm(firstHeading) === norm(page.title)) return "page";
-  if (text.length > 3_000) return "page";
+  // Long means a page, but generated follow-up questions after a short answer do not make it one.
+  if (answerSegment(text).length > 3_000) return "page";
   return "answer";
 }
 

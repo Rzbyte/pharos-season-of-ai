@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { after, afterEach, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
+import { ATLANTIC_ASK_ANSWER, startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -45,6 +45,36 @@ describe("pharos-docs CLI", () => {
     assert.match(stdout, /\nSources\n01 {2}Atlantic Testnet\n {4}https:\/\/docs\.pharos\.xyz\/getting-started\/network\/atlantic-testnet\n/);
     assert.match(stdout, /1 docs page asked · 2 HTTPS requests to docs\.pharos\.xyz · \d+\.\d s\n$/);
     assert.doesNotMatch(stdout, /\u001b\[/, "no ANSI escapes");
+  });
+
+  test("a composed answer in the real ?ask= shape: no question heading, no follow-ups, one source", async () => {
+    fake.set("/getting-started/network/atlantic-testnet", { answer: ATLANTIC_ASK_ANSWER });
+    const { code, stdout, stderr } = await cli(["What is the chain ID of the Atlantic testnet?", "--no-cache"]);
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /^Answer\n {2}The Atlantic testnet chain ID is 424242\. See Atlantic Testnet\.\n\nSources\n01 {2}Atlantic Testnet\n {4}https:\/\/docs\.pharos\.xyz\/getting-started\/network\/atlantic-testnet\n\n/);
+    assert.doesNotMatch(stdout, /\n02 /, "exactly one source");
+    assert.doesNotMatch(stdout, /What is the chain ID|Suggested|Follow-up|foundry|hardhat|token-registry|overview|rpc\b/i);
+  });
+
+  test("probe and proof create proof/ and sample-output/ when missing", async () => {
+    // Run each script in an empty directory with fetch stubbed to fail, so nothing reaches the network.
+    const offline = `data:text/javascript,${encodeURIComponent('globalThis.fetch = async () => { throw new Error("offline (test)"); };')}`;
+    for (const [script, dirs] of [["probe.js", ["proof"]], ["run-proof.js", ["proof", "sample-output"]]] as const) {
+      const cwd = await mkdtemp(join(tmpdir(), "pharos-docs-dirs-"));
+      try {
+        const file = fileURLToPath(new URL(`../src/${script}`, import.meta.url));
+        const code = await new Promise<number | null>((resolve) =>
+          execFile(process.execPath, ["--import", offline, file], { cwd, env: { PATH: process.env.PATH ?? "", PHAROS_DOCS_CACHE_DIR: cwd }, timeout: 20_000 }, (error) =>
+            resolve(error ? ((error as { code?: number }).code ?? null) : 0),
+          ),
+        );
+        assert.equal(code, 1, `${script} reports the failed run`);
+        for (const dir of dirs) assert.ok((await readdir(join(cwd, dir))).length > 0, `${script} wrote into ${dir}/`);
+        assert.deepEqual((await readdir(cwd)).filter((name) => name === "README.md"), [], "a failed proof writes no README");
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    }
   });
 
   test("unquoted words form the question too", async () => {

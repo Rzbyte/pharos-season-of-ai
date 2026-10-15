@@ -2,8 +2,8 @@
 // npm run probe: a real, read-only look at how https://docs.pharos.xyz answers, before trusting the
 // parser with it. It reads the sitemap, checks that the pages the README names are listed, and asks a
 // few pages one question each, reporting what came back (status, content type, size, how it was read).
-// Writes proof/probe.json. Plain HTTPS GET requests to the public docs site; no MCP.
-import { writeFile } from "node:fs/promises";
+// Writes proof/probe.json (creating proof/ if needed). Plain HTTPS GET requests to the public docs site; no MCP.
+import { mkdir, writeFile } from "node:fs/promises";
 import { DocsHttpProvider } from "./providers/docs-http.js";
 import { judge } from "./source-gate.js";
 import { GOAL } from "./search.js";
@@ -56,5 +56,6 @@ try {
   process.exitCode = 1;
 }
 report.requests = provider.requests().map(({ body, ...rest }) => ({ ...rest, bodyChars: body?.length ?? null }));
+await mkdir("proof", { recursive: true });
 await writeFile("proof/probe.json", `${JSON.stringify(report, null, 2)}\n`, "utf8");
 process.stdout.write("\nSaved proof/probe.json\n");

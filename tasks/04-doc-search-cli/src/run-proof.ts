@@ -2,10 +2,14 @@
 // npm run proof: run the three README examples through the real CLI against https://docs.pharos.xyz,
 // save each run's full request transcript and printed output, verify them, and only then write the
 // README's example and proof sections. Nothing is written to the README from a failed or unverified run.
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { formatJson } from "./formatter.js";
 import { applyProof, PROOF_QUERIES, verifyRun, type Example, type Transcript } from "./proof.js";
 import { run } from "./run.js";
+
+// Fresh checkouts have neither directory; the transcripts and outputs below are written into them.
+await mkdir("proof", { recursive: true });
+await mkdir("sample-output", { recursive: true });
 
 const examples: Example[] = [];
 let json = "";
