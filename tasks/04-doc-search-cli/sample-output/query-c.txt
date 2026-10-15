@@ -1,0 +1,14 @@
+No good answer found in the Pharos Developer Docs.
+  The Pharos Developer Docs say they do not cover this.
+
+Nearby documented topics
+01  Rust
+    https://docs.pharos.xyz/developer-guide/rust
+02  Validator Node Deployment
+    https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment
+03  Write Your First Uniswap Contract
+    https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract
+
+  Try rephrasing the question, or open one of the pages above.
+
+Developer Docs MCP (askQuestion) · 2 requests to docs.pharos.xyz/~gitbook/mcp · 12.1 s

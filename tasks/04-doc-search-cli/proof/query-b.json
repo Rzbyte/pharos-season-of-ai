@@ -1,0 +1,258 @@
+{
+  "format": "pharos-docs-mcp-transcript/1",
+  "about": "Every JSON-RPC request this run POSTed to the Pharos Developer Docs MCP (Streamable HTTP), each raw response body as received, the answer as askQuestion returned it, and the result.",
+  "tool": {
+    "name": "pharos-docs",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "node": "v26.4.0",
+    "platform": "android"
+  },
+  "provider": "developer-docs-mcp",
+  "transport": "docs-mcp",
+  "endpoint": "https://docs.pharos.xyz/~gitbook/mcp",
+  "toolsFromCache": false,
+  "tools": [
+    {
+      "name": "searchDocumentation",
+      "description": "Search across the documentation to find relevant information, code examples, API references, and guides. Use this tool when you need to answer questions about docs.pharos.xyz, find specific documentation, understand how features work, or locate implementation details. The search returns contextual content with titles and direct links to the documentation pages.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getPage",
+      "description": "Fetch the full markdown content of a specific documentation page from docs.pharos.xyz. Use this when you have a page URL and want to read its content. Accepts full URLs (e.g. https://docs.pharos.xyz//getting-started). Since `searchDocumentation` returns partial content, use `getPage` to retrieve the complete page when you need more details. The content includes links you can follow to navigate to related pages.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The URL of the page to fetch"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "askQuestion",
+      "description": "Ask a natural-language question about docs.pharos.xyz and get a synthesized answer, with links to the source pages. Prefer this over `searchDocumentation` when you want a direct answer to a question rather than a list of matching pages; use `searchDocumentation`/`getPage` when you need to browse or read full pages yourself.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The natural-language question to answer about docs.pharos.xyz."
+          },
+          "goal": {
+            "type": "string",
+            "description": "The broader end goal you are ultimately trying to accomplish (as/on behalf of the user). Used to tailor the answer to be most useful for your goal. Optional."
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "sendFeedback",
+      "description": "Report an issue in the documentation of docs.pharos.xyz so the team can fix it. Use it whenever, while helping a user, you come across content that is outdated, contradictory, missing information, or otherwise unhelpful. Also use it when the user themselves reports a problem with the docs, even if you could not verify it yourself. If it's your own observation, do a quick sanity check that the issue is real before reporting — no need to exhaustively re-read the page. Send one call per distinct issue and do not report the same issue twice in a conversation. Do not use this tool to confirm that a page is accurate; it is for reporting problems only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "Explain the issue in full, as if writing to a documentation maintainer who never saw this conversation. Describe what is wrong, where on the page it appears (quote the exact sentence or section title when possible), what the user was trying to do, and, when relevant, what the correct or expected information should be. Write a few clear, specific sentences in English. Never include personal or confidential information from the conversation. Up to 2048 characters."
+          },
+          "pageUrl": {
+            "type": "string",
+            "description": "The full URL of the page the issue is about (e.g. https://docs.pharos.xyz//getting-started), so the finding is linked to the exact page."
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "The broader end goal you were ultimately trying to accomplish (as/on behalf of the user) when you hit this issue. Gives the team the context you were working towards. Optional."
+          }
+        },
+        "required": [
+          "content",
+          "pageUrl"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ],
+  "selectedTool": "askQuestion",
+  "startedAt": "2026-10-15T20:38:51.290Z",
+  "finishedAt": "2026-10-15T20:39:07.032Z",
+  "argv": [
+    "How do I deploy a contract with Foundry?",
+    "--no-cache",
+    "--transcript",
+    "proof/query-b.json"
+  ],
+  "requests": [
+    {
+      "seq": 1,
+      "method": "POST",
+      "url": "https://docs.pharos.xyz/~gitbook/mcp",
+      "purpose": "tools/list",
+      "rpc": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list"
+      },
+      "status": 200,
+      "contentType": "text/event-stream",
+      "bytes": 4481,
+      "ms": 448,
+      "sha256": "b30b77c5af1f44e84e6352e29862afd7f2826038f555efafdffa8afad27541a8",
+      "excerpt": "event: message\ndata: {\"result\":{\"tools\":[{\"name\":\"searchDocumentation\",\"description\":\"Search across the documentation to find relevant information, code examples, API references, and guides. Use this tool when you need to answer questions about docs.pharos.xyz, find specific documentation, understand how features work, or locate implementation details. The search returns contextual content with titles and direct links to the documentation pages.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Search documentation\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":true}},{\"name\":\"getPage\",\"description\":\"Fetch the full markdown content of a specific documentation page from docs.pharos.xyz. Use this when you have a page URL and want to read its content. Accepts full URLs (e.g. https://docs.pharos.xyz//getting-started). Since `searchDocumentation` returns partial content, use `getPage` to retrieve the complete page when you need more details. The content includes links you can follow to navigate to relate",
+      "body": "event: message\ndata: {\"result\":{\"tools\":[{\"name\":\"searchDocumentation\",\"description\":\"Search across the documentation to find relevant information, code examples, API references, and guides. Use this tool when you need to answer questions about docs.pharos.xyz, find specific documentation, understand how features work, or locate implementation details. The search returns contextual content with titles and direct links to the documentation pages.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Search documentation\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":true}},{\"name\":\"getPage\",\"description\":\"Fetch the full markdown content of a specific documentation page from docs.pharos.xyz. Use this when you have a page URL and want to read its content. Accepts full URLs (e.g. https://docs.pharos.xyz//getting-started). Since `searchDocumentation` returns partial content, use `getPage` to retrieve the complete page when you need more details. The content includes links you can follow to navigate to related pages.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"The URL of the page to fetch\"}},\"required\":[\"url\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Get page content\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":true}},{\"name\":\"askQuestion\",\"description\":\"Ask a natural-language question about docs.pharos.xyz and get a synthesized answer, with links to the source pages. Prefer this over `searchDocumentation` when you want a direct answer to a question rather than a list of matching pages; use `searchDocumentation`/`getPage` when you need to browse or read full pages yourself.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"The natural-language question to answer about docs.pharos.xyz.\"},\"goal\":{\"type\":\"string\",\"description\":\"The broader end goal you are ultimately trying to accomplish (as/on behalf of the user). Used to tailor the answer to be most useful for your goal. Optional.\"}},\"required\":[\"question\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Ask a question\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":false,\"openWorldHint\":true}},{\"name\":\"sendFeedback\",\"description\":\"Report an issue in the documentation of docs.pharos.xyz so the team can fix it. Use it whenever, while helping a user, you come across content that is outdated, contradictory, missing information, or otherwise unhelpful. Also use it when the user themselves reports a problem with the docs, even if you could not verify it yourself. If it's your own observation, do a quick sanity check that the issue is real before reporting — no need to exhaustively re-read the page. Send one call per distinct issue and do not report the same issue twice in a conversation. Do not use this tool to confirm that a page is accurate; it is for reporting problems only.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":2048,\"description\":\"Explain the issue in full, as if writing to a documentation maintainer who never saw this conversation. Describe what is wrong, where on the page it appears (quote the exact sentence or section title when possible), what the user was trying to do, and, when relevant, what the correct or expected information should be. Write a few clear, specific sentences in English. Never include personal or confidential information from the conversation. Up to 2048 characters.\"},\"pageUrl\":{\"type\":\"string\",\"description\":\"The full URL of the page the issue is about (e.g. https://docs.pharos.xyz//getting-started), so the finding is linked to the exact page.\"},\"goal\":{\"type\":\"string\",\"maxLength\":1024,\"description\":\"The broader end goal you were ultimately trying to accomplish (as/on behalf of the user) when you hit this issue. Gives the team the context you were working towards. Optional.\"}},\"required\":[\"content\",\"pageUrl\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Send feedback\",\"readOnlyHint\":false,\"destructiveHint\":false,\"idempotentHint\":false,\"openWorldHint\":true}}]},\"jsonrpc\":\"2.0\",\"id\":1}\n\n",
+      "error": null
+    },
+    {
+      "seq": 2,
+      "method": "POST",
+      "url": "https://docs.pharos.xyz/~gitbook/mcp",
+      "purpose": "tools/call",
+      "rpc": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "askQuestion",
+          "arguments": {
+            "question": "How do I deploy a contract with Foundry?",
+            "goal": "Answer a developer question using the Pharos Developer Docs"
+          }
+        }
+      },
+      "status": 200,
+      "contentType": "text/event-stream",
+      "bytes": 2368,
+      "ms": 15271,
+      "sha256": "c1df2d144a0f755de4ea27560f6e31efd37b56056aab1b54d94c96da08e431a9",
+      "excerpt": "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Use a Foundry script to deploy, then run it with `forge script --broadcast`. The [Write Your First Token](/developer-guide/foundry/write-your-first-token) shows the full Pharos example.\\n\\n1. Compile and test your contract:\\n\\n   ```bash\\n   forge build\\n   forge test\\n   ```\\n2. Create `script/DeployToken.s.sol`. For a token contract with a `uint256` initial-supply constructor, use:\\n\\n   ```solidity\\n   // SPDX-License-Identifier: MIT\\n   pragma solidity ^0.8.0;\\n\\n   import \\\"forge-std/Script.sol\\\";\\n   import \\\"../src/Token.sol\\\";\\n\\n   contract DeployToken is Script {\\n       function run() external {\\n           vm.startBroadcast();\\n           Token token = new Token(1_000_000);\\n           vm.stopBroadcast();\\n       }\\n   }\\n   ```\\n3. Set your private key and deploy. Use the RPC URL for your target Pharos network:\\n\\n   ```bash\\n   export PRIVATE_KEY=0x...\\n   forge script script/DeployToken.s.sol:DeployToken \\\\\\n     --rpc-url <PHAROS_RPC_URL> \\\\\\n     --private-key \\\"$PRIVATE_KEY\\\" \\\\\\n     --broadcast\\n   ```\\n\\nFor Atlantic Testnet, the RPC URL is `https://atlantic.dplabs-internal.com`. Ensure the deplo",
+      "body": "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Use a Foundry script to deploy, then run it with `forge script --broadcast`. The [Write Your First Token](/developer-guide/foundry/write-your-first-token) shows the full Pharos example.\\n\\n1. Compile and test your contract:\\n\\n   ```bash\\n   forge build\\n   forge test\\n   ```\\n2. Create `script/DeployToken.s.sol`. For a token contract with a `uint256` initial-supply constructor, use:\\n\\n   ```solidity\\n   // SPDX-License-Identifier: MIT\\n   pragma solidity ^0.8.0;\\n\\n   import \\\"forge-std/Script.sol\\\";\\n   import \\\"../src/Token.sol\\\";\\n\\n   contract DeployToken is Script {\\n       function run() external {\\n           vm.startBroadcast();\\n           Token token = new Token(1_000_000);\\n           vm.stopBroadcast();\\n       }\\n   }\\n   ```\\n3. Set your private key and deploy. Use the RPC URL for your target Pharos network:\\n\\n   ```bash\\n   export PRIVATE_KEY=0x...\\n   forge script script/DeployToken.s.sol:DeployToken \\\\\\n     --rpc-url <PHAROS_RPC_URL> \\\\\\n     --private-key \\\"$PRIVATE_KEY\\\" \\\\\\n     --broadcast\\n   ```\\n\\nFor Atlantic Testnet, the RPC URL is `https://atlantic.dplabs-internal.com`. Ensure the deploying wallet has enough testnet tokens for gas. Pass the private key explicitly to Foundry, and never commit it to source control.\\n\\n# Sources\\n\\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft)\\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token)\\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts)\\n- [Validator Node Deployment](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment)\\n- [Foundry](https://docs.pharos.xyz/developer-guide/foundry)\\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract)\\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract)\\n- [Pharos Skill Engine](https://docs.pharos.xyz/tooling-and-infrastructure/pharos-skill-engine-guide)\\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-nft)\\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token)\"}]},\"jsonrpc\":\"2.0\",\"id\":2}\n\n",
+      "error": null
+    }
+  ],
+  "answer": {
+    "tool": "askQuestion",
+    "text": "Use a Foundry script to deploy, then run it with `forge script --broadcast`. The [Write Your First Token](/developer-guide/foundry/write-your-first-token) shows the full Pharos example.\n\n1. Compile and test your contract:\n\n   ```bash\n   forge build\n   forge test\n   ```\n2. Create `script/DeployToken.s.sol`. For a token contract with a `uint256` initial-supply constructor, use:\n\n   ```solidity\n   // SPDX-License-Identifier: MIT\n   pragma solidity ^0.8.0;\n\n   import \"forge-std/Script.sol\";\n   import \"../src/Token.sol\";\n\n   contract DeployToken is Script {\n       function run() external {\n           vm.startBroadcast();\n           Token token = new Token(1_000_000);\n           vm.stopBroadcast();\n       }\n   }\n   ```\n3. Set your private key and deploy. Use the RPC URL for your target Pharos network:\n\n   ```bash\n   export PRIVATE_KEY=0x...\n   forge script script/DeployToken.s.sol:DeployToken \\\n     --rpc-url <PHAROS_RPC_URL> \\\n     --private-key \"$PRIVATE_KEY\" \\\n     --broadcast\n   ```\n\nFor Atlantic Testnet, the RPC URL is `https://atlantic.dplabs-internal.com`. Ensure the deploying wallet has enough testnet tokens for gas. Pass the private key explicitly to Foundry, and never commit it to source control.\n\n# Sources\n\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts)\n- [Validator Node Deployment](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment)\n- [Foundry](https://docs.pharos.xyz/developer-guide/foundry)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract)\n- [Write Your First Uniswap Contract](https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract)\n- [Pharos Skill Engine](https://docs.pharos.xyz/tooling-and-infrastructure/pharos-skill-engine-guide)\n- [Write Your First NFT](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-nft)\n- [Write Your First Token](https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token)",
+    "body": "Use a Foundry script to deploy, then run it with `forge script --broadcast`. The [Write Your First Token](/developer-guide/foundry/write-your-first-token) shows the full Pharos example.\n\n1. Compile and test your contract:\n\n   ```bash\n   forge build\n   forge test\n   ```\n2. Create `script/DeployToken.s.sol`. For a token contract with a `uint256` initial-supply constructor, use:\n\n   ```solidity\n   // SPDX-License-Identifier: MIT\n   pragma solidity ^0.8.0;\n\n   import \"forge-std/Script.sol\";\n   import \"../src/Token.sol\";\n\n   contract DeployToken is Script {\n       function run() external {\n           vm.startBroadcast();\n           Token token = new Token(1_000_000);\n           vm.stopBroadcast();\n       }\n   }\n   ```\n3. Set your private key and deploy. Use the RPC URL for your target Pharos network:\n\n   ```bash\n   export PRIVATE_KEY=0x...\n   forge script script/DeployToken.s.sol:DeployToken \\\n     --rpc-url <PHAROS_RPC_URL> \\\n     --private-key \"$PRIVATE_KEY\" \\\n     --broadcast\n   ```\n\nFor Atlantic Testnet, the RPC URL is `https://atlantic.dplabs-internal.com`. Ensure the deploying wallet has enough testnet tokens for gas. Pass the private key explicitly to Foundry, and never commit it to source control.",
+    "sources": [
+      {
+        "title": "Write Your First Token",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token"
+      },
+      {
+        "title": null,
+        "url": "https://atlantic.dplabs-internal.com`/"
+      },
+      {
+        "title": "Write Your First NFT",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft"
+      },
+      {
+        "title": "Write Your First Token",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token"
+      },
+      {
+        "title": "Canonical Contracts",
+        "url": "https://docs.pharos.xyz/getting-started/canonical-contracts"
+      },
+      {
+        "title": "Validator Node Deployment",
+        "url": "https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment"
+      },
+      {
+        "title": "Foundry",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry"
+      },
+      {
+        "title": "Write Your First Uniswap Contract",
+        "url": "https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract"
+      },
+      {
+        "title": "Write Your First Uniswap Contract",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-uniswap-contract"
+      },
+      {
+        "title": "Pharos Skill Engine",
+        "url": "https://docs.pharos.xyz/tooling-and-infrastructure/pharos-skill-engine-guide"
+      },
+      {
+        "title": "Write Your First NFT",
+        "url": "https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-nft"
+      },
+      {
+        "title": "Write Your First Token",
+        "url": "https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-token"
+      }
+    ],
+    "sourceSection": true
+  },
+  "result": {
+    "schema": "pharos-docs-result/1",
+    "status": "answered",
+    "question": "How do I deploy a contract with Foundry?",
+    "answer": "Use a Foundry script to deploy, then run it with forge script --broadcast. The Write Your First Token shows the full Pharos example.\n\n1. Compile and test your contract:\n\n   forge build\n   forge test\n\n2. Create script/DeployToken.s.sol. For a token contract with a uint256 initial-supply constructor, use:\n\n   // SPDX-License-Identifier: MIT\n   pragma solidity ^0.8.0;\n\n   import \"forge-std/Script.sol\";\n   import \"../src/Token.sol\";\n\n   contract DeployToken is Script {\n       function run() external {\n           vm.startBroadcast();\n           Token token = new Token(1_000_000);\n           vm.stopBroadcast();\n       }\n   }\n\n3. Set your private key and deploy.…",
+    "sources": [
+      {
+        "title": "Write Your First Token",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token"
+      },
+      {
+        "title": "Write Your First NFT",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft"
+      },
+      {
+        "title": "Canonical Contracts",
+        "url": "https://docs.pharos.xyz/getting-started/canonical-contracts"
+      },
+      {
+        "title": "Validator Node Deployment",
+        "url": "https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment"
+      },
+      {
+        "title": "Foundry",
+        "url": "https://docs.pharos.xyz/developer-guide/foundry"
+      }
+    ],
+    "reason": null,
+    "suggestions": [],
+    "error": null,
+    "meta": {
+      "tool": "pharos-docs",
+      "version": "1.0.0",
+      "provider": "developer-docs-mcp",
+      "transport": "docs-mcp",
+      "endpoint": "https://docs.pharos.xyz/~gitbook/mcp",
+      "pagesConsulted": [],
+      "requests": 2,
+      "elapsedMs": 15737
+    }
+  }
+}

@@ -1,0 +1,39 @@
+Answer
+  Use a Foundry script to deploy, then run it with forge script --broadcast. The Write Your First Token shows the full Pharos example.
+
+  1. Compile and test your contract:
+
+     forge build
+     forge test
+
+  2. Create script/DeployToken.s.sol. For a token contract with a uint256 initial-supply constructor, use:
+
+     // SPDX-License-Identifier: MIT
+     pragma solidity ^0.8.0;
+
+     import "forge-std/Script.sol";
+     import "../src/Token.sol";
+
+     contract DeployToken is Script {
+         function run() external {
+             vm.startBroadcast();
+             Token token = new Token(1_000_000);
+             vm.stopBroadcast();
+         }
+     }
+
+  3. Set your private key and deploy.…
+
+Sources
+01  Write Your First Token
+    https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token
+02  Write Your First NFT
+    https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft
+03  Canonical Contracts
+    https://docs.pharos.xyz/getting-started/canonical-contracts
+04  Validator Node Deployment
+    https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment
+05  Foundry
+    https://docs.pharos.xyz/developer-guide/foundry
+
+Developer Docs MCP (askQuestion) · 2 requests to docs.pharos.xyz/~gitbook/mcp · 15.7 s

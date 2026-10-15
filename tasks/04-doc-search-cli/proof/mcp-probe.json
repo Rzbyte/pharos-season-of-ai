@@ -1,0 +1,195 @@
+{
+  "startedAt": "2026-10-15T20:38:13.914Z",
+  "finishedAt": "2026-10-15T20:38:21.399Z",
+  "endpoint": "https://docs.pharos.xyz/~gitbook/mcp",
+  "question": "What is the Atlantic chain ID?",
+  "tools": [
+    {
+      "name": "searchDocumentation",
+      "description": "Search across the documentation to find relevant information, code examples, API references, and guides. Use this tool when you need to answer questions about docs.pharos.xyz, find specific documentation, understand how features work, or locate implementation details. The search returns contextual content with titles and direct links to the documentation pages.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "getPage",
+      "description": "Fetch the full markdown content of a specific documentation page from docs.pharos.xyz. Use this when you have a page URL and want to read its content. Accepts full URLs (e.g. https://docs.pharos.xyz//getting-started). Since `searchDocumentation` returns partial content, use `getPage` to retrieve the complete page when you need more details. The content includes links you can follow to navigate to related pages.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The URL of the page to fetch"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "askQuestion",
+      "description": "Ask a natural-language question about docs.pharos.xyz and get a synthesized answer, with links to the source pages. Prefer this over `searchDocumentation` when you want a direct answer to a question rather than a list of matching pages; use `searchDocumentation`/`getPage` when you need to browse or read full pages yourself.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The natural-language question to answer about docs.pharos.xyz."
+          },
+          "goal": {
+            "type": "string",
+            "description": "The broader end goal you are ultimately trying to accomplish (as/on behalf of the user). Used to tailor the answer to be most useful for your goal. Optional."
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    },
+    {
+      "name": "sendFeedback",
+      "description": "Report an issue in the documentation of docs.pharos.xyz so the team can fix it. Use it whenever, while helping a user, you come across content that is outdated, contradictory, missing information, or otherwise unhelpful. Also use it when the user themselves reports a problem with the docs, even if you could not verify it yourself. If it's your own observation, do a quick sanity check that the issue is real before reporting — no need to exhaustively re-read the page. Send one call per distinct issue and do not report the same issue twice in a conversation. Do not use this tool to confirm that a page is accurate; it is for reporting problems only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "Explain the issue in full, as if writing to a documentation maintainer who never saw this conversation. Describe what is wrong, where on the page it appears (quote the exact sentence or section title when possible), what the user was trying to do, and, when relevant, what the correct or expected information should be. Write a few clear, specific sentences in English. Never include personal or confidential information from the conversation. Up to 2048 characters."
+          },
+          "pageUrl": {
+            "type": "string",
+            "description": "The full URL of the page the issue is about (e.g. https://docs.pharos.xyz//getting-started), so the finding is linked to the exact page."
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "The broader end goal you were ultimately trying to accomplish (as/on behalf of the user) when you hit this issue. Gives the team the context you were working towards. Optional."
+          }
+        },
+        "required": [
+          "content",
+          "pageUrl"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      }
+    }
+  ],
+  "requests": [
+    {
+      "seq": 1,
+      "method": "POST",
+      "url": "https://docs.pharos.xyz/~gitbook/mcp",
+      "purpose": "tools/list",
+      "rpc": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list"
+      },
+      "status": 200,
+      "contentType": "text/event-stream",
+      "bytes": 4481,
+      "ms": 1514,
+      "sha256": "b30b77c5af1f44e84e6352e29862afd7f2826038f555efafdffa8afad27541a8",
+      "excerpt": "event: message\ndata: {\"result\":{\"tools\":[{\"name\":\"searchDocumentation\",\"description\":\"Search across the documentation to find relevant information, code examples, API references, and guides. Use this tool when you need to answer questions about docs.pharos.xyz, find specific documentation, understand how features work, or locate implementation details. The search returns contextual content with titles and direct links to the documentation pages.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Search documentation\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":true}},{\"name\":\"getPage\",\"description\":\"Fetch the full markdown content of a specific documentation page from docs.pharos.xyz. Use this when you have a page URL and want to read its content. Accepts full URLs (e.g. https://docs.pharos.xyz//getting-started). Since `searchDocumentation` returns partial content, use `getPage` to retrieve the complete page when you need more details. The content includes links you can follow to navigate to relate",
+      "body": "event: message\ndata: {\"result\":{\"tools\":[{\"name\":\"searchDocumentation\",\"description\":\"Search across the documentation to find relevant information, code examples, API references, and guides. Use this tool when you need to answer questions about docs.pharos.xyz, find specific documentation, understand how features work, or locate implementation details. The search returns contextual content with titles and direct links to the documentation pages.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}},\"required\":[\"query\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Search documentation\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":true}},{\"name\":\"getPage\",\"description\":\"Fetch the full markdown content of a specific documentation page from docs.pharos.xyz. Use this when you have a page URL and want to read its content. Accepts full URLs (e.g. https://docs.pharos.xyz//getting-started). Since `searchDocumentation` returns partial content, use `getPage` to retrieve the complete page when you need more details. The content includes links you can follow to navigate to related pages.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"The URL of the page to fetch\"}},\"required\":[\"url\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Get page content\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":true,\"openWorldHint\":true}},{\"name\":\"askQuestion\",\"description\":\"Ask a natural-language question about docs.pharos.xyz and get a synthesized answer, with links to the source pages. Prefer this over `searchDocumentation` when you want a direct answer to a question rather than a list of matching pages; use `searchDocumentation`/`getPage` when you need to browse or read full pages yourself.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"The natural-language question to answer about docs.pharos.xyz.\"},\"goal\":{\"type\":\"string\",\"description\":\"The broader end goal you are ultimately trying to accomplish (as/on behalf of the user). Used to tailor the answer to be most useful for your goal. Optional.\"}},\"required\":[\"question\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Ask a question\",\"readOnlyHint\":true,\"destructiveHint\":false,\"idempotentHint\":false,\"openWorldHint\":true}},{\"name\":\"sendFeedback\",\"description\":\"Report an issue in the documentation of docs.pharos.xyz so the team can fix it. Use it whenever, while helping a user, you come across content that is outdated, contradictory, missing information, or otherwise unhelpful. Also use it when the user themselves reports a problem with the docs, even if you could not verify it yourself. If it's your own observation, do a quick sanity check that the issue is real before reporting — no need to exhaustively re-read the page. Send one call per distinct issue and do not report the same issue twice in a conversation. Do not use this tool to confirm that a page is accurate; it is for reporting problems only.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":2048,\"description\":\"Explain the issue in full, as if writing to a documentation maintainer who never saw this conversation. Describe what is wrong, where on the page it appears (quote the exact sentence or section title when possible), what the user was trying to do, and, when relevant, what the correct or expected information should be. Write a few clear, specific sentences in English. Never include personal or confidential information from the conversation. Up to 2048 characters.\"},\"pageUrl\":{\"type\":\"string\",\"description\":\"The full URL of the page the issue is about (e.g. https://docs.pharos.xyz//getting-started), so the finding is linked to the exact page.\"},\"goal\":{\"type\":\"string\",\"maxLength\":1024,\"description\":\"The broader end goal you were ultimately trying to accomplish (as/on behalf of the user) when you hit this issue. Gives the team the context you were working towards. Optional.\"}},\"required\":[\"content\",\"pageUrl\"],\"additionalProperties\":false,\"$schema\":\"http://json-schema.org/draft-07/schema#\"},\"annotations\":{\"title\":\"Send feedback\",\"readOnlyHint\":false,\"destructiveHint\":false,\"idempotentHint\":false,\"openWorldHint\":true}}]},\"jsonrpc\":\"2.0\",\"id\":1}\n\n",
+      "error": null
+    },
+    {
+      "seq": 2,
+      "method": "POST",
+      "url": "https://docs.pharos.xyz/~gitbook/mcp",
+      "purpose": "tools/call",
+      "rpc": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+          "name": "askQuestion",
+          "arguments": {
+            "question": "What is the Atlantic chain ID?",
+            "goal": "Answer a developer question using the Pharos Developer Docs"
+          }
+        }
+      },
+      "status": 200,
+      "contentType": "text/event-stream",
+      "bytes": 1103,
+      "ms": 5921,
+      "sha256": "3ffb43613c62f8437a527906f3de8651d394a4409251e279dacb2f255d3c4794",
+      "excerpt": "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Atlantic Testnet’s chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet).\\n\\n# Sources\\n\\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet)\\n- [Cross Chain Infrastructure](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain)\\n- [Pharos Network Snapshots](https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots)\\n- [LayerZero](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero)\\n- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry)\\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts)\\n- [Circle CCTP](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/circle-cctp)\\n- [Chainlink CCIP](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/chainlink-ccip)\\n- [Network](https://docs.pharos.xyz/getting-started/network)\\n- [Node Management](https://docs.pharos.xyz/node-and-validator-guide/node-management)\"}]},\"jsonrpc\":\"2.0\",\"id\":2}\n\n",
+      "body": "event: message\ndata: {\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Atlantic Testnet’s chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet).\\n\\n# Sources\\n\\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet)\\n- [Cross Chain Infrastructure](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain)\\n- [Pharos Network Snapshots](https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots)\\n- [LayerZero](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero)\\n- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry)\\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts)\\n- [Circle CCTP](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/circle-cctp)\\n- [Chainlink CCIP](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/chainlink-ccip)\\n- [Network](https://docs.pharos.xyz/getting-started/network)\\n- [Node Management](https://docs.pharos.xyz/node-and-validator-guide/node-management)\"}]},\"jsonrpc\":\"2.0\",\"id\":2}\n\n",
+      "error": null
+    }
+  ],
+  "answer": {
+    "tool": "askQuestion",
+    "text": "Atlantic Testnet’s chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet).\n\n# Sources\n\n- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet)\n- [Cross Chain Infrastructure](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain)\n- [Pharos Network Snapshots](https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots)\n- [LayerZero](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero)\n- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry)\n- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts)\n- [Circle CCTP](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/circle-cctp)\n- [Chainlink CCIP](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/chainlink-ccip)\n- [Network](https://docs.pharos.xyz/getting-started/network)\n- [Node Management](https://docs.pharos.xyz/node-and-validator-guide/node-management)",
+    "body": "Atlantic Testnet’s chain ID is **688689**. See [Atlantic Testnet](/getting-started/network/atlantic-testnet).",
+    "sources": [
+      {
+        "title": "Atlantic Testnet",
+        "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet"
+      },
+      {
+        "title": "Atlantic Testnet",
+        "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet"
+      },
+      {
+        "title": "Cross Chain Infrastructure",
+        "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain"
+      },
+      {
+        "title": "Pharos Network Snapshots",
+        "url": "https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots"
+      },
+      {
+        "title": "LayerZero",
+        "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero"
+      },
+      {
+        "title": "Token Registry",
+        "url": "https://docs.pharos.xyz/getting-started/token-registry"
+      },
+      {
+        "title": "Canonical Contracts",
+        "url": "https://docs.pharos.xyz/getting-started/canonical-contracts"
+      },
+      {
+        "title": "Circle CCTP",
+        "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/circle-cctp"
+      },
+      {
+        "title": "Chainlink CCIP",
+        "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/chainlink-ccip"
+      },
+      {
+        "title": "Network",
+        "url": "https://docs.pharos.xyz/getting-started/network"
+      },
+      {
+        "title": "Node Management",
+        "url": "https://docs.pharos.xyz/node-and-validator-guide/node-management"
+      }
+    ],
+    "sourceSection": true
+  },
+  "error": null
+}

@@ -11,10 +11,14 @@ $ pharos-docs "What is the Atlantic chain ID?"
 - [x] **Accepts a natural-language question.** `pharos-docs "<question>"`, quoted or not. See [Usage](#usage).
 - [x] **Returns a concise answer with source links.** The answer from the Developer Docs MCP, then numbered `docs.pharos.xyz` sources taken from that answer. See [Text output](#text-output).
 - [x] **Says so when there is no good answer.** "No good answer found in the Pharos Developer Docs.", with the reason and nearby topics; never an invented answer. See [No-answer behavior](#no-answer-behavior).
-- [ ] **README with installation, usage and at least 3 example queries with output.** <!-- req-examples --> Installation and usage are below; the three examples are filled in by `npm run proof` from live runs against the Developer Docs MCP only. See [Examples](#examples).
+- [x] **README with installation, usage and at least 3 example queries with output.** <!-- req-examples --> Installation and usage are below; the three examples are filled in by `npm run proof` from live runs against the Developer Docs MCP only. See [Examples](#examples).
 
 <!-- proof-status:start -->
-**Live MCP proof: pending.** The three examples have not yet been captured through the Developer Docs MCP. `npm run proof` captures and verifies them from a machine that can reach `https://docs.pharos.xyz` (see [Running the proof](#running-the-proof-from-termux-or-any-machine-with-internet-access)), then fills in this section and the examples. The earlier proof, made over the docs-http development transport (not MCP), is archived in [proof/archive/docs-http-2026-10-15/](proof/archive/docs-http-2026-10-15/) and is not this task's proof.
+**Live proof:** captured 2026-10-15T20:39:19Z against the Pharos Developer Docs MCP (`https://docs.pharos.xyz/~gitbook/mcp`) by `npm run proof`, and verified from the saved JSON-RPC requests and raw responses (`npm run verify-proof`). Tools listed by the server: `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback`.
+
+- **Simple factual query** ("What is the Atlantic chain ID?"): answered, 2 JSON-RPC requests (tools/list, tools/call askQuestion), 5 sources, 11/11 checks passed. Transcript: [proof/query-a.json](proof/query-a.json).
+- **Procedural how-to query** ("How do I deploy a contract with Foundry?"): answered, 2 JSON-RPC requests (tools/list, tools/call askQuestion), 5 sources, 11/11 checks passed. Transcript: [proof/query-b.json](proof/query-b.json).
+- **Not covered by the docs** ("How do I deploy an Anchor program to Solana?"): no_answer (not_in_docs), 2 JSON-RPC requests (tools/list, tools/call askQuestion), 3 nearby pages, 11/11 checks passed. Transcript: [proof/query-c.json](proof/query-c.json).
 <!-- proof-status:end -->
 
 ## Transport: the Pharos Developer Docs MCP
@@ -184,21 +188,145 @@ An MCP that cannot be reached, an HTTP or JSON-RPC error, a tool error, a malfor
 Three runs against the live Developer Docs MCP, captured by `npm run proof` and verified from their saved JSON-RPC requests and raw responses. Nothing below is written by hand; until the proof is captured, these sections are empty.
 
 <!-- example-a:start -->
-_Pending: written by `npm run proof` from a live run._
+**Simple factual query**
+
+```console
+$ pharos-docs "What is the Atlantic chain ID?"
+Answer
+  Atlantic Testnet’s chain ID is 688689. See Atlantic Testnet.
+
+Sources
+01  Atlantic Testnet
+    https://docs.pharos.xyz/getting-started/network/atlantic-testnet
+02  Cross Chain Infrastructure
+    https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain
+03  Pharos Network Snapshots
+    https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots
+04  LayerZero
+    https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero
+05  Token Registry
+    https://docs.pharos.xyz/getting-started/token-registry
+
+Developer Docs MCP (askQuestion) · 2 requests to docs.pharos.xyz/~gitbook/mcp · 10.0 s
+```
 <!-- example-a:end -->
 
 <!-- example-b:start -->
-_Pending: written by `npm run proof` from a live run._
+**Procedural how-to query**
+
+```console
+$ pharos-docs "How do I deploy a contract with Foundry?"
+Answer
+  Use a Foundry script to deploy, then run it with forge script --broadcast. The Write Your First Token shows the full Pharos example.
+
+  1. Compile and test your contract:
+
+     forge build
+     forge test
+
+  2. Create script/DeployToken.s.sol. For a token contract with a uint256 initial-supply constructor, use:
+
+     // SPDX-License-Identifier: MIT
+     pragma solidity ^0.8.0;
+
+     import "forge-std/Script.sol";
+     import "../src/Token.sol";
+
+     contract DeployToken is Script {
+         function run() external {
+             vm.startBroadcast();
+             Token token = new Token(1_000_000);
+             vm.stopBroadcast();
+         }
+     }
+
+  3. Set your private key and deploy.…
+
+Sources
+01  Write Your First Token
+    https://docs.pharos.xyz/developer-guide/foundry/write-your-first-token
+02  Write Your First NFT
+    https://docs.pharos.xyz/developer-guide/foundry/write-your-first-nft
+03  Canonical Contracts
+    https://docs.pharos.xyz/getting-started/canonical-contracts
+04  Validator Node Deployment
+    https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment
+05  Foundry
+    https://docs.pharos.xyz/developer-guide/foundry
+
+Developer Docs MCP (askQuestion) · 2 requests to docs.pharos.xyz/~gitbook/mcp · 15.7 s
+```
 <!-- example-b:end -->
 
 <!-- example-c:start -->
-_Pending: written by `npm run proof` from a live run._
+**Not covered by the docs**
+
+```console
+$ pharos-docs "How do I deploy an Anchor program to Solana?"
+No good answer found in the Pharos Developer Docs.
+  The Pharos Developer Docs say they do not cover this.
+
+Nearby documented topics
+01  Rust
+    https://docs.pharos.xyz/developer-guide/rust
+02  Validator Node Deployment
+    https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment
+03  Write Your First Uniswap Contract
+    https://docs.pharos.xyz/developer-guide/hardhat/write-your-first-uniswap-contract
+
+  Try rephrasing the question, or open one of the pages above.
+
+Developer Docs MCP (askQuestion) · 2 requests to docs.pharos.xyz/~gitbook/mcp · 12.1 s
+```
 <!-- example-c:end -->
 
 `--json` for the first example:
 
 <!-- json-example:start -->
-_Pending: written by `npm run proof` from a live run._
+```console
+$ pharos-docs "What is the Atlantic chain ID?" --json
+{
+  "schema": "pharos-docs-result/1",
+  "status": "answered",
+  "question": "What is the Atlantic chain ID?",
+  "answer": "Atlantic Testnet’s chain ID is 688689. See Atlantic Testnet.",
+  "sources": [
+    {
+      "title": "Atlantic Testnet",
+      "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet"
+    },
+    {
+      "title": "Cross Chain Infrastructure",
+      "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain"
+    },
+    {
+      "title": "Pharos Network Snapshots",
+      "url": "https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots"
+    },
+    {
+      "title": "LayerZero",
+      "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero"
+    },
+    {
+      "title": "Token Registry",
+      "url": "https://docs.pharos.xyz/getting-started/token-registry"
+    }
+  ],
+  "reason": null,
+  "suggestions": [],
+  "error": null,
+  "meta": {
+    "tool": "pharos-docs",
+    "version": "1.0.0",
+    "provider": "developer-docs-mcp",
+    "transport": "docs-mcp",
+    "endpoint": "https://docs.pharos.xyz/~gitbook/mcp",
+    "pagesConsulted": [],
+    "requests": 2,
+    "elapsedMs": 9976
+  }
+}
+```
 <!-- json-example:end -->
 
 ## Web demo

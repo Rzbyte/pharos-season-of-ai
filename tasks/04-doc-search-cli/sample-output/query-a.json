@@ -1,0 +1,41 @@
+{
+  "schema": "pharos-docs-result/1",
+  "status": "answered",
+  "question": "What is the Atlantic chain ID?",
+  "answer": "Atlantic Testnet’s chain ID is 688689. See Atlantic Testnet.",
+  "sources": [
+    {
+      "title": "Atlantic Testnet",
+      "url": "https://docs.pharos.xyz/getting-started/network/atlantic-testnet"
+    },
+    {
+      "title": "Cross Chain Infrastructure",
+      "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain"
+    },
+    {
+      "title": "Pharos Network Snapshots",
+      "url": "https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots"
+    },
+    {
+      "title": "LayerZero",
+      "url": "https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero"
+    },
+    {
+      "title": "Token Registry",
+      "url": "https://docs.pharos.xyz/getting-started/token-registry"
+    }
+  ],
+  "reason": null,
+  "suggestions": [],
+  "error": null,
+  "meta": {
+    "tool": "pharos-docs",
+    "version": "1.0.0",
+    "provider": "developer-docs-mcp",
+    "transport": "docs-mcp",
+    "endpoint": "https://docs.pharos.xyz/~gitbook/mcp",
+    "pagesConsulted": [],
+    "requests": 2,
+    "elapsedMs": 9976
+  }
+}
