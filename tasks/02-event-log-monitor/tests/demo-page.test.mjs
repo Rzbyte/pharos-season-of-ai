@@ -223,9 +223,9 @@ describe("static files", () => {
     assert.match(css, /--brand: #0113B7;/);
   });
 
-  test("the task manifest: 01 to 04 built, linked only by a deployment address, nothing planned linked", () => {
+  test("the task manifest: 01 to 04 built, linked by their /tasks/NN routes, nothing planned linked", () => {
     assert.deepEqual(TASKS.filter((task) => task.status === "built").map((task) => task.n), ["01", "02", "03", "04"]);
-    assert.ok(TASKS.every((task) => task.href === null || /^https:\/\//.test(task.href)));
+    assert.ok(TASKS.every((task) => task.href === null || /^\/tasks\/\d{2}$/.test(task.href)));
     assert.ok(TASKS.filter((task) => task.status === "planned").every((task) => task.href === null));
   });
 

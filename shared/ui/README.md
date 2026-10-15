@@ -8,7 +8,7 @@ deployment (each task deploys from its own folder, so it cannot load files from 
 | `lab.css` | Tokens (Pharos palette, dark and light), the compact type and spacing scale, the shell, and primitives: panel, status, rows, technical values, actions, buttons, field, pager, pill, state block, disclosure, toggle row, counts, steps, key/value, sources. A page adds its own workspace styles in the `task` layer. |
 | `lab.js` | DOM-free helpers (digits, hex, explorer links, `pageOf`, `neighbours`) and small DOM helpers (`renderHex`, `wireCopy`, `linkExplorer`, `renderTaskNav`, `wireToggle`). |
 | `theme.js` | Light and dark, following the system until the reader chooses. |
-| `tasks.js` | The 28-task manifest. `DEPLOYMENTS` holds each built task's address; `null` means nothing links to it yet. |
+| `tasks.js` | The 28-task manifest. A built task's link is its route on the unified site, `/tasks/NN`; `LEGACY` keeps the standalone Task 01 and 02 addresses, used only by pages served from those deployments. |
 | `header.html`, `footer.html` | The shell markup, stamped into each page between `<!-- shell:header NN -->` markers. |
 | `fonts/` | Geist, Geist Mono and Departure Mono (SIL OFL 1.1). |
 

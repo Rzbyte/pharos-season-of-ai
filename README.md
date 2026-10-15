@@ -10,3 +10,6 @@ My builds for the Pharos Season of AI Agent Arena using Chain MCP, Developer Doc
 
 [`lab/`](lab) is the landing page that indexes the tasks, and [`shared/ui/`](shared/ui) is the design
 system every page shares (`node shared/ui/sync.mjs` copies it into each deployment).
+
+The whole lab deploys as one site from the repository root: the lab at `/` and each task at
+`/tasks/NN` ([`site/`](site) explains how).

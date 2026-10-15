@@ -131,7 +131,7 @@ describe("what the page loads and calls", () => {
     for (const { name, text } of scripts) {
       // Allowed: the SVG namespace (an identifier lab.js never requests), and the task pages' own
       // addresses in tasks.js, which are links in the shell and never fetched (fetch counts are below).
-      const own = name === "tasks.js" ? text.replace(/export const DEPLOYMENTS = Object\.freeze\(\{[\s\S]*?\}\);/, "") : text;
+      const own = name === "tasks.js" ? text.replace(/export const LEGACY = Object\.freeze\(\{[\s\S]*?\}\);/, "") : text;
       assert.doesNotMatch(own.replaceAll('"http://www.w3.org/2000/svg"', '""'), /https?:\/\//, `${name} contains a URL`);
       assert.doesNotMatch(text, /XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|navigator\.connection/, name);
       assert.doesNotMatch(text, /jsonrpc|@modelcontextprotocol|mcp\.pharos|rpc\.pharos/i, name);
@@ -407,7 +407,7 @@ describe("DOM helpers write text, never markup", () => {
     assert.deepEqual([next.n, next.title, next.status], ["02", "Event Monitor", "built"]);
     assert.deepEqual(TASKS.slice(0, 4).map((task) => task.status), ["built", "built", "built", "built"]);
     assert.ok(TASKS.slice(4).every((task) => task.status === "planned" && task.href === null), "a planned task never has a link");
-    assert.ok(TASKS.every((task) => task.href === null || /^https:\/\//.test(task.href)), "a link is an https deployment address or nothing");
+    assert.ok(TASKS.every((task) => task.href === null || /^\/tasks\/\d{2}$/.test(task.href)), "a link is a same-domain /tasks/NN route or nothing");
   });
 });
 

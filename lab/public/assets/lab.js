@@ -245,16 +245,26 @@ export function svgIcon(d, className = "") {
   return svg;
 }
 
+/** True on the unified site, where every task page is served at /tasks/NN on one domain. */
+export function onUnifiedSite(pathname = typeof location === "undefined" ? "" : location.pathname) {
+  return /^\/tasks\/\d{2}\/?$/.test(pathname);
+}
+
 /**
  * The shell's place among the tasks, from the manifest: the lab link, the arrows either side of the
- * "02 / 28" counter, and the neighbours line in the footer. Only a task with an address (href) is a
- * link; any other neighbour is shown as text, marked unavailable, and is never focusable.
+ * "02 / 28" counter, and the neighbours line in the footer. On the unified site every link is a
+ * same-domain route ("/", "/tasks/NN"). A page served from a standalone deployment cannot reach those
+ * routes, so there a neighbour links to its own standalone deployment if it has one (task.legacy), and
+ * the lab is not linked. A neighbour without a link is shown as text, marked, and never focusable.
  */
-export function renderTaskNav(tasks, current, lab, root = document) {
-  const { index, previous, next } = neighbours(tasks, current);
+export function renderTaskNav(tasks, current, lab, root = document, unified = onUnifiedSite()) {
+  const { index, previous: before, next: after } = neighbours(tasks, current);
   if (index === -1) return;
+  const linked = (task) => (task ? { ...task, href: unified ? task.href : (task.legacy ?? null) } : null);
+  const previous = linked(before);
+  const next = linked(after);
   for (const home of root.querySelectorAll("[data-lab-home]")) {
-    if (lab?.home) home.href = lab.home;
+    if (unified && lab?.home) home.href = lab.home;
     else home.removeAttribute("href");
   }
   for (const count of root.querySelectorAll("[data-task-count]")) {

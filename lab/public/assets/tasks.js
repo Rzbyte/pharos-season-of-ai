@@ -1,23 +1,25 @@
 // Pharos Agent Lab: the task manifest every page reads (the shell's task navigation and the lab index).
 //
 // Metadata only. A task is "built" (it has a page and committed proof) or "planned" (nothing yet).
-// Each built task is its own deployment, so its link is that deployment's address, kept here in one
-// place: DEPLOYMENTS. An address that is not filled in yet is null, and then nothing links to it; the
-// task is still listed, as text. Nothing can ever link to a page that does not exist.
+//
+// The canonical site is one domain: the lab at "/", every task at "/tasks/NN" (route below). Tasks 01
+// and 02 also still have their earlier standalone deployments (LEGACY); a page served from one of those
+// cannot reach "/tasks/NN" on its own domain, so only there does the navigation fall back to these
+// addresses. A planned task has no route and nothing links to it.
 
-/** Where each deployment lives. Fill in a production URL once it is known; null means "not linked". */
-export const DEPLOYMENTS = Object.freeze({
-  lab: null,
+/** The canonical route of a task on the unified site. */
+export const route = (n) => `/tasks/${n}`;
+
+/** The earlier standalone deployments, kept as fallbacks. Never the canonical navigation. */
+export const LEGACY = Object.freeze({
   "01": "https://pharos-task-01.vercel.app",
   "02": "https://pharos-task-02.vercel.app",
-  "03": null,
-  "04": null,
 });
 
-export const LAB = Object.freeze({ name: "Pharos Agent Lab", short: "Agent Lab", home: DEPLOYMENTS.lab, total: 28 });
+export const LAB = Object.freeze({ name: "Pharos Agent Lab", short: "Agent Lab", home: "/", total: 28 });
 
 const task = (n, title, { verb = null, purpose = null, status = "planned", tool = null, official = title } = {}) =>
-  Object.freeze({ n, title, official, verb, purpose, status, tool, href: status === "built" ? (DEPLOYMENTS[n] ?? null) : null });
+  Object.freeze({ n, title, official, verb, purpose, status, tool, href: status === "built" ? route(n) : null, legacy: status === "built" ? (LEGACY[n] ?? null) : null });
 
 export const TASKS = Object.freeze([
   task("01", "Contract State", { official: "Read Contract State", verb: "Read", tool: "Chain MCP", status: "built", purpose: "A contract's state at one block, and any address or transaction on demand." }),

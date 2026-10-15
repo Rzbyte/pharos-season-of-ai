@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm run install:tasks",
+  "buildCommand": "npm run build",
+  "outputDirectory": "site/public",
+  "functions": {
+    "api/state.js": { "maxDuration": 60 },
+    "api/inspect.js": { "maxDuration": 60 },
+    "api/explain.js": { "maxDuration": 30 },
+    "api/events.js": { "maxDuration": 30 },
+    "api/search.js": { "maxDuration": 60 }
+  },
+  "rewrites": [
+    { "source": "/tasks/:n(\\d{2})", "destination": "/tasks/:n/index.html" },
+    { "source": "/tasks/:n(\\d{2})/", "destination": "/tasks/:n/index.html" }
+  ]
+}

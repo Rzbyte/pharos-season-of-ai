@@ -1,0 +1,17 @@
+{
+  "name": "pharos-season-of-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The unified Pharos Agent Lab site: the lab at /, every task at /tasks/NN, one Vercel project.",
+  "type": "module",
+  "scripts": {
+    "install:tasks": "npm ci --prefix tasks/01-read-contract-state && npm ci --prefix tasks/02-event-log-monitor && npm ci --prefix tasks/04-doc-search-cli",
+    "build": "npm run build --prefix tasks/01-read-contract-state && npm run build --prefix tasks/02-event-log-monitor && npm run build --prefix tasks/04-doc-search-cli && node site/build.mjs",
+    "preview": "node site/serve.mjs",
+    "test": "node --test site/tests/*.test.mjs shared/ui/tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,4 @@
+# The unified site builds everything on Vercel from source.
+**/node_modules
+**/dist
+site/public

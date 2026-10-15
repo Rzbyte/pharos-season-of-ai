@@ -10,6 +10,5 @@ npm run build                # render public/index.html from the manifest
 npm test
 ```
 
-A built task opens its deployment once its address is set in `DEPLOYMENTS` (`shared/ui/tasks.js`);
-until then its row links to its source folder. Deploy as its own Vercel project with this folder as
-the root: `npm run build`, output `public/`.
+Each built task's row opens its page on the same site, `/tasks/NN`. The landing is deployed as the
+root of the unified site (see `site/` and the root `vercel.json`), not on its own.

@@ -122,7 +122,7 @@ describe("the page", () => {
     const main = renderMain(FIXTURE);
     assert.equal(main.match(/<li class="gap">/g).length, 2);
     assert.match(main, /<h3 class="gap-title"><span class="gap-n">1<\/span>Fixture gap<\/h3><p class="gap-happened">What happened, &lt;script&gt;alert\(1\)&lt;\/script&gt;<\/p><p class="gap-fix"><span class="gap-label">Suggested fix<\/span>The fix<\/p>/);
-    assert.match(main, /<a class="shot" href="evidence\/gap-1\.png" data-evidence data-alt="A fixture screenshot"><img src="evidence\/gap-1-thumb\.webp" alt="" width="160" height="100" loading="lazy" decoding="async">/);
+    assert.match(main, /<a class="shot" href="\/evidence\/gap-1\.png" data-evidence data-alt="A fixture screenshot"><img src="\/evidence\/gap-1-thumb\.webp" alt="" width="160" height="100" loading="lazy" decoding="async">/);
     assert.equal(main.match(/<img src=/g).length, 1, "a thumbnail only; the full image loads when opened");
     assert.match(main, /<img id="viewer-img" alt="">/, "the viewer starts with no image");
     assert.match(main, /<dialog class="viewer" id="viewer"/);

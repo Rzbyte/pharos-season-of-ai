@@ -8,22 +8,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const ROOT = new URL("./", import.meta.url);
-const REPO = "https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/";
-/** Where each built task's code lives, for a row whose deployment address is not set yet. */
-export const FOLDERS = { "01": "01-read-contract-state", "02": "02-event-log-monitor", "03": "03-docs-mcp-onboarding", "04": "04-doc-search-cli" };
 
 const esc = (text) => String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const OUT = '<svg class="ext" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ACROSS = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CHEV = '<span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 
-/** One built task: number, name and verb, its one line, and how to open it. */
+/** One built task: number, name and verb, its one line, and its page on this site (/tasks/NN). */
 function row(task) {
-  const open = task.href
-    ? `<a class="row-open" href="${esc(task.href)}"><span>Open</span>${ACROSS}<span class="sr"> ${esc(task.n)} ${esc(task.title)}</span></a>`
-    : FOLDERS[task.n]
-      ? `<a class="row-open row-source" href="${REPO}${FOLDERS[task.n]}" target="_blank" rel="noopener noreferrer"><span>Source</span>${OUT}<span class="sr"> of ${esc(task.n)} ${esc(task.title)}, opens in a new tab</span></a>`
-      : "";
+  const open = task.href ? `<a class="row-open" href="${esc(task.href)}"><span>Open</span>${ACROSS}<span class="sr"> ${esc(task.n)} ${esc(task.title)}</span></a>` : "";
   return [
     `      <li class="row">`,
     `        <span class="row-n">${esc(task.n)}</span>`,

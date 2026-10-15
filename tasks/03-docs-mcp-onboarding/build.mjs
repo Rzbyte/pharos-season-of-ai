@@ -149,7 +149,7 @@ export function renderMain(data) {
         `    <ol class="gaps">`,
         ...data.gaps.map((gap, index) => {
           const shot = gap.evidence
-            ? `<a class="shot" href="${esc(gap.evidence.full)}" data-evidence data-alt="${esc(gap.evidence.alt)}"><img src="${esc(gap.evidence.thumb)}" alt="" width="160" height="100" loading="lazy" decoding="async"><span class="shot-word">View evidence</span><span class="sr">: ${esc(gap.evidence.alt)}</span></a>`
+            ? `<a class="shot" href="/${esc(gap.evidence.full)}" data-evidence data-alt="${esc(gap.evidence.alt)}"><img src="/${esc(gap.evidence.thumb)}" alt="" width="160" height="100" loading="lazy" decoding="async"><span class="shot-word">View evidence</span><span class="sr">: ${esc(gap.evidence.alt)}</span></a>`
             : "";
           // The default view stays one line each; the longer explanation waits with the queries.
           const label = `${gap.queries.length === 1 ? "Exact query" : `Exact queries (${gap.queries.length})`}${gap.details ? " and details" : ""}`;

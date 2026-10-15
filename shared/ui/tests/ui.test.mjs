@@ -6,9 +6,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, test } from "node:test";
-import { neighbours, pageOf } from "../lab.js";
+import { neighbours, onUnifiedSite, pageOf } from "../lab.js";
 import { shellPart, stampShell } from "../sync.mjs";
-import { BUILT, DEPLOYMENTS, LAB, TASKS } from "../tasks.js";
+import { BUILT, LAB, LEGACY, route, TASKS } from "../tasks.js";
 
 const read = (name) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8");
 
@@ -28,13 +28,20 @@ describe("helpers", () => {
     assert.equal(neighbours(TASKS, "99").index, -1);
   });
 
-  test("the manifest: 28 tasks, 01 to 04 built, a link only from a deployment address", () => {
+  test("the manifest: 28 tasks, 01 to 04 built at /tasks/NN, legacy addresses only as fallbacks", () => {
     assert.equal(TASKS.length, LAB.total);
     assert.equal(BUILT, 4);
+    assert.equal(LAB.home, "/");
     for (const task of TASKS) {
-      assert.equal(task.href, task.status === "built" ? (DEPLOYMENTS[task.n] ?? null) : null, task.n);
-      if (task.href !== null) assert.match(task.href, /^https:\/\//);
+      assert.equal(task.href, task.status === "built" ? route(task.n) : null, task.n);
+      assert.equal(task.legacy, task.status === "built" ? (LEGACY[task.n] ?? null) : null, task.n);
     }
+    assert.equal(route("27"), "/tasks/27", "future tasks continue the same way");
+  });
+
+  test("onUnifiedSite: true only at /tasks/NN, where same-domain routes exist", () => {
+    for (const path of ["/tasks/01", "/tasks/28", "/tasks/04/"]) assert.equal(onUnifiedSite(path), true, path);
+    for (const path of ["/", "/index.html", "/tasks", "/tasks/1", "/tasks/01/x"]) assert.equal(onUnifiedSite(path), false, path);
   });
 });
 
@@ -75,36 +82,47 @@ try {
 }
 
 describe("task navigation in a browser", { skip }, () => {
-  test("a neighbour with an address is a named link; one without is marked and never focusable", async () => {
+  test("on the unified site every link is a same-domain route; on a standalone page, only its legacy fallbacks", async () => {
     const browser = await chromium.launch();
     const page = await browser.newPage();
     const files = { "/lab.js": read("lab.js"), "/tasks.js": read("tasks.js") };
+    const shell = `<!doctype html><body>${shellPart(read("header.html"), "02")}${shellPart(read("footer.html"), "02")}</body>`;
     await page.route("http://ui.test/**", (route) => {
       const path = new URL(route.request().url()).pathname;
-      if (path === "/") return route.fulfill({ contentType: "text/html", body: `<!doctype html><body>${shellPart(read("header.html"), "02")}${shellPart(read("footer.html"), "02")}</body>` });
-      return route.fulfill({ contentType: "text/javascript", body: files[path] ?? "" });
+      if (path.endsWith(".js")) return route.fulfill({ contentType: "text/javascript", body: files[path] ?? "" });
+      return route.fulfill({ contentType: "text/html", body: shell });
     });
-    await page.goto("http://ui.test/");
-    const result = await page.evaluate(async () => {
-      const { renderTaskNav } = await import("/lab.js");
-      const { TASKS, LAB } = await import("/tasks.js");
-      const tasks = TASKS.map((task) => (task.n === "01" ? { ...task, href: "https://one.example.com/" } : task));
-      renderTaskNav(tasks, "02", { ...LAB, home: "https://lab.example.com/" });
-      const step = (direction) => document.querySelector(`[data-task-step="${direction}"]`);
-      return {
-        home: document.querySelector("[data-lab-home]").getAttribute("href"),
-        count: document.querySelector("[data-task-count]").textContent,
-        previous: [step("previous").tagName, step("previous").getAttribute("href"), step("previous").getAttribute("aria-label")],
-        next: [step("next").tagName, step("next").getAttribute("aria-disabled"), step("next").getAttribute("aria-label"), step("next").tabIndex],
-        footer: [...document.querySelectorAll("[data-task-neighbour]")].map((slot) => [slot.hidden, slot.textContent, slot.querySelector("a")?.getAttribute("href") ?? null]),
-      };
-    });
-    assert.deepEqual(result, {
-      home: "https://lab.example.com/",
+    const render = async (path) => {
+      await page.goto(`http://ui.test${path}`);
+      return page.evaluate(async () => {
+        const { renderTaskNav } = await import("/lab.js");
+        const { TASKS, LAB } = await import("/tasks.js");
+        renderTaskNav(TASKS, "02", LAB);
+        const step = (direction) => document.querySelector(`[data-task-step="${direction}"]`);
+        return {
+          home: document.querySelector("[data-lab-home]").getAttribute("href"),
+          count: document.querySelector("[data-task-count]").textContent,
+          previous: [step("previous").tagName, step("previous").getAttribute("href"), step("previous").getAttribute("aria-label")],
+          next: [step("next").tagName, step("next").getAttribute("href"), step("next").getAttribute("aria-disabled"), step("next").tabIndex],
+          footer: [...document.querySelectorAll("[data-task-neighbour]")].map((slot) => [slot.textContent, slot.querySelector("a")?.getAttribute("href") ?? null]),
+        };
+      });
+    };
+    assert.deepEqual(await render("/tasks/02"), {
+      home: "/",
       count: "Task 02 / 28",
-      previous: ["A", "https://one.example.com/", "Previous task: 01 Contract State"],
-      next: ["SPAN", "true", "Next task: 03 Docs Onboarding, not linked", -1],
-      footer: [[false, "Previous01Contract State", "https://one.example.com/"], [false, "Next03Docs Onboarding", null]],
+      previous: ["A", "/tasks/01", "Previous task: 01 Contract State"],
+      next: ["A", "/tasks/03", null, 0],
+      footer: [["Previous01Contract State", "/tasks/01"], ["Next03Docs Onboarding", "/tasks/03"]],
+    });
+    // The standalone Task 02 deployment serves this page at "/": Task 01 has its own deployment to link
+    // to, Task 03 has none, and there is no lab there.
+    assert.deepEqual(await render("/"), {
+      home: null,
+      count: "Task 02 / 28",
+      previous: ["A", "https://pharos-task-01.vercel.app", "Previous task: 01 Contract State"],
+      next: ["SPAN", null, "true", -1],
+      footer: [["Previous01Contract State", "https://pharos-task-01.vercel.app"], ["Next03Docs Onboarding", null]],
     });
     await browser.close();
   });
