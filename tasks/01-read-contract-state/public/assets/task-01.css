@@ -1,0 +1,69 @@
+/* Task 01 workspace: the state inspector. Shared tokens, shell and primitives are in lab.css. */
+@layer task {
+  /* Snapshot: state and Refresh on one row, then the supply and contract beside the rows when the
+     panel has the room, stacked when it does not. */
+  .snap-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+  .snap-state { display: grid; gap: 2px; min-width: 0; }
+  .snap-head [data-refresh] { flex: none; }
+  /* A narrow panel stacks the block and the read time, so a wrapped line never starts with "·". */
+  @container panel (max-width: 419px) {
+    .snap-state .meta { flex-direction: column; }
+    .snap-state .meta > span + span::before { content: none; }
+  }
+  /* Reading order is supply, state rows, contract: the values first on a phone. With room, the supply
+     and the contract share the left column and the rows take the right. */
+  .snap-body { display: grid; gap: var(--space-4); margin-top: var(--space-4); grid-template-areas: "supply" "rows" "contract"; }
+  .snap-supply { grid-area: supply; display: grid; gap: 2px; min-width: 0; }
+  .snap-body > .rows { grid-area: rows; }
+  .contract { grid-area: contract; display: grid; gap: 2px; align-content: start; min-width: 0; }
+  .contract .actions { margin-top: var(--space-1); }
+  /* "· Chain ID 1672" stays whole, and drops to the next line when the value is too wide for both. */
+  .sub-inline { display: inline-block; color: var(--text-3); font-size: var(--fs-meta); white-space: nowrap; }
+  @container panel (min-width: 680px) {
+    .snap-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "supply rows" "contract rows"; gap: var(--space-4) var(--space-6); }
+    .snap-body > .rows { align-self: start; }
+  }
+
+  /* The supply: one line at the value size; below 18px the unit wraps instead (fitFigure). */
+  .figure { display: block; white-space: nowrap; }
+  .figure.wrap .figure-unit { display: block; margin-left: 0; }
+
+  /* Inspector */
+  .field-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--space-4); }
+  .field-foot .field-hint { margin-top: 0; padding-block: var(--space-2); }
+  .inspect-status { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+  .inspect-result { container: result / inline-size; min-width: 0; }
+  .inspect-result .rows { margin-top: var(--space-3); }
+  .inspect-result .rows:has(+ .rows) { border-bottom: 0; }
+  .inspect-result .rows + .rows { margin-top: 0; }
+  @container result (min-width: 640px) {
+    .rows.pairs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-6); }
+    .rows.pairs > .hex-row, .rows.pairs > .wide { grid-column: 1 / -1; }
+  }
+  #inspector[data-inspect-state="inspecting"] .inspect-result { opacity: .55; }
+  #inspector[data-inspect-state="error"] .inspect-result { opacity: .75; }
+  .inspect-result .unavailable > span:first-child { color: var(--text-3); }
+  .inspect-result .hex-sub { margin-top: 2px; }
+  .inspect-message { margin-top: var(--space-3); max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+
+  /* Explain this result: after the result; beside it on a wide panel, so it never doubles the page. */
+  .explain { min-width: 0; margin-top: var(--space-4); }
+  .btn-explain { width: 100%; }
+  @container panel (min-width: 460px) { .btn-explain { width: auto; } }
+  .explain-hint { margin-top: var(--space-1); color: var(--text-3); font-size: var(--fs-meta); }
+  .explain-body { margin-top: var(--space-3); }
+  .explain-title { margin-bottom: var(--space-1); }
+  .explain-text { display: grid; gap: var(--space-2); }
+  .explain-text p, .explain-list { max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); line-height: 1.55; overflow-wrap: anywhere; }
+  .explain-list { display: grid; gap: var(--space-1); padding-left: 1.2em; list-style: disc; }
+  .explain-meta { margin-top: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  @container panel (min-width: 860px) {
+    .inspect-out:has(> .explain:not([hidden])) { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); column-gap: var(--space-6); align-items: start; }
+    .inspect-out > .explain { align-self: stretch; margin-top: var(--space-3); padding-left: var(--space-6); border-left: 1px solid var(--line); }
+  }
+  #inspector[data-inspect-state="inspecting"] .explain { opacity: .55; }
+
+  /* Proof: the about line leads; sources close it. */
+  .disclosure-title { font-size: 1rem; }
+  @media (prefers-reduced-motion: no-preference) { .inspect-result { transition: opacity .2s ease; } }
+}

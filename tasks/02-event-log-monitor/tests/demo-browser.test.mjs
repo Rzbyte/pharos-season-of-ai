@@ -109,7 +109,8 @@ describe("the Task 02 page in a browser", { skip }, () => {
   const count = (page, selector) => page.locator(selector).count();
   const monitoring = (page) => page.waitForFunction(() => document.body.dataset.state === "monitoring");
   /** Wait until the session count says `n` events. */
-  const sessionTotal = (page, n) => page.waitForFunction((want) => document.getElementById("session-count").textContent.startsWith(`${want.toLocaleString("en-US")} event`), n);
+  const sessionTotal = (page, n) => page.waitForFunction((want) => document.getElementById("session-count").textContent.startsWith(`${want.toLocaleString("en-US")} detected`), n);
+  const position = (page, list = "session") => page.locator(`#${list}-pos`).textContent();
 
   test("starts by itself: status, last checked block, and the first window kept apart as initial history", async () => {
     const { page, errors } = await open();
@@ -121,26 +122,27 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.equal(await page.locator("#address").innerText(), "0xC879…1815");
     // Nothing new yet: the session is empty, the first window is initial history.
     assert.equal(await count(page, "#feed > li"), 0);
-    assert.match(await page.locator("#session-count").innerText(), /^None yet\. Monitoring since \d\d:\d\d:\d\d\.$/);
+    assert.match(await page.locator("#session-count").innerText(), /^None yet · since \d\d:\d\d:\d\d$/);
     assert.equal(await page.locator("#feed-empty").isVisible(), true);
     assert.equal(await page.locator("#initial").isVisible(), true);
-    assert.equal(await page.locator("#initial-count").innerText(), "2 events in the 200 blocks before monitoring started");
+    assert.equal(await page.locator("#initial-count").innerText(), "2 events · 200 blocks before start");
+    assert.equal(await page.locator("#session-pager").isHidden(), true, "no pager for an empty list");
     assert.equal(await page.locator("#t-from").textContent(), "0x134f6d8 (20,248,280)");
     assert.deepEqual(errors, []);
   });
 
-  test("new events appear once each, newest first, at most six rendered, across overlapping checks", async () => {
+  test("new events appear once each, newest first, five to a page, across overlapping checks", async () => {
     const { page } = await open();
     await monitoring(page);
     chain.minePerRead = 2;
     await page.waitForFunction(() => Number.parseInt(document.getElementById("session-count").textContent, 10) >= 10, null, { timeout: 15_000 });
     chain.minePerRead = 0;
     const shown = await keys(page);
-    assert.equal(shown.length, 6, "six rendered by default");
+    assert.equal(shown.length, 5, "one page of five");
     assert.equal(new Set(shown).size, shown.length, "no duplicate cards");
     const blocks = await page.$$eval("#feed .event-block", (cells) => cells.map((cell) => Number(cell.firstChild.textContent.replace(/\D/g, ""))));
     assert.deepEqual(blocks, [...blocks].sort((a, b) => b - a), "newest first");
-    assert.deepEqual(await page.$$eval("#feed > li", (items) => items.map((item) => item.hasAttribute("data-latest"))), [true, false, false, false, false, false]);
+    assert.deepEqual(await page.$$eval("#feed > li", (items) => items.map((item) => item.hasAttribute("data-latest"))), [true, false, false, false, false]);
     assert.equal(await page.locator("#feed > li[data-latest] .event-latest").innerText(), "LATEST");
     assert.ok(Number(await page.$eval("#proof-dups", (cell) => cell.textContent.replace(/,/g, ""))) > 0, "overlap counted as duplicates");
     // The session and the initial history never share an event.
@@ -163,56 +165,82 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.match(await page.locator("#feed > li[data-latest] .event-found").innerText(), /^found (just now|\d+ s ago)$/);
   });
 
-  test("a large session keeps the DOM bounded; Show older and Show newest only page through it", async () => {
+  test("a large session keeps the DOM bounded: five rows, ← Newer · 1 / N · Older →, the page height fixed", async () => {
     const { page } = await open();
     await monitoring(page);
     chain.logsPerBlock = 10;
     mine(30);
     await sessionTotal(page, 300);
-    assert.equal(await count(page, "li.event"), 6, "six cards in the whole page; initial history not rendered");
-    assert.equal(await page.locator("#session-count").innerText().then((text) => text.startsWith("300 events detected since")), true);
-    const older = page.locator("#session-older");
-    assert.equal(await older.innerText(), "Show older events (294)");
-    assert.equal(await page.locator("#session-newest").isHidden(), true);
-    await older.click();
-    assert.equal(await count(page, "#feed > li"), 18);
-    assert.equal(await older.innerText(), "Show older events (282)");
-    await older.click();
-    assert.equal(await count(page, "#feed > li"), 30);
-    // New events arriving while expanded keep the older ones in view.
-    chain.logsPerBlock = 1;
-    mine(2);
-    await sessionTotal(page, 302);
-    assert.equal(await count(page, "#feed > li"), 32);
+    assert.equal(await count(page, "li.event"), 5, "five rows in the whole page; initial history not rendered");
+    assert.match(await page.locator("#session-count").innerText(), /^300 detected since/);
+    assert.equal(await position(page), "Page 1 / 60");
+    assert.deepEqual([await page.getAttribute("#session-newer", "aria-disabled"), await page.getAttribute("#session-older", "aria-disabled")], ["true", "false"]);
+    const height = await page.evaluate(() => document.documentElement.scrollHeight);
     const first = await keys(page);
-    assert.equal(new Set(first).size, first.length);
-    await page.click("#session-newest");
-    assert.equal(await count(page, "#feed > li"), 6);
-    assert.equal(await page.evaluate(() => document.activeElement?.id), "session-h");
-    assert.equal(await page.locator("#session-newest").isHidden(), true);
-    assert.match(await page.locator("#session-count").innerText(), /^302 events detected since/);
+    await page.click("#session-older");
+    assert.equal(await position(page), "Page 2 / 60");
+    const second = await keys(page);
+    assert.equal(second.length, 5);
+    assert.equal(second.some((key) => first.includes(key)), false, "page 2 is the next five");
+    assert.equal(await page.evaluate(() => document.querySelector("#feed > li[data-latest]")), null, "Latest belongs to page 1 only");
+    assert.ok(Math.abs((await page.evaluate(() => document.documentElement.scrollHeight)) - height) <= 40, "paging does not grow the page");
+    await page.click("#session-newer");
+    assert.equal(await position(page), "Page 1 / 60");
+    assert.deepEqual(await keys(page), first);
   });
 
-  test("initial history is collapsed and unrendered by default, then opens six at a time", async () => {
+  test("on an older page new events never move the reader: a count and View latest instead", async () => {
+    const { page } = await open();
+    await monitoring(page);
+    mine(12);
+    await sessionTotal(page, 12);
+    await page.click("#session-older");
+    assert.equal(await position(page), "Page 2 / 3");
+    const before = await keys(page);
+    mine(3);
+    await page.waitForFunction(() => document.getElementById("session-new-count").textContent === "3 new events" && !document.getElementById("session-new").hidden);
+    assert.deepEqual(await keys(page), before, "the same five events stay on screen");
+    assert.equal(await position(page), "Page 2 / 3", "pages are counted without the waiting events");
+    assert.match(await page.locator("#session-count").innerText(), /^15 detected since/);
+    await page.click("#session-latest");
+    assert.equal(await page.locator("#session-new").isHidden(), true);
+    assert.equal(await position(page), "Page 1 / 3");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "session-h");
+    assert.equal(await page.locator("#feed > li").first().getAttribute("data-latest"), "");
+    // On page 1, new events simply appear at the top.
+    const top = (await keys(page))[0];
+    mine(1);
+    await page.waitForFunction((was) => document.querySelector("#feed > li")?.dataset.key !== was, top);
+    assert.equal(await page.locator("#session-new").isHidden(), true);
+    // Going back to page 1 with Newer shows the latest too.
+    await page.click("#session-older");
+    mine(2);
+    await page.waitForFunction(() => !document.getElementById("session-new").hidden);
+    await page.click("#session-newer");
+    assert.equal(await page.locator("#session-new").isHidden(), true);
+    assert.equal(await position(page), "Page 1 / 4");
+  });
+
+  test("initial history is collapsed and unrendered by default, then opens five to a page", async () => {
     chain.logs = Array.from({ length: 20 }, (_, i) => makeLog({ block: START - 100n + BigInt(i), index: 0 }));
     const { page } = await open();
     await monitoring(page);
     const toggle = page.locator("#initial-toggle");
     assert.equal(await toggle.getAttribute("aria-expanded"), "false");
-    assert.equal(await toggle.getAttribute("aria-controls"), "initial-feed");
-    assert.equal(await page.locator("#initial-feed").isHidden(), true);
+    assert.equal(await toggle.getAttribute("aria-controls"), "initial-body");
+    assert.equal(await page.locator("#initial-body").isHidden(), true);
     assert.equal(await count(page, "#initial-feed > li"), 0, "nothing in the DOM while collapsed");
-    assert.equal(await page.locator("#initial-count").innerText(), "20 events in the 200 blocks before monitoring started");
+    assert.equal(await page.locator("#initial-count").innerText(), "20 events · 200 blocks before start");
     await toggle.click();
     assert.equal(await toggle.getAttribute("aria-expanded"), "true");
-    assert.equal(await toggle.innerText(), "Hide initial events");
-    assert.equal(await count(page, "#initial-feed > li"), 6);
-    assert.equal(await page.locator("#initial-older").innerText(), "Show more initial events (14)");
-    await page.click("#initial-older");
-    assert.equal(await count(page, "#initial-feed > li"), 18);
-    await page.click("#initial-older");
-    assert.equal(await count(page, "#initial-feed > li"), 20);
-    assert.equal(await page.locator("#initial-more").isHidden(), true);
+    assert.equal(await count(page, "#initial-feed > li"), 5);
+    assert.equal(await position(page, "initial"), "Page 1 / 4");
+    for (const page2 of ["Page 2 / 4", "Page 3 / 4", "Page 4 / 4"]) {
+      await page.click("#initial-older");
+      assert.equal(await position(page, "initial"), page2);
+      assert.equal(await count(page, "#initial-feed > li"), 5);
+    }
+    assert.equal(await page.getAttribute("#initial-older", "aria-disabled"), "true");
     assert.equal(await count(page, "#initial-feed > li[data-new], #initial-feed > li[data-latest]"), 0, "initial events are never New or Latest");
     assert.equal(await count(page, "#feed > li"), 0, "and never in the session feed");
     await toggle.click();
@@ -232,15 +260,18 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.equal(await page.evaluate(() => document.activeElement?.closest("li")?.dataset.key), key);
   });
 
-  test("the last 'show more' moves focus to its heading instead of losing it", async () => {
+  test("paging keeps focus on the pager, even at the last page, where Older is marked unavailable", async () => {
     const { page } = await open();
     await monitoring(page);
     mine(8);
     await sessionTotal(page, 8);
     await page.focus("#session-older");
     await page.keyboard.press("Enter");
-    assert.equal(await page.locator("#session-older").isHidden(), true);
-    assert.equal(await page.evaluate(() => document.activeElement?.id), "session-h");
+    assert.equal(await position(page), "Page 2 / 2");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "session-older");
+    assert.equal(await page.getAttribute("#session-older", "aria-disabled"), "true");
+    await page.keyboard.press("Enter");
+    assert.equal(await position(page), "Page 2 / 2", "an unavailable step does nothing");
   });
 
   test("the full contract address is available to assistive technology", async () => {
@@ -373,15 +404,15 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.equal(await link.getAttribute("href"), `${EXPLORER}/tx/${hash}`);
     assert.equal(await link.getAttribute("target"), "_blank");
     assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
-    assert.equal((await link.textContent()).trim(), "View transaction");
-    assert.match(await link.getAttribute("aria-label"), /^View transaction: transaction 0x/);
+    assert.equal((await link.textContent()).trim(), "View tx");
+    assert.match(await link.getAttribute("aria-label"), /^View tx: transaction 0x/);
     assert.equal(await page.locator("#contract-explorer").getAttribute("href"), `${EXPLORER}/address/0xC879C018dB60520F4355C26eD1a6D572cdAC1815`);
   });
 
   test("proof and source links point where they should", async () => {
     const { page } = await open();
     await monitoring(page);
-    const hrefs = await page.$$eval(".links a", (links) => links.map((link) => link.getAttribute("href")));
+    const hrefs = await page.$$eval("#proof .sources a", (links) => links.map((link) => link.getAttribute("href")));
     assert.deepEqual(hrefs, [
       "https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/02-event-log-monitor",
       "https://github.com/Rzbyte/pharos-season-of-ai/blob/main/tasks/02-event-log-monitor/proof/mcp-transcript.json",
@@ -418,13 +449,10 @@ describe("the Task 02 page in a browser", { skip }, () => {
         });
         assert.ok(hit >= 44, `${width}px: explorer link hit area ${hit}px`);
         // Event text stays readable at every width.
-        const sizes = await page.$$eval(".event-path, .event-block, .event-kind, .block-count", (elements) => elements.map((element) => parseFloat(getComputedStyle(element).fontSize)));
+        const sizes = await page.$$eval(".event-path, .event-block, .event-kind, .section-meta", (elements) => elements.map((element) => parseFloat(getComputedStyle(element).fontSize)));
         assert.ok(Math.min(...sizes) >= 12, `${width}px: smallest event text ${Math.min(...sizes)}px`);
-        if (width >= 960) {
-          const [monitor, feed] = await page.$$eval("#monitor, #session", (elements) => elements.map((element) => element.getBoundingClientRect()));
-          assert.ok(feed.left > monitor.right, "desktop: the feed sits beside the monitor");
-          assert.ok(feed.top < 200, "desktop: the session starts on the first screen");
-        }
+        // The latest events start on the first screen at every width that has one to spare.
+        if (height >= 800) assert.ok(await page.$eval("#session", (element) => element.getBoundingClientRect().top) < height * 0.6, `${width}px: the events start on the first screen`);
         await context.close();
       }
     });

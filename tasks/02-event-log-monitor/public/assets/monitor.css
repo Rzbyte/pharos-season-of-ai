@@ -1,97 +1,88 @@
-/* Task 02 page: the monitor's own pieces, in the `task` layer of lab.css. Tokens, shell, panel, status,
-   buttons, actions and the proof disclosure are the shared design system.
-
-   Layout: phones and tablets read top to bottom (what is watched and whether it runs, then this
-   session's events, then the initial history). From 960px the monitor sits in a narrow left column
-   that stays in view, and the events take the wide right column, so the latest event is on the
-   first screen. Events are rows in one surface, not a wall of cards; the latest is the largest. */
+/* Task 02 workspace: the event monitor. Shared tokens, shell, panel, status, pager and disclosure are in
+   lab.css. The page is one column: the monitor line, five events and their pager, the initial history
+   (collapsed), then the proof. Its height stays the same however long the monitor runs. */
 @layer task {
-  .workspace { display: grid; gap: var(--space-8); padding-block: var(--space-6) var(--section-y); }
-  .control-col .task-title { font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.25rem); }
-  .control-col, .feed-col { display: grid; gap: var(--space-6); align-content: start; min-width: 0; }
-  @media (min-width: 960px) {
-    .workspace { grid-template-columns: minmax(300px, 4fr) minmax(0, 7fr); gap: 48px; align-items: start; }
-  }
-  /* The monitor stays in view while the feed scrolls, only where the column (with its notes) fits. */
-  @media (min-width: 960px) and (min-height: 820px) {
-    .control-col { position: sticky; top: var(--space-6); }
-  }
-
-  /* ── the monitor: what is watched, whether it runs, the one control ── */
-  .monitor { display: grid; gap: var(--space-4); }
-  .watch { display: grid; gap: 2px; min-width: 0; }
-  .watch-name { font-size: var(--fs-h2); font-weight: 600; line-height: 1.3; color: var(--text); }
-  .watch-event code { font-size: var(--fs-meta); color: var(--text-2); overflow-wrap: anywhere; }
-  .watch-contract { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: var(--space-2); }
-  .watch-contract code { font-size: var(--fs-meta); color: var(--text-3); }
-  .state { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--line); }
-  .state .status { font-size: var(--fs-body); }
-  .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-  .facts > div { display: grid; gap: 2px; min-width: 0; }
-  .facts dt { font-size: var(--fs-meta); color: var(--text-3); }
-  .facts dd { font-size: var(--fs-body); color: var(--text); font-variant-numeric: tabular-nums; }
-  .facts .fact-block { font-size: 1.375rem; font-weight: 600; line-height: 1.2; }
-  /* One height in both states, so Stop/Start never shifts what follows. */
-  .toggle { width: 100%; min-height: 48px; }
+  /* The monitor: state and the one control on a row; what is watched, quietly, under it. */
+  .monitor { display: grid; gap: var(--space-3); }
+  .monitor-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .monitor-state { display: grid; gap: 2px; min-width: 0; }
+  .toggle { flex: none; min-width: 9.5rem; }
+  .watch { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--line); color: var(--text-3); font-size: var(--fs-meta); }
+  .watch-event { font-size: var(--fs-label); color: var(--text-2); overflow-wrap: anywhere; }
+  .watch .action { margin-left: auto; }
   .monitor .note { margin-top: 0; }
-  .monitor-meta { font-size: var(--fs-meta); color: var(--text-3); }
   body[data-state="paused"] .fact-block, body[data-state="error"] .fact-block { color: var(--text-2); }
-
-  /* ── event lists ── */
-  .block-head { display: grid; gap: 2px; margin-bottom: var(--space-3); }
-  .block-title { font-size: var(--fs-h2); line-height: 1.3; letter-spacing: -.01em; }
-  .block-count { color: var(--text-2); font-size: var(--fs-small); font-variant-numeric: tabular-nums; }
-  .block-title:focus-visible { outline-offset: 4px; }
-  .feed-empty {
-    padding: var(--space-4); border: 1px dashed var(--line-strong); border-radius: var(--radius);
-    color: var(--text-2); font-size: var(--fs-small);
+  /* Narrow: the state reads as two short lines, the control takes the full width under it. */
+  @container panel (max-width: 459px) {
+    .monitor-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+    .toggle { width: 100%; }
   }
+
+  /* Events: five rows in one surface. Each row is kind, amount and badge with the block on the right,
+     then from → to with the transaction link on the right. */
+  .feed-empty { padding: var(--space-4) 0; color: var(--text-2); font-size: var(--fs-small); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .events { container: events / inline-size; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+  .events:empty { display: none; }
   .events > li + li { border-top: 1px solid var(--line); }
   @media (max-width: 599px) {
-    .events, .feed-empty { margin-inline: calc(-1 * var(--pad-x)); border-inline: 0; border-radius: 0; }
+    .events { margin-inline: calc(-1 * var(--pad-x)); border-inline: 0; border-radius: 0; }
   }
-
-  .event { display: grid; gap: 6px; min-width: 0; padding: 14px var(--panel-pad); }
-  .event[data-new] { box-shadow: inset 3px 0 0 var(--accent); }
-  .event-eyebrow { display: flex; flex-wrap: wrap; gap: 0 8px; font-size: var(--fs-meta); color: var(--text-3); }
+  .event {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px var(--space-3);
+    min-width: 0; padding: var(--space-3) var(--panel-pad);
+  }
+  @media (max-width: 599px) { .event { padding-inline: var(--pad-x); } }
+  .event[data-new] { box-shadow: inset 2px 0 0 var(--accent); }
+  .event-sub { display: contents; }
+  .event-eyebrow { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0 var(--space-2); font-size: var(--fs-meta); color: var(--text-3); }
   .event-latest { font-family: var(--caption); font-size: var(--fs-label); letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
-  .event-found:not(:empty)::before { content: "·"; content: "·" / ""; margin-right: 8px; }
-  .event-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
-  .event-kind { font-family: var(--caption); font-size: var(--fs-label); letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+  .event-found:not(:empty)::before { content: "·"; content: "·" / ""; margin-right: var(--space-2); }
+  .event-top { grid-column: 1; grid-row: 2; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
+  .event-kind { font-family: var(--caption); font-size: var(--fs-label); letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
   .event[data-kind="Mint"] .event-kind { color: var(--success); }
   .event[data-kind="Burn"] .event-kind { color: var(--warning); }
-  .event-amount { font-size: 1.125rem; font-weight: 600; line-height: 1.3; font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
-  .event-unit { font-size: .75em; color: var(--text-2); }
-  .event-badge { margin-left: auto; font-size: var(--fs-meta); font-weight: 600; color: var(--accent); }
+  .event-amount { font-size: 1rem; font-weight: 600; line-height: 1.35; font-variant-numeric: tabular-nums; color: var(--text); overflow-wrap: anywhere; }
+  .event-unit { font-size: .8em; color: var(--text-2); }
+  .event-badge { font-size: var(--fs-label); font-weight: 600; color: var(--accent); }
   .event-badge:empty { display: none; }
-  /* Path on its own line, then block and the transaction link; one line once the list is wide. */
-  .event-sub { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; min-width: 0; }
-  .event-path { grid-column: 1 / -1; min-width: 0; font-family: var(--mono); font-size: var(--fs-small); color: var(--text); overflow-wrap: anywhere; }
-  .event-dir, .event-arrow { font-family: var(--sans); color: var(--text-3); }
-  .event-block { font-size: var(--fs-meta); color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .event-block { grid-column: 2; grid-row: 2; justify-self: end; font-size: var(--fs-meta); color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .event-log { color: var(--text-3); }
-  /* The latest event: the first thing to read in the feed. */
-  .event[data-latest] { padding-block: 18px; }
-  .event[data-latest] .event-amount { font-size: 1.75rem; line-height: 1.15; letter-spacing: -.01em; }
+  .event-path { grid-column: 1; grid-row: 3; min-width: 0; font-family: var(--mono); font-size: var(--fs-meta); color: var(--text); overflow-wrap: anywhere; }
+  .event-dir, .event-arrow { font-family: var(--sans); color: var(--text-3); }
+  .event-link { grid-column: 2; grid-row: 3; justify-self: end; }
+  .event-link:not([href]) { display: none; }
+  /* Without the eyebrow, the rows move up. */
+  .event:not([data-latest]) .event-top, .event:not([data-latest]) .event-block { grid-row: 1; }
+  .event:not([data-latest]) .event-path, .event:not([data-latest]) .event-link { grid-row: 2; }
+  /* The latest event leads the first page, a step stronger, not larger. */
+  .event[data-latest] .event-amount { font-size: 1.25rem; line-height: 1.25; }
   .event[data-removed] .event-amount { text-decoration: line-through; color: var(--text-2); }
   .event[data-removed] .event-badge { color: var(--error); }
-  @container events (min-width: 560px) {
-    .event-sub { grid-template-columns: minmax(0, 1fr) auto auto; }
-    .event-path { grid-column: auto; }
+  /* Narrow rows: the block drops under the amount instead of crowding it. */
+  @container events (max-width: 359px) {
+    .event-block { grid-column: 1 / -1; justify-self: start; }
+    .event[data-latest] .event-block { grid-row: 3; }
+    .event:not([data-latest]) .event-block { grid-row: 2; }
+    .event[data-latest] .event-path, .event[data-latest] .event-link { grid-row: 4; }
+    .event:not([data-latest]) .event-path, .event:not([data-latest]) .event-link { grid-row: 3; }
   }
 
-  .more { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-5); margin-top: var(--space-3); }
+  #session .pill { justify-self: start; }
+  #session .pager { margin-top: var(--space-1); }
 
-  /* Initial history: context, so quieter than the session. */
-  .initial { display: grid; gap: var(--space-3); padding-top: var(--space-5); border-top: 1px solid var(--line); }
-  .initial .block-head { margin-bottom: 0; }
-  .initial .block-title { font-size: var(--fs-body); }
-  .initial > .btn { justify-self: start; }
-  .initial .event-amount { font-size: 1rem; }
-  .initial .more { margin-top: 0; }
+  /* Initial history: context, collapsed, quieter than the session. */
+  .initial { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .initial-head { font-size: 1rem; }
+  #initial-h { white-space: nowrap; }
+  .initial .disclosure-meta { text-align: right; }
+  .initial-body { display: grid; gap: var(--space-3); padding-bottom: var(--space-4); }
+  .initial .event-amount { font-size: .9375rem; }
+
+  .disclosure-title { font-size: 1rem; }
+  /* The initial history and the proof read as one stack of rows. */
+  .initial:not([hidden]) ~ .disclosure { border-top: 0; }
 
   @media (prefers-reduced-motion: no-preference) {
-    .event.arrive { animation: settle .45s var(--ease) backwards; }
+    .event.arrive { animation: settle .35s var(--ease) backwards; }
   }
 }

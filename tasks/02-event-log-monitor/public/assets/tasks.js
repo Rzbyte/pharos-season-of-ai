@@ -1,16 +1,29 @@
-// Agent Arena Lab task manifest, as seen from the Task 02 deployment.
-// status: "available" (a page and a committed proof exist) or "planned" (nothing built yet).
-// path is set only for a page this deployment serves, so nothing can ever link to a page that does not exist:
-// Task 01 is available on its own deployment, so here it is listed without a link.
-// tool is filled in only where it is already known; null means not stated yet.
+// Pharos Agent Lab: the task manifest every page reads (the shell's task navigation and the lab index).
+//
+// Metadata only. A task is "built" (it has a page and committed proof) or "planned" (nothing yet).
+// Each built task is its own deployment, so its link is that deployment's address, kept here in one
+// place: DEPLOYMENTS. An address that is not filled in yet is null, and then nothing links to it; the
+// task is still listed, as text. Nothing can ever link to a page that does not exist.
 
-const task = (n, title, tool = null, status = "planned", path = null) => Object.freeze({ n, title, tool, status, path });
+/** Where each deployment lives. Fill in a production URL once it is known; null means "not linked". */
+export const DEPLOYMENTS = Object.freeze({
+  lab: null,
+  "01": null,
+  "02": null,
+  "03": null,
+  "04": null,
+});
+
+export const LAB = Object.freeze({ name: "Pharos Agent Lab", short: "Agent Lab", home: DEPLOYMENTS.lab, total: 28 });
+
+const task = (n, title, { verb = null, purpose = null, status = "planned", tool = null, official = title } = {}) =>
+  Object.freeze({ n, title, official, verb, purpose, status, tool, href: status === "built" ? (DEPLOYMENTS[n] ?? null) : null });
 
 export const TASKS = Object.freeze([
-  task("01", "Read Contract State", "Chain MCP", "available"),
-  task("02", "Event / Log Monitor", "Chain MCP", "available", "/"),
-  task("03", "Docs MCP Onboarding", "Docs MCP"),
-  task("04", "Doc-Search CLI", "Docs MCP"),
+  task("01", "Contract State", { official: "Read Contract State", verb: "Read", tool: "Chain MCP", status: "built", purpose: "A contract's state at one block, and any address or transaction on demand." }),
+  task("02", "Event Monitor", { official: "Event / Log Monitor", verb: "Watch", tool: "Chain MCP", status: "built", purpose: "Transfer events as they land, each shown once." }),
+  task("03", "Docs Onboarding", { official: "Docs MCP Onboarding", verb: "Audit", tool: "Docs MCP", status: "built", purpose: "From the docs to a working Atlantic RPC call, with the gaps on the way." }),
+  task("04", "Docs Search", { official: "Doc-Search CLI", verb: "Query", tool: "Developer Docs", status: "built", purpose: "Answers from the official Pharos docs, with sources, or no answer." }),
   task("05", "Threshold Guardian"),
   task("06", "Saga Executor"),
   task("07", "Arbitrage Scanner"),
@@ -34,5 +47,7 @@ export const TASKS = Object.freeze([
   task("25", "dApp Support Agent"),
   task("26", "Weekly Digest Agent"),
   task("27", "Doc-Grounded Builder Agent"),
-  task("28", "Multi-Protocol Aggregator", "Composition"),
+  task("28", "Multi-Protocol Aggregator", { tool: "Composition" }),
 ]);
+
+export const BUILT = TASKS.filter((entry) => entry.status === "built").length;

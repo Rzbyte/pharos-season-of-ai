@@ -9,17 +9,19 @@
 // in the background) and "error" (the last check failed; the next one is already scheduled).
 //
 // What is shown, and how much of it:
-// - "This session": events found after monitoring started, newest first. Six are rendered at first;
-//   "Show older events" adds twelve at a time, "Show newest only" goes back to six. The full session
-//   (up to feed.js's FEED_LIMIT) stays in memory; only the rendered slice is in the DOM.
+// - "Latest events": events found after monitoring started, five per page, newest page first
+//   (← Newer · 1 / N · Older →). The full session (up to feed.js's FEED_LIMIT) stays in memory; only
+//   one page of five is in the DOM, so the page never grows. On page 1, new events appear at the top.
+//   On an older page the reader's place is kept: new events are counted in a "3 new events" notice
+//   with View latest, and the pages are counted without them until then.
 // - "New": the events added by the most recent successful check. The next successful check
 //   replaces that set, even when it adds nothing, so "New" always means "found by the last check".
 //   The newest event also carries "Latest" and how long ago it was found.
-// - "Initial history": events already in the first window. Not rendered until opened; then six,
-//   and "Show more initial events" adds twelve at a time.
+// - "Initial history": events already in the first window. Collapsed and not rendered until opened;
+//   then five per page, with its own pager.
 import { applyWindow, createFeed, shortHex } from "./feed.js";
-import { clockTime, groupDigits, linkExplorer, renderTaskContext, reducedMotion, setText, settle } from "./lab.js";
-import { TASKS } from "./tasks.js";
+import { clockTime, groupDigits, linkExplorer, pageOf, reducedMotion, renderTaskNav, setText, settle } from "./lab.js";
+import { LAB, TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
 const main = $("main");
@@ -27,9 +29,8 @@ const panel = $("monitor");
 const API = main.dataset.api;
 const INTERVAL_MS = Number(main.dataset.interval) * 1000;
 const EVERY = `${Number(main.dataset.interval)} s`;
-/** Events rendered before any "show more", and how many each "show more" adds. */
-const FIRST_BATCH = 6;
-const MORE_BATCH = 12;
+/** Events per page, in both lists. */
+const PAGE_SIZE = 5;
 const STATUS = {
   starting: ["Starting", "active"],
   monitoring: ["Monitoring", "active"],
@@ -50,9 +51,14 @@ let startedAt = null;
 let initialBlocks = null;
 /** Keys added by the most recent successful check: the only events marked New. */
 let latestBatch = new Set();
-const view = { session: FIRST_BATCH, initialOpen: false, initial: FIRST_BATCH };
+/**
+ * The reader's place. `page` counts from the newest page (1). `pending` is how many session events
+ * arrived while the reader was on an older page: they are left out of the page count until View
+ * latest (or going back to page 1), so the page on screen never shifts under the reader.
+ */
+const view = { page: 1, pending: 0, initialOpen: false, initialPage: 1 };
 
-renderTaskContext(TASKS, main.dataset.task, { counter: $("task-count"), previous: $("nav-previous"), next: $("nav-next") });
+renderTaskNav(TASKS, main.dataset.task, LAB);
 const CONTRACT = $("address").textContent.trim();
 setText($("address"), shortHex(CONTRACT));
 linkExplorer($("contract-explorer"), "address", CONTRACT, "Circle USDC contract");
@@ -66,26 +72,21 @@ $("toggle").addEventListener("click", () => {
     pause("checks stopped");
   }
 });
-$("session-older").addEventListener("click", () => {
-  view.session += MORE_BATCH;
-  renderLists();
-  keepFocus($("session-older"), $("session-h"));
-});
-$("session-newest").addEventListener("click", () => {
-  view.session = FIRST_BATCH;
+$("session-newer").addEventListener("click", () => turn("session", -1));
+$("session-older").addEventListener("click", () => turn("session", 1));
+$("session-latest").addEventListener("click", () => {
+  view.pending = 0;
+  view.page = 1;
   renderLists();
   $("session-h").focus();
 });
 $("initial-toggle").addEventListener("click", () => {
   view.initialOpen = !view.initialOpen;
-  view.initial = FIRST_BATCH;
+  view.initialPage = 1;
   renderLists();
 });
-$("initial-older").addEventListener("click", () => {
-  view.initial += MORE_BATCH;
-  renderLists();
-  keepFocus($("initial-older"), $("initial-h"));
-});
+$("initial-newer").addEventListener("click", () => turn("initial", -1));
+$("initial-older").addEventListener("click", () => turn("initial", 1));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     if (running) pause("tab hidden, resumes when you return");
@@ -173,8 +174,8 @@ function render(data, change) {
   latestBatch = new Set(fresh.map((item) => item.key));
   // When it was found, kept on the item itself, so it goes when feed.js lets the item go.
   for (const item of fresh) item.foundAt = now;
-  // An expanded view keeps showing the same older events while newer ones arrive on top.
-  if (view.session > FIRST_BATCH) view.session += fresh.length;
+  // On an older page the reader stays put; the new events wait behind View latest.
+  if (view.page > 1 || view.pending > 0) view.pending += fresh.length;
 
   // Proof details: the exact get_logs arguments of this answer.
   const args = data.getLogs;
@@ -196,57 +197,73 @@ function render(data, change) {
   }
 }
 
-/** Render the bounded slices of both lists, reusing the nodes already on screen. */
+/** One step through a list's pages (-1 newer, +1 older). Page 1 of the session is always the latest. */
+function turn(list, step) {
+  const button = $(`${list}-${step < 0 ? "newer" : "older"}`);
+  if (button.getAttribute("aria-disabled") === "true") return;
+  if (list === "session") {
+    view.page += step;
+    if (view.page <= 1) {
+      view.page = 1;
+      view.pending = 0;
+    }
+  } else {
+    view.initialPage += step;
+  }
+  renderLists();
+}
+
+/** A list's pager: hidden with one page, ends marked unavailable (still focusable), position announced. */
+function renderPager(list, { page, pages }) {
+  $(`${list}-pager`).hidden = pages <= 1;
+  $(`${list}-newer`).setAttribute("aria-disabled", String(page <= 1));
+  $(`${list}-older`).setAttribute("aria-disabled", String(page >= pages));
+  const position = $(`${list}-pos`);
+  position.replaceChildren(Object.assign(document.createElement("span"), { className: "sr", textContent: "Page " }), `${page} / ${pages}`);
+}
+
+/** Render one page of each list, reusing the nodes already on screen. */
 function renderLists() {
   const session = feed.items.filter((item) => item.fresh);
   const initial = feed.items.filter((item) => !item.fresh);
   const sessionTotal = feed.newSinceStart;
   const initialTotal = feed.shown - feed.newSinceStart;
 
-  // This session.
-  const shownSession = session.slice(0, view.session);
-  fill($("feed"), shownSession, true);
+  // Latest events: one page of five, counted without the events waiting behind View latest.
+  view.pending = Math.min(view.pending, session.length);
+  const pinned = session.slice(view.pending);
+  const at = pageOf(pinned.length, PAGE_SIZE, view.page);
+  view.page = at.page;
+  fill($("feed"), pinned.slice(at.start, at.end), at.page === 1 && view.pending === 0);
+  renderPager("session", at);
   const since = startedAt === null ? "" : clockTime(new Date(startedAt).toISOString());
   setText(
     $("session-count"),
     sessionTotal === 0
-      ? since ? `None yet. Monitoring since ${since}.` : "No events detected yet"
-      : `${groupDigits(String(sessionTotal))} ${sessionTotal === 1 ? "event" : "events"} detected since ${since}` +
+      ? since ? `None yet · since ${since}` : "No events detected yet"
+      : `${groupDigits(String(sessionTotal))} detected since ${since}` +
           (session.length < sessionTotal ? `; the oldest ${groupDigits(String(sessionTotal - session.length))} are no longer kept in this tab` : ""),
   );
   $("feed-empty").hidden = session.length > 0;
-  const olderLeft = session.length - shownSession.length;
-  const older = $("session-older");
-  older.hidden = olderLeft === 0;
-  setText(older, `Show older events (${groupDigits(String(olderLeft))})`);
-  $("session-newest").hidden = view.session <= FIRST_BATCH || session.length <= FIRST_BATCH;
-  $("session-more").hidden = older.hidden && $("session-newest").hidden;
+  $("session-new").hidden = view.pending === 0;
+  setText($("session-new-count"), `${groupDigits(String(view.pending))} new ${view.pending === 1 ? "event" : "events"}`);
 
-  // Initial history: nothing rendered until it is opened.
+  // Initial history: nothing rendered until it is opened, then one page of five.
   $("initial").hidden = startedAt === null || initialTotal === 0;
   setText(
     $("initial-count"),
-    `${groupDigits(String(initialTotal))} ${initialTotal === 1 ? "event" : "events"} in the ${groupDigits(String(initialBlocks ?? 0n))} blocks before monitoring started` +
-      (initial.length < initialTotal ? `; ${initial.length === 0 ? "none" : `only ${groupDigits(String(initial.length))}`} still kept in this tab` : ""),
+    `${groupDigits(String(initialTotal))} ${initialTotal === 1 ? "event" : "events"} · ${groupDigits(String(initialBlocks ?? 0n))} blocks before start` +
+      (initial.length < initialTotal ? ` · ${initial.length === 0 ? "none" : groupDigits(String(initial.length))} kept` : ""),
   );
-  const toggle = $("initial-toggle");
-  toggle.hidden = initial.length === 0;
   if (initial.length === 0) view.initialOpen = false;
+  const toggle = $("initial-toggle");
+  toggle.setAttribute("aria-disabled", String(initial.length === 0));
   toggle.setAttribute("aria-expanded", String(view.initialOpen));
-  setText(toggle, view.initialOpen ? "Hide initial events" : "Show initial events");
-  const list = $("initial-feed");
-  list.hidden = !view.initialOpen;
-  const shownInitial = view.initialOpen ? initial.slice(0, view.initial) : [];
-  fill(list, shownInitial, false);
-  const initialLeft = initial.length - shownInitial.length;
-  const more = $("initial-older");
-  setText(more, `Show more initial events (${groupDigits(String(initialLeft))})`);
-  $("initial-more").hidden = !view.initialOpen || initialLeft === 0;
-}
-
-/** A "show more" button that has nothing left hides itself; move focus somewhere sensible first. */
-function keepFocus(button, fallback) {
-  if (button.closest("[hidden]") && document.activeElement === document.body) fallback.focus();
+  $("initial-body").hidden = !view.initialOpen;
+  const old = pageOf(initial.length, PAGE_SIZE, view.initialPage);
+  view.initialPage = old.page;
+  fill($("initial-feed"), view.initialOpen ? initial.slice(old.start, old.end) : [], false);
+  renderPager("initial", old);
 }
 
 /**
@@ -254,11 +271,11 @@ function keepFocus(button, fallback) {
  * they are: new ones are inserted before them and the tail is trimmed, so a focused link inside the
  * list keeps focus when events arrive.
  */
-function fill(list, items, session) {
+function fill(list, items, latestFirst) {
   const existing = new Map([...list.children].map((node) => [node.dataset.key, node]));
   items.forEach((item, index) => {
     const node = existing.get(item.key) ?? eventNode(item);
-    state(node, item, session && index === 0);
+    state(node, item, latestFirst && index === 0);
     if (list.children[index] !== node) list.insertBefore(node, list.children[index] ?? null);
   });
   while (list.children.length > items.length) list.lastElementChild.remove();

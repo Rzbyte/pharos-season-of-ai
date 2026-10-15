@@ -10,13 +10,14 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { describe, test } from "node:test";
 import vm from "node:vm";
 import { toFunctionSelector } from "viem";
-import { clockTime, duration, explorerUrl, groupDigits, hexParts, renderHex, renderTaskContext, snapshotSource, splitAmount, toHexBlock } from "../public/assets/lab.js";
+import { clockTime, duration, explorerUrl, groupDigits, hexParts, neighbours, renderHex, snapshotSource, splitAmount, toHexBlock } from "../public/assets/lab.js";
 import { TASKS } from "../public/assets/tasks.js";
 
 const file = (path) => new URL(`../${path}`, import.meta.url);
 const read = (path) => readFileSync(file(path), "utf8");
 const html = read("public/index.html");
-const css = read("public/assets/lab.css");
+// The shared design system (a copy of shared/ui/lab.css) and this page's own workspace styles.
+const css = `${read("public/assets/lab.css")}\n${read("public/assets/task-01.css")}`;
 /** The stylesheet without comments, for reading selectors. */
 const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
 const scripts = ["lab.js", "tasks.js", "theme.js", "task-01.js", "inspector.js", "inspect-input.js", "explain.js", "explain-input.js"].map((name) => ({ name, text: read(`public/assets/${name}`) }));
@@ -46,7 +47,7 @@ describe("what the page loads and calls", () => {
     for (const url of urls) assert.match(url, /^(\/assets\/|data:)/, `unexpected asset URL ${url}`);
     assert.equal(html.match(/<script\b/g).length, 4);
     // theme.js is a classic script so a saved theme applies before the first paint.
-    assert.match(html, /<script src="\/assets\/theme\.js"><\/script>\n<link rel="preload"[^>]*>\n<link rel="stylesheet" href="\/assets\/lab\.css">\n<script type="module" src="\/assets\/task-01\.js"><\/script>\n<script type="module" src="\/assets\/inspector\.js"><\/script>\n<script type="module" src="\/assets\/explain\.js"><\/script>/);
+    assert.match(html, /<script src="\/assets\/theme\.js"><\/script>\n<link rel="preload"[^>]*>\n<link rel="stylesheet" href="\/assets\/lab\.css">\n<link rel="stylesheet" href="\/assets\/task-01\.css">\n<script type="module" src="\/assets\/task-01\.js"><\/script>\n<script type="module" src="\/assets\/inspector\.js"><\/script>\n<script type="module" src="\/assets\/explain\.js"><\/script>/);
     assert.doesNotMatch(html, /<script(?![^>]*\ssrc=)[^>]*>/, "an inline script");
     assert.doesNotMatch(html, /<style\b|\sstyle="/, "inline styles: everything lives in lab.css");
     assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
@@ -81,7 +82,7 @@ describe("what the page loads and calls", () => {
       // Its name says it opens a new tab: in its aria-label, or in hidden words.
       assert.ok(/aria-label="[^"]*, opens in a new tab"/.test(start) || anchor.endsWith('<span class="sr">, opens in a new tab</span></a>'), start);
       // ...and it ends in the out arrow, unless it is an icon by itself.
-      assert.ok(/<svg class="(?:ext|link-arrow)"[^>]*>\s*<path d="M5 11l6-6M6 5h5v5"/.test(anchor) || start.includes('class="icon-link"'), start);
+      assert.ok(/<svg class="(?:ext|link-arrow|source-arrow)"[^>]*>\s*<path d="M5 11l6-6M6 5h5v5"/.test(anchor) || start.includes('class="icon-link"'), start);
     }
     assert.match(script("lab.js"), /link\.href = href;\n {4}link\.target = "_blank";\n {4}link\.rel = "noopener noreferrer";\n {4}link\.setAttribute\("aria-label", `\$\{link\.textContent\.trim\(\)\}: \$\{what\}, opens in a new tab`\);/);
     assert.match(script("lab.js"), /for \(const name of \["href", "target", "rel", "aria-label"\]\) link\.removeAttribute\(name\);/);
@@ -128,7 +129,8 @@ describe("what the page loads and calls", () => {
     assert.match(html, /<section class="section" id="inspector"[^>]* data-explain-api="\/api\/explain"/);
     assert.match(explainJs, /const API = inspector\.dataset\.explainApi;/);
     for (const { name, text } of scripts) {
-      assert.doesNotMatch(text, /https?:\/\//, `${name} contains a URL`);
+      // The one URL allowed is the SVG namespace, an identifier lab.js never requests.
+      assert.doesNotMatch(text.replaceAll('"http://www.w3.org/2000/svg"', '""'), /https?:\/\//, `${name} contains a URL`);
       assert.doesNotMatch(text, /XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|navigator\.connection/, name);
       assert.doesNotMatch(text, /jsonrpc|@modelcontextprotocol|mcp\.pharos|rpc\.pharos/i, name);
       assert.doesNotMatch(text, /deepseek|openai|anthropic|api[_-]?key|authorization|bearer/i, name);
@@ -177,7 +179,7 @@ describe("what the page loads and calls", () => {
     assert.match(explainJs, /\(box\.hidden \? \$\("inspect-input"\) : button\)\.focus\(\);/);
     for (const id of explainIds) assert.match(html, new RegExp(`id="${id}"`), `#${id} is missing`);
     assert.match(themeJs, /getElementById\("theme-toggle"\)/);
-    assert.match(html, /<button class="theme-toggle" id="theme-toggle" type="button">/);
+    assert.match(html, /<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme">/);
   });
 
   test("the inspector is independent of the Task 01 snapshot: its own state, never the page's", () => {
@@ -194,17 +196,17 @@ describe("the words on the page", () => {
     assert.doesNotMatch(visibleText, /\blive\b/i);
     assert.doesNotMatch(html.match(/<head>[\s\S]*<\/head>/)[0], /\blive\b/i, "title or description");
     for (const [name, text] of literals) assert.doesNotMatch(text, /\blive\b/i, `${name}: "${text}"`);
-    assert.deepEqual([...new Set(TASKS.map((task) => task.status))].sort(), ["available", "planned"]);
+    assert.deepEqual([...new Set(TASKS.map((task) => task.status))].sort(), ["built", "planned"]);
   });
 
   test("names the snapshot for what it is: on-chain, fresh or cached, at a block, read at a time", () => {
     assert.match(pageJs, /const STATUS_WORD = \{ reading: "Reading", fresh: "Fresh snapshot", cached: "Cached snapshot", error: "Read failed" \};/);
     assert.match(pageJs, /const TONE = \{ reading: "active", fresh: "success", cached: "neutral", error: "error" \};/);
-    assert.match(html, /<h2 class="label" id="snapshot-h">On-chain snapshot<\/h2>/);
+    assert.match(html, /<h2 class="sr" id="snapshot-h">On-chain snapshot<\/h2>/);
     assert.match(visibleText, /Block — read at —/);
     assert.match(visibleText, /On-chain state via Pharos Chain MCP/);
     assert.match(visibleText, /Total supply/);
-    assert.match(html, /<button class="btn" type="button" data-refresh>.*<span class="swap"><span>Refresh<span class="wide-only"> snapshot<\/span><\/span><span>Reading…<\/span><\/span><\/button>/);
+    assert.match(html, /<button class="btn" type="button" data-refresh>.*<span class="swap refresh-words"><span>Refresh<\/span><span>Reading…<\/span><\/span><\/button>/);
     assert.match(pageJs, /last \? "showing the last good snapshot" : "no snapshot yet", `\$\{problem\} Refresh to try again\.`\)/);
   });
 
@@ -215,7 +217,7 @@ describe("the words on the page", () => {
     assert.match(pageJs, /if \(values\.paused === true\) paused\.dataset\.tone = "warning";\n {2}else delete paused\.dataset\.tone;/);
     assert.match(rules, /\.rows dd\[data-tone="warning"\] \{ color: var\(--warning\); font-weight: 600; \}/);
     assert.match(rules, /\.rows\.cols-2 > div:last-child:nth-child\(odd\) \{ grid-column: 1 \/ -1; \}/);
-    assert.match(visibleText, /and the pause flag paused ?from Circle's USDC contract on Pharos Mainnet, all at one explicit block\./);
+    assert.match(visibleText, /Reads name ?, symbol ?, decimals ?, totalSupply ?and paused ?from Circle's USDC contract on Pharos Mainnet, all at one explicit block\./);
     assert.doesNotMatch(visibleText, /\b(?:safe|healthy)\b/i);
     for (const [name, text] of literals) assert.doesNotMatch(text, /\b(?:safe|healthy)\b/i, `${name}: "${text}"`);
   });
@@ -282,7 +284,6 @@ describe("the page reports evidence, not certification", () => {
     for (const piece of ['class="counts"', 'class="steps"', 'class="kv"', 'id="v-raw"', 'id="t-raw"', "get_transaction_receipt", "proof/mcp-transcript.json", "MCP-only client path", "Direct RPC calls from this client"]) {
       assert.ok(proof.includes(piece), piece);
     }
-    assert.match(pageJs, /link\.addEventListener\("click", \(\) => void \(\$\("proof"\)\.open = true\)\)/);
   });
 });
 
@@ -297,18 +298,19 @@ describe("task manifest", () => {
 
   test("lists all 28 tasks in order, with their exact titles", () => {
     assert.deepEqual(TASKS.map((task) => task.n), titles.map((_, index) => String(index + 1).padStart(2, "0")));
-    assert.deepEqual(TASKS.map((task) => task.title), titles);
+    assert.deepEqual(TASKS.map((task) => task.official), titles);
+    assert.deepEqual(TASKS.slice(0, 4).map((task) => [task.title, task.verb]), [["Contract State", "Read"], ["Event Monitor", "Watch"], ["Docs Onboarding", "Audit"], ["Docs Search", "Query"]]);
     assert.ok(Object.isFrozen(TASKS) && TASKS.every(Object.isFrozen));
   });
 
-  test("only Task 01 is available and has a page; every other task is planned with no path", () => {
-    assert.deepEqual(TASKS.filter((task) => task.status === "available").map((task) => [task.n, task.path]), [["01", "/"]]);
-    for (const task of TASKS.slice(1)) assert.deepEqual([task.status, task.path], ["planned", null], task.n);
+  test("Tasks 01 to 04 are built; every other task is planned, with no link", () => {
+    assert.deepEqual(TASKS.filter((task) => task.status === "built").map((task) => task.n), ["01", "02", "03", "04"]);
+    for (const task of TASKS.slice(4)) assert.deepEqual([task.status, task.href], ["planned", null], task.n);
   });
 
-  test("names a tool only where it is already known", () => {
+  test("names a tool only where it is already known, and never calls Task 04's HTTP transport MCP", () => {
     const tools = Object.fromEntries(TASKS.filter((task) => task.tool !== null).map((task) => [task.n, task.tool]));
-    assert.deepEqual(tools, { "01": "Chain MCP", "02": "Chain MCP", "03": "Docs MCP", "04": "Docs MCP", 28: "Composition" });
+    assert.deepEqual(tools, { "01": "Chain MCP", "02": "Chain MCP", "03": "Docs MCP", "04": "Developer Docs", 28: "Composition" });
   });
 
   test("the page links to no other task page", () => {
@@ -396,30 +398,14 @@ describe("DOM helpers write text, never markup", () => {
     });
   });
 
-  test("renderTaskContext links only an available task with a page", () => {
-    withDocument(() => {
-      const counter = element();
-      const previous = element();
-      const next = element();
-      renderTaskContext(TASKS, "01", { counter, previous, next });
-      assert.equal(counter.textContent, "01 / 28");
-      assert.equal(previous.hidden, true);
-      assert.equal(next.hidden, false);
-      assert.equal(next.textContent, "Next02Event / Log MonitorPlanned");
-      const title = next.children.find((node) => node.className === "t");
-      assert.equal(title.tagName, "SPAN");
-      assert.equal(title.href, undefined);
-
-      const planned = TASKS.map((task) => (task.n === "02" ? { ...task, path: "/02" } : task));
-      renderTaskContext(planned, "01", { next });
-      assert.equal(next.children.find((node) => node.className === "t").tagName, "SPAN", "a planned task never becomes a link, path or not");
-
-      const available = TASKS.map((task) => (task.n === "02" ? { ...task, status: "available", path: "/02" } : task));
-      renderTaskContext(available, "01", { next });
-      const link = next.children.find((node) => node.className === "t");
-      assert.deepEqual([link.tagName, link.href], ["A", "/02"]);
-      assert.equal(next.children.at(-1).textContent, "Available");
-    });
+  test("the shell places Task 01 first of 28, with 02 to 04 built and nothing linked without an address", () => {
+    const { previous, next } = neighbours(TASKS, "01");
+    assert.equal(TASKS.length, 28);
+    assert.equal(previous, null);
+    assert.deepEqual([next.n, next.title, next.status], ["02", "Event Monitor", "built"]);
+    assert.deepEqual(TASKS.slice(0, 4).map((task) => task.status), ["built", "built", "built", "built"]);
+    assert.ok(TASKS.slice(4).every((task) => task.status === "planned" && task.href === null), "a planned task never has a link");
+    assert.ok(TASKS.every((task) => task.href === null || /^https:\/\//.test(task.href)), "a link is an https deployment address or nothing");
   });
 });
 
@@ -605,6 +591,15 @@ describe("two themes", () => {
 });
 
 describe("design system", () => {
+  test("ships an exact copy of the shared UI (shared/ui), shell markup included", () => {
+    const shared = (name) => new URL(`../../../shared/ui/${name}`, import.meta.url);
+    for (const name of ["lab.css", "lab.js", "theme.js", "tasks.js"]) assert.equal(read(`public/assets/${name}`), readFileSync(shared(name), "utf8"), `${name} differs: run node shared/ui/sync.mjs`);
+    const header = readFileSync(shared("header.html"), "utf8").replaceAll("{{n}}", "01").trim();
+    const footer = readFileSync(shared("footer.html"), "utf8").trim();
+    assert.ok(html.includes(`<!-- shell:header 01 -->\n${header}\n<!-- /shell:header -->`), "header");
+    assert.ok(html.includes(`<!-- shell:footer 01 -->\n${footer}\n<!-- /shell:footer -->`), "footer");
+  });
+
   test("self-hosts four font faces under 200 KB, each with its OFL licence", () => {
     const dir = "public/assets/fonts";
     const files = readdirSync(file(dir)).sort();
@@ -621,33 +616,38 @@ describe("design system", () => {
   });
 
   test("all motion sits behind prefers-reduced-motion: no-preference", () => {
-    const start = css.indexOf("@media (prefers-reduced-motion: no-preference) {");
-    assert.ok(start > 0);
-    let depth = 0;
-    let end = start;
-    for (let index = css.indexOf("{", start); index < css.length; index += 1) {
-      if (css[index] === "{") depth += 1;
-      if (css[index] === "}" && --depth === 0) {
-        end = index;
-        break;
+    // Every no-preference block, in the shared stylesheet and in this page's own.
+    const blocks = [];
+    for (let start = css.indexOf("@media (prefers-reduced-motion: no-preference) {"); start !== -1; start = css.indexOf("@media (prefers-reduced-motion: no-preference) {", start + 1)) {
+      let depth = 0;
+      for (let index = css.indexOf("{", start); index < css.length; index += 1) {
+        if (css[index] === "{") depth += 1;
+        if (css[index] === "}" && --depth === 0) {
+          blocks.push(css.slice(start, index));
+          break;
+        }
       }
     }
-    const motion = css.slice(start, end);
+    assert.ok(blocks.length >= 1);
+    const motion = blocks.join("\n");
     const declarations = (text) => (text.match(/(?:^|[\s;{])(?:animation|transition)(?:-[a-z-]+)?\s*:/g) ?? []).length;
     assert.ok(declarations(motion) >= 8);
-    assert.equal(declarations(css), declarations(motion), "an animation or transition is declared outside the no-preference block");
+    assert.equal(declarations(css), declarations(motion), "an animation or transition is declared outside a no-preference block");
     assert.equal(declarations(html), 0);
     // The disclosure animates only through ::details-content, so it degrades to an instant toggle.
     assert.match(motion, /\.disclosure::details-content \{ height: 0; overflow: clip; transition:/);
   });
 
+
   test("the supply is one continuous value in Geist SemiBold: one size, normal punctuation, nothing reshaped", () => {
-    assert.match(html, /<p class="figure measured" id="supply"><span class="figure-num" id="supply-amount">—<\/span><span class="figure-unit" id="supply-unit"><\/span><\/p>/);
-    assert.match(rules, /\.figure \{[^}]*white-space: nowrap;[^}]*font-family: var\(--sans\);[^}]*font-weight: 600;/);
+    assert.match(html, /<p class="value figure measured" id="supply"><span class="figure-num" id="supply-amount">—<\/span><span class="value-unit figure-unit" id="supply-unit"><\/span><\/p>/);
+    assert.match(rules, /\.figure \{[^}]*white-space: nowrap;/);
+    assert.match(rules, /\.value \{ font-size: var\(--fs-value\); font-weight: 600;/);
+    assert.doesNotMatch(rules, /\.value \{[^}]*(?:font-family|letter-spacing)/, "the value is Geist, untracked");
     assert.match(pageJs, /setText\(\$\("supply-amount"\), supply\.major \+ supply\.minor\);/);
     assert.doesNotMatch(`${rules}\n${html}\n${pageJs}`, /figure-frac|supply-minor|\.sep\b|"sep"|scaleX|font-stretch/);
     const figureRules = [...rules.matchAll(/([^{}]*figure[^{}]*)\{([^{}]*)\}/g)].map((match) => match[2]);
-    assert.ok(figureRules.length >= 4);
+    assert.ok(figureRules.length >= 2);
     for (const body of figureRules) assert.doesNotMatch(body, /margin[\w-]*:\s*-|letter-spacing:\s*-/, body);
   });
 
@@ -656,20 +656,21 @@ describe("design system", () => {
     const values = /figure|\.meta|\.rows dd|count-n|\.status|task-title|task-via|step-n|section-title|disclosure-title/;
     for (const selector of [...using("--caption"), ...using("--mono")]) assert.doesNotMatch(selector, values, selector);
     assert.match(html, /<span>Block <b id="block">—<\/b><\/span><span>read at <b id="read-at">—<\/b><\/span>/);
-    assert.match(html, /<span class="sub">Chain ID <span data-chain>—<\/span><\/span>/);
+    assert.match(html, /<span class="sub-inline">· Chain ID <span data-chain>—<\/span><\/span>/);
   });
 
   test("readable sizes: captions at 12px, and no text set smaller", () => {
     assert.match(rules, /--fs-label: \.75rem;/);
     for (const [, value, unit] of rules.matchAll(/font-size:\s*(\d*\.?\d+)(rem|px)\b/g)) assert.ok(Number(value) * (unit === "rem" ? 16 : 1) >= 12, `font-size ${value}${unit}`);
     const tokens = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")));
-    const sizes = [...tokens.matchAll(/(--fs-[\w-]+):\s*([\d.]+)rem;/g)];
-    assert.ok(sizes.length >= 5);
+    // Fixed sizes, and the smallest end of every fluid one.
+    const sizes = [...tokens.matchAll(/(--fs-[\w-]+):\s*(?:clamp\()?([\d.]+)rem[;,]/g)];
+    assert.ok(sizes.length >= 7);
     for (const [, name, value] of sizes) assert.ok(Number(value) * 16 >= 12, `${name}: ${value}rem`);
   });
 
   test("every control answers a press: the hover look, or a darker fill for a bordered control", () => {
-    for (const selector of [".theme-toggle", ".icon-link", ".jump a", ".btn-primary", ".btn-quiet", ".disclosure > summary", ".links a"]) {
+    for (const selector of [".theme-toggle", ".icon-link", ".btn-primary", ".btn-quiet", ".disclosure > summary", ".sources a", "a.shell-step", ".pager-btn"]) {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       assert.match(rules, new RegExp(`${escaped}:active`), selector);
     }
@@ -677,22 +678,24 @@ describe("design system", () => {
     assert.match(rules, /\.action:active \{ background: var\(--line\); \}/);
   });
 
-  test("controls offer a 44px target: buttons, toggles, footer icons and jump links; a 32px action by its hit area", () => {
+  test("controls offer a 44px target: buttons, toggles, task arrows, footer icons and pages; a 32px action by its hit area", () => {
+    assert.match(rules, /--target: 44px;/);
     for (const rule of [
-      /\.btn \{[^}]*min-height: 44px;/,
-      /\.btn-quiet \{[^}]*min-height: 44px;/,
-      /\.btn-primary \{ min-height: 48px;/,
-      /\.theme-toggle \{[^}]*min-width: 44px; min-height: 44px;/,
-      /\.icon-link \{[^}]*width: 44px; height: 44px;/,
-      /\.jump a \{[^}]*min-height: 44px;/,
-      /\.input \{[^}]*min-height: 48px;/,
+      /\.btn \{[^}]*min-height: var\(--target\);/,
+      /\.btn-quiet \{[^}]*min-height: var\(--target\);/,
+      /\.theme-toggle \{[^}]*width: var\(--target\); height: var\(--target\);/,
+      /\.shell-step \{[^}]*width: var\(--target\); height: var\(--target\);/,
+      /\.icon-link \{[^}]*width: var\(--target\); height: var\(--target\);/,
+      /\.pager-btn \{[^}]*min-height: var\(--target\);/,
+      /\.input \{[^}]*min-height: var\(--target\);/,
+      /\.sources a \{[^}]*min-height: var\(--target\);/,
     ]) assert.match(rules, rule);
   });
 
   test("Departure Mono is kept to small captions, through .label only", () => {
     const selectors = [...rules.matchAll(/([^{}]+)\{[^{}]*var\(--caption\)[^{}]*\}/g)].flatMap((match) => match[1].split(",").map((part) => part.trim()));
     assert.deepEqual([...new Set(selectors)], [".label"]);
-    for (const caption of ["On-chain snapshot", "Total supply", "Contract", 'Task <span class="task-n">01</span> / Read Contract State']) {
+    for (const caption of ["Total supply", "Contract", '<span class="task-n">01</span><span>State Inspector</span>']) {
       assert.match(html, new RegExp(`class="label[^"]*"[^>]*>${caption}<`), caption);
     }
   });
@@ -715,7 +718,7 @@ describe("design system", () => {
 
   test("hex values are one continuous run that splits only into equal lines", () => {
     for (const rule of [
-      /\.hex \{ display: block; line-height: 1\.6; color: var\(--text\); text-wrap: wrap; overflow-wrap: anywhere; \}/,
+      /\.hex \{ display: block; line-height: 1\.55; color: var\(--text\); text-wrap: wrap; overflow-wrap: anywhere; \}/,
       /\.hex-hash \{ max-width: 26ch; \}/,
       /@container hex \(min-width: 36ch\) \{ \.hex-hash \{ max-width: 40ch; \} \}/,
       /@container hex \(min-width: 67ch\) \{ \.hex-hash \{ max-width: none; \} \}/,
@@ -767,16 +770,14 @@ describe("design system", () => {
     assert.match(rules, /\.copy:not\(\[data-copy="copied"\]\) \.swap > :last-child, \.copy\[data-copy="copied"\] \.swap > :first-child,/);
   });
 
-  test("Sources are one set: title and arrow on one line, a path that breaks only between segments", () => {
-    const links = html.match(/<ul class="links">([\s\S]*?)<\/ul>/)[1].match(/<a [\s\S]*?<\/a>/g);
+  test("Sources sit inside the proof: one compact list, a title and its path, an arrow at the end", () => {
+    const proof = html.match(/<details class="disclosure" id="proof">([\s\S]*?)<\/details>/)[1];
+    const links = proof.match(/<ul class="sources"[^>]*>([\s\S]*?)<\/ul>/)[1].match(/<a [\s\S]*?<\/a>/g);
     assert.equal(links.length, 3);
-    for (const link of links) assert.match(link, /^<a href="[^"]+"(?: target="_blank" rel="noopener noreferrer")?><span class="link-title">[^<]+<\/span><svg class="link-arrow"[\s\S]*?<\/svg><span class="link-meta">/);
-    // Out arrow and a new tab for the two on GitHub; an arrow across for this site's own data.
+    assert.doesNotMatch(html.replace(proof, ""), /class="sources"/, "no second sources section");
+    for (const link of links) assert.match(link, /^<a href="[^"]+"(?: target="_blank" rel="noopener noreferrer")?><span class="source-title">[^<]+<\/span><span class="source-meta">[^<]+<\/span><svg class="source-arrow"/);
     assert.deepEqual(links.map((link) => [/target="_blank"/.test(link), link.match(/<path d="([^"]+)"/)[1]]), [[true, "M5 11l6-6M6 5h5v5"], [true, "M5 11l6-6M6 5h5v5"], [false, "M3 8h10M9 4l4 4-4 4"]]);
-    assert.match(links[0], /<span class="link-meta"><span class="nowrap">Rzbyte\/<\/span><wbr><span class="nowrap">pharos-season-of-ai<\/span><\/span>/);
-    assert.match(links[1], /<span class="link-meta"><span class="nowrap">proof\/<\/span><wbr><span class="nowrap">mcp-transcript\.json<\/span><\/span>/);
-    assert.match(rules, /\.link-arrow \{ grid-column: 2; grid-row: 1; align-self: center;/);
-    assert.match(rules, /@media \(min-width: 960px\) \{\s*\.links \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+    assert.match(rules, /\.source-meta \{[^}]*overflow-wrap: anywhere; \}/);
   });
 
   test("the footer links are icons with names: GitHub, the Pharos docs and X, nothing guessed", () => {
@@ -788,9 +789,8 @@ describe("design system", () => {
       ["https://x.com/rzbyte_", "rzbyte_ on X, opens in a new tab", "X"],
     ]);
     assert.equal(footer.match(/<a\b/g).length, 3, "no other footer links");
-    assert.match(footer, /<nav aria-label="Elsewhere">/);
-    assert.match(rules, /\.icon-link \{ display: grid; place-items: center; width: 44px; height: 44px;/);
-    assert.match(rules, /\.icon-link svg \{ width: 20px; height: 20px; \}/);
+    assert.match(footer, /<ul class="foot-links" aria-label="Elsewhere">/);
+    assert.match(rules, /\.icon-link \{ display: grid; place-items: center; width: var\(--target\); height: var\(--target\);/);
     assert.match(rules, /\.icon-link:hover, \.icon-link:focus-visible, \.icon-link:active \{ color: var\(--accent\); \}/);
   });
 });
@@ -799,7 +799,7 @@ describe("accessible structure", () => {
   test("one h1, then h2 sections, then h3 only inside the proof and the Inspector's explanation", () => {
     const headings = [...html.matchAll(/<h([1-6])\b[^>]*>(.*?)<\/h\1>/g)].map(([, level, text]) => [Number(level), text.replace(/<[^>]+>/g, "")]);
     assert.deepEqual(headings.filter(([level]) => level === 1), [[1, "Circle USDC Contract"]]);
-    assert.deepEqual(headings.filter(([level]) => level === 2).map(([, text]) => text), ["On-chain snapshot", "Pharos Inspector", "Proof &amp; technical details", "Sources"]);
+    assert.deepEqual(headings.filter(([level]) => level === 2).map(([, text]) => text), ["On-chain snapshot", "Inspect", "Proof &amp; technical details"]);
     const proof = html.match(/<details[\s\S]*<\/details>/)[0];
     const explanation = html.slice(html.indexOf('<div class="explain" id="explain"'), html.indexOf('<span class="sr" id="inspect-copy-state"'));
     assert.equal(html.match(/<h3\b/g).length, proof.match(/<h3\b/g).length + 1);
@@ -812,7 +812,7 @@ describe("accessible structure", () => {
   test("labels, names and live regions are in place", () => {
     assert.match(html, /<html lang="en">/);
     assert.match(html, /<a class="skip" href="#snapshot">Skip to the snapshot<\/a>/);
-    assert.match(html, /<section class="panel" id="snapshot" aria-labelledby="snapshot-h" tabindex="-1">/);
+    assert.match(html, /<section class="panel snapshot" id="snapshot" aria-labelledby="snapshot-h" tabindex="-1">/);
     // An address, not a contract address: the Inspector reads wallet-like addresses too.
     assert.match(html, /<label class="field-label" for="inspect-input">Address or transaction hash<\/label>/);
     assert.match(html, /aria-live="polite">Accepts an address \(42 characters\) or a transaction hash \(66\)\.<\/p>/);
@@ -827,7 +827,10 @@ describe("accessible structure", () => {
     assert.ok(html.match(/<svg\b/g).length - unwrapped.match(/<svg\b/g).length >= 7, "theme, chevron and copy icons sit in hidden wrappers");
     for (const svg of unwrapped.match(/<svg\b[^>]*>/g)) assert.match(svg, /aria-hidden="true"/, svg);
     // Every button has words: its own text, or the name theme.js gives the theme toggle.
-    for (const [, inner] of html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)) assert.match(inner.replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, "").trim(), /\w/);
+    for (const [, start, inner] of html.matchAll(/(<button\b[^>]*>)([\s\S]*?)<\/button>/g)) {
+      if (/\saria-label="[^"]+"/.test(start)) continue;
+      assert.match(inner.replace(/<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, "").trim(), /\w/, start);
+    }
     assert.match(themeJs, /button\.setAttribute\("aria-label", `Switch to \$\{current\(\) === "dark" \? "light" : "dark"\} theme`\)/);
   });
 
@@ -842,7 +845,7 @@ describe("accessible structure", () => {
 
   test("a busy button says what it is doing, in place: Reading… and Inspecting…, at the same size", () => {
     assert.match(html, /<button class="btn btn-primary" id="inspect-submit" type="submit"><span class="swap"><span>Inspect<\/span><span>Inspecting…<\/span><\/span><\/button>/);
-    assert.match(html, /data-refresh>[^\n]*<span class="swap"><span>Refresh<span class="wide-only"> snapshot<\/span><\/span><span>Reading…<\/span><\/span><\/button>/);
+    assert.match(html, /data-refresh>[^\n]*<span class="swap refresh-words"><span>Refresh<\/span><span>Reading…<\/span><\/span><\/button>/);
     // The state picks the words (lab.css); no script rewrites them, so the button cannot resize.
     assert.match(rules, /\.btn:not\(\[aria-disabled="true"\]\) > \.swap > :last-child, \.btn\[aria-disabled="true"\] > \.swap > :first-child \{ visibility: hidden; \}/);
     assert.doesNotMatch(inspectorJs, /setText\(submit|submit\.textContent/);

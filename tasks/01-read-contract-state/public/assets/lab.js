@@ -1,4 +1,4 @@
-// Agent Arena Lab: helpers shared by every task page. Plain ES module, no dependencies.
+// Pharos Agent Lab: helpers shared by every task page. Plain ES module, no dependencies.
 // Every DOM write goes through textContent or createElement; nothing here parses HTML.
 // The pure functions at the top never touch the DOM, so tests can import this file in Node.
 
@@ -210,30 +210,99 @@ export function linkExplorer(link, kind, value, what) {
 }
 
 /**
- * Fill the shell counter ("01 / 28") and the previous/next context from the manifest.
- * Only a task with status "available" and a path becomes a link; planned tasks are plain text.
+ * One page of a list shown `size` at a time, page 1 first: { page, pages, start, end } with the page
+ * clamped into range, so a list that shrinks never leaves the reader on a page that is gone.
  */
-export function renderTaskContext(tasks, current, { counter, previous, next } = {}) {
+export function pageOf(count, size, page) {
+  const pages = Math.max(1, Math.ceil(Math.max(0, count) / size));
+  const current = Math.min(Math.max(1, Math.trunc(page) || 1), pages);
+  return { page: current, pages, start: (current - 1) * size, end: Math.min(Math.max(0, count), current * size) };
+}
+
+/** The task before and after `current` in the manifest: { index, previous, next }; index -1 if unknown. */
+export function neighbours(tasks, current) {
   const index = tasks.findIndex((task) => task.n === current);
+  return { index, previous: index > 0 ? tasks[index - 1] : null, next: index >= 0 && index < tasks.length - 1 ? tasks[index + 1] : null };
+}
+
+const ARROW = { previous: "M10 3.5 5.5 8l4.5 4.5", next: "M6 3.5 10.5 8 6 12.5" };
+
+function arrow(direction) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  for (const [name, value] of Object.entries({ d: ARROW[direction], fill: "none", stroke: "currentColor", "stroke-width": "1.5", "stroke-linecap": "round", "stroke-linejoin": "round" })) path.setAttribute(name, value);
+  svg.append(path);
+  return svg;
+}
+
+/**
+ * The shell's place among the tasks, from the manifest: the lab link, the arrows either side of the
+ * "02 / 28" counter, and the neighbours line in the footer. Only a task with an address (href) is a
+ * link; any other neighbour is shown as text, marked unavailable, and is never focusable.
+ */
+export function renderTaskNav(tasks, current, lab, root = document) {
+  const { index, previous, next } = neighbours(tasks, current);
   if (index === -1) return;
-  if (counter) {
+  for (const home of root.querySelectorAll("[data-lab-home]")) {
+    if (lab?.home) home.href = lab.home;
+    else home.removeAttribute("href");
+  }
+  for (const count of root.querySelectorAll("[data-task-count]")) {
     const n = document.createElement("b");
     n.textContent = current;
-    counter.replaceChildren(n, ` / ${String(tasks.length).padStart(2, "0")}`);
+    count.replaceChildren(Object.assign(document.createElement("span"), { className: "sr", textContent: "Task " }), n, ` / ${String(lab?.total ?? tasks.length).padStart(2, "0")}`);
   }
-  for (const [element, task, label] of [[previous, tasks[index - 1], "Previous"], [next, tasks[index + 1], "Next"]]) {
-    if (!element) continue;
-    if (!task) {
-      element.hidden = true;
-      continue;
+  for (const [direction, task] of [["previous", previous], ["next", next]]) {
+    const word = direction === "previous" ? "Previous" : "Next";
+    for (const slot of root.querySelectorAll(`[data-task-step="${direction}"]`)) {
+      const linked = Boolean(task?.href);
+      const step = document.createElement(linked ? "a" : "span");
+      step.className = "shell-step";
+      step.dataset.taskStep = direction;
+      step.append(arrow(direction));
+      if (linked) {
+        step.href = task.href;
+        step.rel = direction === "previous" ? "prev" : "next";
+        step.setAttribute("aria-label", `${word} task: ${task.n} ${task.title}`);
+        step.title = `${task.n} ${task.title}`;
+      } else {
+        step.setAttribute("role", "img");
+        step.setAttribute("aria-label", task ? `${word} task: ${task.n} ${task.title}, not linked` : `No ${word.toLowerCase()} task`);
+        step.setAttribute("aria-disabled", "true");
+      }
+      slot.replaceWith(step);
     }
-    const caption = Object.assign(document.createElement("span"), { className: "lab", textContent: label });
-    const n = Object.assign(document.createElement("span"), { className: "num", textContent: task.n });
-    const linked = task.status === "available" && typeof task.path === "string";
-    const title = Object.assign(document.createElement(linked ? "a" : "span"), { className: "t", textContent: task.title });
-    if (linked) title.href = task.path;
-    const tag = Object.assign(document.createElement("span"), { className: `tag tag-${task.status}`, textContent: task.status === "available" ? "Available" : "Planned" });
-    element.replaceChildren(caption, n, title, tag);
-    element.hidden = false;
+    for (const slot of root.querySelectorAll(`[data-task-neighbour="${direction}"]`)) {
+      if (!task) {
+        slot.hidden = true;
+        continue;
+      }
+      const label = Object.assign(document.createElement("span"), { className: "neighbour-word", textContent: word });
+      const n = Object.assign(document.createElement("span"), { className: "neighbour-n", textContent: task.n });
+      const title = Object.assign(document.createElement(task.href ? "a" : "span"), { className: "neighbour-title", textContent: task.title });
+      if (task.href) title.href = task.href;
+      slot.replaceChildren(label, n, title);
+      if (task.status !== "built") slot.append(Object.assign(document.createElement("span"), { className: "neighbour-tag", textContent: "Planned" }));
+      slot.hidden = false;
+    }
   }
+}
+
+/**
+ * A button that shows and hides one region: aria-expanded on the button, `hidden` on the region it
+ * names with aria-controls. `onChange(open)` runs after each toggle.
+ */
+export function wireToggle(button, onChange) {
+  const region = document.getElementById(button.getAttribute("aria-controls") ?? "");
+  if (!region) return;
+  const set = (open) => {
+    button.setAttribute("aria-expanded", String(open));
+    region.hidden = !open;
+    onChange?.(open);
+  };
+  set(button.getAttribute("aria-expanded") === "true");
+  button.addEventListener("click", () => set(button.getAttribute("aria-expanded") !== "true"));
 }

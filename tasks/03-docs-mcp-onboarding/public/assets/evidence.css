@@ -1,0 +1,56 @@
+/* Task 03 workspace: an evidence journey. Shared tokens, shell and primitives are in lab.css. */
+@layer task {
+  /* Goal and environment: two short lines, not a report. */
+  .context { display: grid; gap: var(--space-1); margin-top: calc(-1 * var(--space-4)); }
+  .context > div { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); font-size: var(--fs-small); }
+  .context dt { color: var(--text-3); }
+  .context dd { color: var(--text-2); }
+
+  /* Outcome: the result first, plainly. */
+  .outcome { display: grid; gap: var(--space-3); }
+  .outcome .status { align-items: center; font-size: var(--fs-body); }
+  .checks { display: grid; gap: var(--space-2); }
+  .checks li { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-small); color: var(--text); }
+  .checks svg { width: 14px; height: 14px; flex: none; align-self: center; color: var(--success); }
+  .outcome-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+  /* Journey: four stages in a row with room, a column on a phone. The stage names carry the story;
+     a detail line appears only where the evidence gives one. */
+  .journey { display: grid; gap: 0; border-top: 1px solid var(--line); }
+  .step { position: relative; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+  .step-mark { grid-row: span 2; font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); padding-top: 2px; }
+  .step-name { font-weight: 600; }
+  .step-detail { grid-column: 2; color: var(--text-2); font-size: var(--fs-small); }
+  .step[data-stage="blocked"] .step-name::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: var(--space-2); border-radius: 50%; background: var(--warning); vertical-align: .08em; }
+  .step[data-stage="successful"] .step-name::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: var(--space-2); border-radius: 50%; background: var(--success); vertical-align: .08em; }
+  @media (min-width: 760px) {
+    .journey { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-bottom: 1px solid var(--line); }
+    .step { grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--space-1); padding: var(--space-3) var(--space-4) var(--space-4) 0; border-bottom: 0; }
+    .step + .step { padding-left: var(--space-4); border-left: 1px solid var(--line); }
+    .step-mark { grid-row: auto; }
+    .step-detail { grid-column: 1; }
+  }
+
+  /* Gaps: title, one line of what happened, the suggested fix, and a thumbnail to open the evidence. */
+  .gaps { display: grid; border-top: 1px solid var(--line); }
+  .gap { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-4) 0; border-bottom: 1px solid var(--line); }
+  @media (min-width: 600px) { .gap { grid-template-columns: minmax(0, 1fr) 10rem; align-items: start; } }
+  .gap-text { display: grid; gap: var(--space-1); min-width: 0; }
+  .gap-title { display: flex; gap: var(--space-2); font-size: 1rem; }
+  .gap-n { font-family: var(--mono); font-size: var(--fs-meta); font-weight: 400; color: var(--text-3); padding-top: 2px; }
+  .gap-happened { color: var(--text-2); font-size: var(--fs-small); }
+  .gap-fix { font-size: var(--fs-small); color: var(--text); }
+  .gap-label { display: block; color: var(--text-3); font-size: var(--fs-meta); }
+  .shot { position: relative; display: grid; gap: var(--space-1); justify-items: start; width: 10rem; max-width: 100%; text-decoration: none; }
+  .shot img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
+  .shot-word { display: inline-flex; align-items: center; min-height: 32px; color: var(--text-2); font-size: var(--fs-meta); font-weight: 600; }
+  .shot:hover .shot-word, .shot:active .shot-word { color: var(--accent); }
+
+  /* The viewer: the full image, on demand, inside the screen. */
+  .viewer { max-width: min(96vw, 1200px); max-height: 92vh; padding: var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+  .viewer::backdrop { background: rgb(0 0 0 / .72); }
+  .viewer form { display: flex; justify-content: flex-end; margin-bottom: var(--space-2); }
+  .viewer img { max-width: 100%; max-height: calc(92vh - 6rem); margin-inline: auto; object-fit: contain; }
+
+  .disclosure-title { font-size: 1rem; }
+}

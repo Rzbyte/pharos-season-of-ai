@@ -139,12 +139,17 @@ describe("static files", () => {
     const html = await read("public/index.html");
     const refs = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]);
     assert.deepEqual(refs.sort(), ["/assets/fonts/Geist-SemiBold.woff2", "/assets/lab.css", "/assets/monitor.css", "/assets/monitor.js", "/assets/theme.js"]);
+    // The shared shell, stamped from shared/ui and identical on every task page.
+    const shared = (name) => readFile(new URL(`../../../shared/ui/${name}`, import.meta.url), "utf8");
+    assert.ok(html.includes(`<!-- shell:header 02 -->\n${(await shared("header.html")).replaceAll("{{n}}", "02").trim()}\n<!-- /shell:header -->`), "header");
+    assert.ok(html.includes(`<!-- shell:footer 02 -->\n${(await shared("footer.html")).trim()}\n<!-- /shell:footer -->`), "footer");
+    for (const name of ["lab.css", "lab.js", "theme.js", "tasks.js"]) assert.equal(await read(`public/assets/${name}`), await shared(name), `${name}: run node shared/ui/sync.mjs`);
     for (const ref of refs) await read(`public${ref}`);
     assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/, "no inline script");
     assert.doesNotMatch(html, /<script[^>]+src="https?:/, "no third-party script");
     assert.match(html, /data-api="\/api\/events"/);
     assert.match(html, /<meta name="explorer" content="https:\/\/pharos\.socialscan\.io">/);
-    assert.match(html, /<span id="task-count"><b>02<\/b> \/ 28<\/span>/);
+    assert.match(html, /<span class="shell-count" data-task-count><span class="sr">Task <\/span><b>02<\/b> \/ 28<\/span>/);
   });
 
   test("every element the script looks up exists", async () => {
@@ -153,29 +158,42 @@ describe("static files", () => {
     for (const [, id] of script.matchAll(/\$\("([^"]+)"\)/g)) assert.ok(ids.has(id), `#${id} missing`);
   });
 
-  test("the hierarchy: what is watched, whether it runs, the latest events, the initial history, then proof", async () => {
+  test("the hierarchy: what is watched, whether it runs, five latest events and their pages, the initial history, then proof", async () => {
     const html = await read("public/index.html");
     const order = [
-      ">Event / Log Monitor</h1>",
-      ">Circle USDC</p>",
-      "<code>Transfer(address,address,uint256)</code>",
+      ">Circle USDC Transfers</h1>",
       'id="status"',
-      ">Last checked block<",
+      'id="last-block"',
+      'id="checked-ago"',
       'id="toggle"',
-      ">This session</h2>",
+      ">Transfer(address,address,uint256)</code>",
+      ">Latest events</h2>",
+      'id="session-new"',
       'id="feed"',
-      ">Initial history</h2>",
+      'id="session-pager"',
+      ">Initial history</span>",
       ">Proof &amp; technical details</h2>",
     ];
     const at = order.map((needle) => html.indexOf(needle));
     assert.ok(at.every((index) => index !== -1), JSON.stringify(at));
     assert.deepEqual([...at].sort((a, b) => a - b), at, "in this order");
-    assert.match(html, />View transaction</);
+    assert.match(html, />View tx</);
     // One control, not a pair of buttons; initial history starts collapsed and unrendered.
     assert.doesNotMatch(html, /id="(start|stop)"/);
-    assert.match(html, /<button class="btn" id="initial-toggle" type="button" aria-expanded="false" aria-controls="initial-feed">Show initial events<\/button>/);
-    assert.match(html, /<ol class="events" id="initial-feed" aria-labelledby="initial-h" hidden><\/ol>/);
+    assert.match(html, /<button class="toggle-row" id="initial-toggle" type="button" aria-expanded="false" aria-controls="initial-body">/);
+    assert.match(html, /<div class="initial-body" id="initial-body" hidden>\s*<ol class="events" id="initial-feed" aria-labelledby="initial-h"><\/ol>/);
     assert.match(html, /<ol class="events" id="feed" aria-labelledby="session-h"><\/ol>/);
+    // Pages, never "show more": both lists have ← Newer · 1 / N · Older →, and no list grows the page.
+    for (const list of ["session", "initial"]) {
+      assert.match(html, new RegExp(`<nav class="pager" id="${list}-pager" aria-label="[^"]+" hidden>`));
+      assert.match(html, new RegExp(`<button class="pager-btn" id="${list}-newer" type="button" aria-controls="[\\w-]+" aria-disabled="true">`));
+      assert.match(html, new RegExp(`<span class="pager-pos" id="${list}-pos" aria-live="polite">1 / 1</span>`));
+      assert.match(html, new RegExp(`<button class="pager-btn" id="${list}-older" type="button" aria-controls="[\\w-]+" aria-disabled="true">`));
+    }
+    assert.doesNotMatch(html, /Show (?:older|more|newest)/);
+    const script = await read("public/assets/monitor.js");
+    assert.match(script, /const PAGE_SIZE = 5;/);
+    assert.doesNotMatch(script, /FIRST_BATCH|MORE_BATCH|Show older/);
   });
 
   test("no copy that only restates the interface", async () => {
@@ -205,14 +223,10 @@ describe("static files", () => {
     assert.match(css, /--brand: #0113B7;/);
   });
 
-  test("the task manifest links only to this deployment's own page", () => {
-    const own = TASKS.find((task) => task.n === "02");
-    assert.equal(own.status, "available");
-    assert.equal(own.path, "/");
-    const first = TASKS.find((task) => task.n === "01");
-    assert.equal(first.status, "available");
-    assert.equal(first.path, null);
-    assert.equal(TASKS.filter((task) => task.path !== null).length, 1);
+  test("the task manifest: 01 to 04 built, linked only by a deployment address, nothing planned linked", () => {
+    assert.deepEqual(TASKS.filter((task) => task.status === "built").map((task) => task.n), ["01", "02", "03", "04"]);
+    assert.ok(TASKS.every((task) => task.href === null || /^https:\/\//.test(task.href)));
+    assert.ok(TASKS.filter((task) => task.status === "planned").every((task) => task.href === null));
   });
 
   test("vercel.json deploys public/ and the one function", async () => {

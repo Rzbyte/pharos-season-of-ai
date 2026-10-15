@@ -1,0 +1,23 @@
+{
+  "$comment": "Task 03 content. Only facts from the submitted evidence go here; anything unknown stays null or empty and is left off the page. Images live in public/evidence/. Run `npm run build` after editing.",
+  "title": "Docs MCP Onboarding",
+  "goal": null,
+  "environment": null,
+  "journey": [
+    { "stage": "Started", "detail": null },
+    { "stage": "Blocked", "detail": null },
+    { "stage": "Recovered", "detail": null },
+    { "stage": "Successful", "detail": null }
+  ],
+  "outcome": [
+    "Connected to Atlantic RPC",
+    "eth_chainId succeeded",
+    "eth_call succeeded"
+  ],
+  "gaps": [],
+  "links": {
+    "proof": null,
+    "video": null
+  },
+  "sources": []
+}

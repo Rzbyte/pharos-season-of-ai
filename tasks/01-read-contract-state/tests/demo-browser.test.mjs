@@ -251,7 +251,8 @@ describe("the Task 01 page in a browser", { skip }, () => {
   const pageFailures = (errors) => errors.filter((error) => !/Failed to load resource/.test(error));
   /** The words a control shows (innerText skips the words swapped out), and its box. */
   const words = (page, selector) => page.evaluate((s) => document.querySelector(s).innerText.trim(), selector);
-  const box = (page, selector) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.x, r.y, r.width, r.height].map(Math.round).join(" "); }, selector);
+  // Its box on the page (not the viewport), so scrolling a control into view does not count as a move.
+  const box = (page, selector) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.x + scrollX, r.y + scrollY, r.width, r.height].map(Math.round).join(" "); }, selector);
   /** Every hex value on screen: its text, and its characters per line ([22, 20], [34, 32], ...). */
   const hexLines = (page) =>
     page.evaluate(() =>
@@ -320,7 +321,8 @@ describe("the Task 01 page in a browser", { skip }, () => {
         });
         assert.equal(figure.text, "20,271,995.983588USDC", where);
         assert.ok(figure.fits && figure.oneLine, `${where}: ${JSON.stringify(figure)}`);
-        assert.ok(figure.px > figure.h1, `${where}: the supply (${figure.px}px) is the largest type, above the title (${figure.h1}px)`);
+        // Compact density: the title leads; the supply is the largest value, at 18px or more on one line.
+        assert.ok(figure.px >= 18 && figure.px < figure.h1, `${where}: the supply (${figure.px}px) sits under the title (${figure.h1}px)`);
         for (const { text, lines } of await hexLines(page)) {
           assert.doesNotMatch(text, /\s/, `${where}: no spaces in ${text}`);
           assert.ok(BALANCED[text.length]?.includes(lines.join("/")), `${where}: ${text} sits as ${lines.join("/")}`);
@@ -351,7 +353,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
       const face = (selector) => getComputedStyle(document.querySelector(selector)).fontFamily.split(",")[0].replaceAll('"', "").trim();
       return {
         values: ["#supply", "#block", "#read-at", "#v-decimals", "#network", "#snapshot .rows [data-chain]", "#subject", "[data-status-word]"].map(face),
-        captions: [".task-head .label", "#snapshot-h", ".figure-label", ".contract .label"].map(face),
+        captions: [".task-head .label", ".snap-supply .label", ".contract .label"].map(face),
         technical: ["#address", "#inspect-input", ".kv dd:not(.kv-text)"].map(face),
       };
     });
@@ -370,16 +372,16 @@ describe("the Task 01 page in a browser", { skip }, () => {
         saved: localStorage.getItem("agent-arena-lab:theme"),
         background: getComputedStyle(document.body).backgroundColor,
         label: document.getElementById("theme-toggle").getAttribute("aria-label"),
-        word: [...document.querySelectorAll(".theme-words > span")].find((word) => getComputedStyle(word).visibility === "visible").textContent,
+        icon: [...document.querySelectorAll(".theme-icons > svg")].find((icon) => getComputedStyle(icon).visibility === "visible").classList.value,
         metas: [...document.querySelectorAll('meta[name="theme-color"]')].map((meta) => meta.content),
-        boxes: ["#theme-toggle", ".topbar-count", "#subject", "#supply", "#snapshot", "#inspector", "#proof"].map((selector) => {
+        boxes: ["#theme-toggle", ".shell-count", "#subject", "#supply", "#snapshot", "#inspector", "#proof"].map((selector) => {
           const box = document.querySelector(selector).getBoundingClientRect();
           return [selector, Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)].join(" ");
         }),
       }));
     };
     const system = await look();
-    assert.deepEqual([system.theme, system.saved, system.background, system.label, system.word], [null, null, BACKGROUND.light, "Switch to dark theme", "Dark"]);
+    assert.deepEqual([system.theme, system.saved, system.background, system.label, system.icon], [null, null, BACKGROUND.light, "Switch to dark theme", "when-light"]);
 
     // Keyboard: Tab from the skip link reaches the toggle; Enter switches.
     await page.keyboard.press("Tab");
@@ -387,7 +389,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     assert.equal(await page.evaluate(() => document.activeElement.id), "theme-toggle");
     await page.keyboard.press("Enter");
     const dark = await look();
-    assert.deepEqual([dark.theme, dark.saved, dark.background, dark.label, dark.word], ["dark", "dark", BACKGROUND.dark, "Switch to light theme", "Light"]);
+    assert.deepEqual([dark.theme, dark.saved, dark.background, dark.label, dark.icon], ["dark", "dark", BACKGROUND.dark, "Switch to light theme", "when-dark"]);
     assert.deepEqual(dark.metas, ["#0B0B0B", "#0B0B0B"]);
     assert.deepEqual(dark.boxes, system.boxes, "switching theme moves nothing");
 
@@ -632,7 +634,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
       const copy = document.querySelector("#inspect-result .action").getBoundingClientRect();
       return {
         width: Math.round(box.width),
-        content: Math.round(panel.getBoundingClientRect().width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)),
+        content: Math.round(panel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)),
         height: box.height,
         inView: box.left >= 0 && box.right <= innerWidth,
         afterResult: box.top >= document.getElementById("inspect-result").getBoundingClientRect().bottom,
@@ -923,7 +925,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     }
   });
 
-  test("proof & technical details: collapsed, opened by keyboard or by the link to it, closed again", async () => {
+  test("proof & technical details: collapsed, opened and closed by keyboard", async () => {
     const { context, page } = await open({ width: 390 });
     const isOpen = () => page.evaluate(() => document.getElementById("proof").open);
     const shown = () => page.evaluate(() => document.querySelector("#proof .counts").checkVisibility());
@@ -934,10 +936,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     assert.deepEqual([await isOpen(), await shown()], [true, true]);
     await page.keyboard.press("Space");
     await page.waitForTimeout(450);
-    assert.equal(await isOpen(), false);
-    await page.click('.jump a[href="#proof"]');
-    await page.waitForTimeout(450);
-    assert.deepEqual([await isOpen(), await shown()], [true, true]);
+    assert.deepEqual([await isOpen(), await shown()], [false, false]);
     await context.close();
   });
 
@@ -1145,7 +1144,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
         const [value, copy, link] = [r("address"), r("copy"), r("contract-explorer")];
         return { gap: Math.round(copy.top - value.bottom), left: Math.round(copy.left - value.left), row: Math.round(link.top - copy.top), after: Math.round(link.left - copy.right), heights: [Math.round(copy.height), Math.round(link.height)] };
       });
-      assert.deepEqual(layout, { gap: 10, left: 0, row: 0, after: 8, heights: [32, 32] }, `${width}: Copy, then View in Explorer, in one row under the value`);
+      assert.deepEqual(layout, { gap: 6, left: 0, row: 0, after: 8, heights: [32, 32] }, `${width}: Copy, then View in Explorer, in one row under the value`);
       await context.close();
     }
   });
@@ -1220,25 +1219,23 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await context.close();
   });
 
-  test("Sources: one set at every width, equal heights, titles and arrows aligned, paths unbroken", async () => {
-    for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [1024, 768], [1280, 860]]) {
+  test("Sources: one list inside the proof, a full-width row each, 44px to hit, paths inside their rows", async () => {
+    for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [1280, 860]]) {
       const { context, page } = await open({ width, height });
+      await page.click("#proof > summary");
+      await page.waitForTimeout(450);
       const items = await page.evaluate(() =>
-        [...document.querySelectorAll(".links a")].map((link) => {
+        [...document.querySelectorAll("#proof .sources a")].map((link) => {
           const box = link.getBoundingClientRect();
-          const of = (selector) => link.querySelector(selector).getBoundingClientRect();
-          const title = of(".link-title");
-          const arrow = of(".link-arrow");
-          const meta = of(".link-meta");
-          return { top: Math.round(box.top), height: Math.round(box.height), title: Math.round(title.top - box.top), arrow: Math.round(arrow.top + arrow.height / 2 - (title.top + title.height / 2)), metaLines: Math.round(meta.height / parseFloat(getComputedStyle(link.querySelector(".link-meta")).lineHeight)) };
+          const meta = link.querySelector(".source-meta").getBoundingClientRect();
+          const arrow = link.querySelector(".source-arrow").getBoundingClientRect();
+          return { left: Math.round(box.left), width: Math.round(box.width), height: box.height, inside: meta.right <= box.right + 0.5 && arrow.right <= box.right + 0.5 };
         }),
       );
-      const rows = Object.values(Object.groupBy(items, (item) => item.top));
-      for (const row of rows) assert.equal(new Set(row.map((item) => item.height)).size, 1, `${width}: equal heights in a row ${JSON.stringify(row)}`);
-      assert.equal(new Set(items.map((item) => item.title)).size, 1, `${width}: titles aligned`);
-      for (const item of items) assert.ok(Math.abs(item.arrow) <= 1, `${width}: arrow centred on its title line (${item.arrow}px)`);
-      for (const item of items) assert.equal(item.metaLines, 1, `${width}: path on one line`);
-      assert.equal(rows.length, width >= 960 ? 1 : 3, `${width}: ${rows.length} row(s)`);
+      assert.equal(items.length, 3, `${width}`);
+      assert.equal(new Set(items.map((item) => `${item.left} ${item.width}`)).size, 1, `${width}: one column`);
+      for (const item of items) assert.ok(item.height >= 44 && item.inside, `${width}: ${JSON.stringify(item)}`);
+      assert.equal(await page.evaluate(() => document.querySelectorAll(".sources").length), 1, "one sources list");
       await context.close();
     }
   });
@@ -1293,9 +1290,9 @@ describe("the Task 01 page in a browser", { skip }, () => {
       if (!stop) break;
       stops.push(stop);
     }
-    assert.ok(stops.length >= 14, `${stops.length} focus stops`);
+    assert.ok(stops.length >= 12, `${stops.length} focus stops`);
     const names = stops.map((stop) => stop.name);
-    const expected = ["#snapshot", "theme-toggle", "Refresh snapshot", "copy", "contract-explorer", "#inspector", "#proof", "inspect-input", "inspect-submit", "inspect-example", "Proof & technical"];
+    const expected = ["#snapshot", "theme-toggle", "Refresh", "copy", "contract-explorer", "inspect-input", "inspect-submit", "inspect-example", "Proof & technical"];
     let at = -1;
     for (const name of expected) {
       const index = names.findIndex((stop, position) => position > at && stop.startsWith(name));
@@ -1341,7 +1338,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await page.waitForTimeout(450);
     const sweep = await page.evaluate(() => {
       // Links inside running text are exempt (WCAG 2.5.8), as is the skip link, which sits off screen.
-      const controls = [...document.querySelectorAll("a[href], button, summary, input")].filter((element) => element.checkVisibility() && !element.closest(".proof-text, .skip"));
+      const controls = [...document.querySelectorAll("a[href], button, summary, input")].filter((element) => element.checkVisibility() && !element.closest(".prose, .skip"));
       const small = [];
       for (const element of controls) {
         element.scrollIntoView({ block: "center" });
@@ -1357,7 +1354,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
       }
       return { count: controls.length, small };
     });
-    assert.ok(sweep.count >= 20, `${sweep.count} controls`);
+    assert.ok(sweep.count >= 16, `${sweep.count} controls`);
     assert.deepEqual(sweep.small, []);
     assert.deepEqual(await page.evaluate(() => ["explain-submit", "explain-more"].map((id) => document.getElementById(id).checkVisibility())), [true, true]);
     await context.close();

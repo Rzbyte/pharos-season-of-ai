@@ -8,8 +8,8 @@
 // (s-maxage=15, stale-while-revalidate=45), so a response can be an earlier read served again.
 // The page says which. CACHED when the edge reports its own copy (x-vercel-cache HIT or STALE,
 // or an Age), or when the read is the one already on screen; FRESH otherwise.
-import { clockTime, duration, fitFigure, groupDigits, linkExplorer, renderHex, renderTaskContext, setState, setText, settle, snapshotSource, splitAmount, toHexBlock, wireCopy } from "./lab.js";
-import { TASKS } from "./tasks.js";
+import { clockTime, duration, fitFigure, groupDigits, linkExplorer, renderHex, renderTaskNav, setState, setText, settle, snapshotSource, splitAmount, toHexBlock, wireCopy } from "./lab.js";
+import { LAB, TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
 const main = $("main");
@@ -17,20 +17,18 @@ const panel = $("snapshot");
 const API = main.dataset.api;
 const STATUS_WORD = { reading: "Reading", fresh: "Fresh snapshot", cached: "Cached snapshot", error: "Read failed" };
 const TONE = { reading: "active", fresh: "success", cached: "neutral", error: "error" };
-const FIGURE_MIN_PX = 22;
+const FIGURE_MIN_PX = 18;
 
 let last = null;
 let busy = false;
 let fitQueued = false;
 
-renderTaskContext(TASKS, main.dataset.task, { counter: $("task-count"), previous: $("nav-previous"), next: $("nav-next") });
+renderTaskNav(TASKS, main.dataset.task, LAB);
 renderHex($("address"), $("address-sr").textContent.trim());
 // The frozen Task 01 contract can be looked up on the explorer before the first read.
 linkExplorer($("contract-explorer"), "address", $("address-sr").textContent.trim(), "contract address");
 for (const button of document.querySelectorAll("[data-refresh]")) button.addEventListener("click", measure);
 wireCopy($("copy"), { value: () => last?.contract.address ?? $("address-sr").textContent.trim(), shown: () => $("address"), live: $("copy-state"), what: "Contract address" });
-// A link to the proof opens it, so it never lands on a closed section.
-for (const link of document.querySelectorAll('a[href="#proof"]')) link.addEventListener("click", () => void ($("proof").open = true));
 addEventListener("resize", fitSupply);
 // The fit is measured in the real faces, so measure again whenever webfonts finish loading.
 document.fonts?.addEventListener?.("loadingdone", fitSupply);
