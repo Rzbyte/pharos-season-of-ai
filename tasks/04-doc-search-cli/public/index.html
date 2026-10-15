@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>04 · Docs Search · Pharos Agent Lab</title>
 <meta name="description" content="Pharos Agent Lab, task 04: ask the official Pharos Developer Docs a question and get a short answer with its source pages, or a plain no-answer. The same search as the pharos-docs CLI.">
 <meta name="color-scheme" content="dark light">
@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="/assets/search.css">
 <script type="module" src="/assets/search.js"></script>
 </head>
-<body data-state="idle">
+<body class="app" data-state="idle">
 <a class="skip" href="#q">Skip to the question</a>
 
 <!-- shell:header 04 -->
@@ -37,77 +37,92 @@
 </header>
 <!-- /shell:header -->
 
-<main id="main" class="rail page search-page" data-api="/api/search" data-task="04">
-  <header class="task-head">
-    <p class="label task-kicker"><span class="task-n">04</span><span>Docs Search</span></p>
-    <h1 class="task-title">Docs Search</h1>
-    <p class="task-via">Ask anything documented about building on Pharos.</p>
+<main id="main" class="ws search-page" data-api="/api/search" data-task="04">
+  <header class="ws-bar">
+    <div class="rail ws-grid">
+      <div class="ws-bar-row">
+        <h1 class="ws-title"><span class="task-n">04</span><span>Docs Search</span></h1>
+        <div class="ws-tools">
+          <button class="action" id="clear" type="button" hidden><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 3.25v9.5M3.25 8h9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>New</span><span class="sr"> search: clear these questions</span></button>
+          <button class="action ws-about-open" id="about-open" type="button" aria-haspopup="dialog" aria-controls="about-sheet"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.25v4M8 4.75v.01" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>About</span></button>
+        </div>
+      </div>
+    </div>
   </header>
 
-  <section class="thread" id="thread" aria-label="Questions and answers" hidden></section>
-  <p class="sr" id="announce" aria-live="polite"></p>
+  <div class="ws-scroll" id="scroll">
+    <div class="rail ws-grid">
+      <div class="ws-col">
+        <section class="welcome" aria-labelledby="welcome-h">
+          <p class="welcome-title" id="welcome-h">Ask anything documented about building on Pharos.</p>
+          <p class="welcome-text">Answers come only from the official Pharos Developer Docs, with the pages they come from. When the docs do not state it, the answer is “No good answer found”, never a guess.</p>
+          <div class="try" id="try">
+            <p class="label">Try</p>
+            <button class="chip" type="button" data-q="How do I deploy a contract with Foundry?">Deploy with Foundry</button>
+            <button class="chip" type="button" data-q="What is the Atlantic testnet RPC endpoint?">Atlantic RPC</button>
+            <button class="chip" type="button" data-q="How do I use Chainlink on Pharos?">Use Chainlink</button>
+          </div>
+        </section>
+        <section class="thread" id="thread" aria-label="Questions and answers" hidden></section>
+      </div>
 
-  <form class="ask" id="ask" autocomplete="off" role="search">
-    <label class="sr" for="q">Question for the Pharos Developer Docs</label>
-    <div class="ask-box">
-      <input class="ask-input" id="q" name="q" type="search" inputmode="text" enterkeyhint="search" spellcheck="false" autocapitalize="off" autocorrect="off" maxlength="320" placeholder="Ask the docs…">
-      <button class="btn btn-primary ask-go" id="go" type="submit"><span class="swap"><span>Ask</span><span>Asking…</span></span></button>
-    </div>
-    <div class="try" id="try">
-      <p class="label">Try</p>
-      <button class="chip" type="button" data-q="How do I deploy a contract with Foundry?">Deploy with Foundry</button>
-      <button class="chip" type="button" data-q="What is the Atlantic testnet RPC endpoint?">Atlantic RPC</button>
-      <button class="chip" type="button" data-q="How do I use Chainlink on Pharos?">Use Chainlink</button>
-    </div>
-  </form>
-
-  <div class="secondary">
-    <section class="cli" aria-labelledby="cli-h">
-      <h2 class="cli-head"><button class="toggle-row" id="cli-toggle" type="button" aria-expanded="false" aria-controls="cli-body"><span id="cli-h">CLI usage</span><span class="disclosure-meta">pharos-docs</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button></h2>
-      <div class="cli-body" id="cli-body" hidden>
-        <p class="prose">The same search runs from a terminal, with the same result.</p>
+      <aside class="ws-side" id="about" aria-labelledby="about-h">
+        <div class="about" id="about-content">
+          <h2 class="about-title" id="about-h">How it answers</h2>
+          <dl class="kv">
+            <div><dt>Source</dt><dd class="kv-text">Only the official Pharos Developer Docs at docs.pharos.xyz. Every answer lists the pages it comes from.</dd></div>
+            <div><dt>Transport</dt><dd class="kv-text">HTTPS GET to the docs' public query interface: <code>sitemap.md</code> for the page list, then <code>&lt;page&gt;.md?ask=&lt;question&gt;</code> for one or two pages. Not MCP: a public Developer Docs MCP endpoint is not documented yet.</dd></div>
+            <div><dt>No answer</dt><dd class="kv-text">When the matching page does not answer, or does not state the value asked for, the result is "No good answer found", never a guess.</dd></div>
+            <div><dt>Same as the CLI</dt><dd class="kv-text">This page calls the same search code as <code>pharos-docs</code> and gets the same result, as JSON with <code>--json</code>.</dd></div>
+          </dl>
+          <details class="disclosure cli" id="cli">
+            <summary><h3 class="disclosure-title" id="cli-h">CLI usage</h3><span class="disclosure-meta">pharos-docs</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
+            <div class="cli-body">
+              <p class="prose">The same search runs from a terminal, with the same result.</p>
 <pre class="code"><code>npm ci
 npm link
 pharos-docs "How do I deploy a contract with Foundry?"
 pharos-docs "What is the Atlantic testnet chain ID?" --json</code></pre>
-        <p class="prose">Exit code 0 is an answer, 1 is no answer. In this page, add <code>--json</code> to a question to see the raw result.</p>
-      </div>
-    </section>
-
-    <details class="disclosure" id="proof">
-      <summary><h2 class="disclosure-title" id="proof-h">How it answers &amp; proof</h2><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
-      <div class="disclosure-body">
-        <dl class="kv">
-          <div><dt>Source</dt><dd class="kv-text">Only the official Pharos Developer Docs at docs.pharos.xyz. Every answer lists the pages it comes from.</dd></div>
-          <div><dt>Transport</dt><dd class="kv-text">HTTPS GET to the docs' public query interface: <code>sitemap.md</code> for the page list, then <code>&lt;page&gt;.md?ask=&lt;question&gt;</code> for one or two pages. Not MCP: a public Developer Docs MCP endpoint is not documented yet.</dd></div>
-          <div><dt>No answer</dt><dd class="kv-text">When the matching page does not answer, or does not state the value asked for, the result is "No good answer found", never a guess.</dd></div>
-          <div><dt>Same as the CLI</dt><dd class="kv-text">This page calls the same search code as <code>pharos-docs</code> and gets the same result, as JSON with <code>--json</code>.</dd></div>
-        </dl>
-        <ul class="sources" aria-labelledby="proof-h">
+              <p class="prose">Exit code 0 is an answer, 1 is no answer. In this page, add <code>--json</code> to a question to see the raw result.</p>
+            </div>
+          </details>
+          <h3 class="about-sub" id="proof-h">Proof</h3>
+          <ul class="sources" aria-labelledby="proof-h">
           <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/04-doc-search-cli" target="_blank" rel="noopener noreferrer"><span class="source-title">Source code</span><span class="source-meta">Rzbyte/pharos-season-of-ai</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
           <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/04-doc-search-cli/proof" target="_blank" rel="noopener noreferrer"><span class="source-title">Live proof</span><span class="source-meta">proof/</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
           <li><a href="/api/search?q=How%20do%20I%20deploy%20a%20contract%3F"><span class="source-title">API JSON</span><span class="source-meta">/api/search?q=</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></li>
         </ul>
-      </div>
-    </details>
+        </div>
+      </aside>
+    </div>
   </div>
+
+  <form class="ask" id="ask" autocomplete="off" role="search">
+    <div class="rail ws-grid">
+      <div class="ask-box">
+        <label class="sr" for="q">Question for the Pharos Developer Docs</label>
+        <input class="ask-input" id="q" name="q" type="search" inputmode="text" enterkeyhint="search" spellcheck="false" autocapitalize="off" autocorrect="off" maxlength="320" placeholder="Ask the docs…">
+        <button class="btn btn-primary ask-go" id="go" type="submit"><span class="swap"><span>Ask</span><span>Asking…</span></span></button>
+      </div>
+    </div>
+  </form>
+
+  <dialog class="sheet" id="about-sheet" aria-labelledby="sheet-h">
+    <div class="sheet-head"><h2 class="sheet-title" id="sheet-h">About Docs Search</h2><button class="sheet-close" id="about-close" type="button" aria-label="Close"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </dialog>
+  <p class="sr" id="announce" aria-live="polite"></p>
 </main>
 
 <!-- shell:footer 04 -->
 <footer class="foot">
   <div class="rail foot-inner">
-    <nav class="neighbours" aria-label="Previous and next task">
-      <p class="neighbour" data-task-neighbour="previous" hidden></p>
-      <p class="neighbour" data-task-neighbour="next" hidden></p>
-    </nav>
-    <div class="foot-line">
-      <p class="foot-tag">Pharos Agent Lab · Season of AI</p>
-      <ul class="foot-links" aria-label="Elsewhere">
-        <li><a class="icon-link" href="https://github.com/Rzbyte/pharos-season-of-ai" target="_blank" rel="noopener noreferrer" aria-label="Source code on GitHub, opens in a new tab" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a></li>
-        <li><a class="icon-link" href="https://docs.pharos.xyz/" target="_blank" rel="noopener noreferrer" aria-label="Pharos documentation, opens in a new tab" title="Pharos Docs"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M6 1.5h8.25L20 7.25V20.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-17a2 2 0 0 1 2-2Zm7.5 1.75V8.5h5.25L13.5 3.25ZM7.5 12h9v1.5h-9V12Zm0 3.5h9V17h-9v-1.5Zm0-7h3.5V10H7.5V8.5Z"/></svg></a></li>
-        <li><a class="icon-link" href="https://x.com/rzbyte_" target="_blank" rel="noopener noreferrer" aria-label="rzbyte_ on X, opens in a new tab" title="X"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a></li>
-      </ul>
-    </div>
+    <p class="foot-tag">Pharos Agent Lab<span class="foot-more"> · Season of AI</span></p>
+    <ul class="foot-links" aria-label="Elsewhere">
+      <li><a class="icon-link" href="https://github.com/Rzbyte/pharos-season-of-ai" target="_blank" rel="noopener noreferrer" aria-label="Source code on GitHub, opens in a new tab" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a></li>
+      <li><a class="icon-link" href="https://docs.pharos.xyz/" target="_blank" rel="noopener noreferrer" aria-label="Pharos documentation, opens in a new tab" title="Pharos Docs"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M6 1.5h8.25L20 7.25V20.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-17a2 2 0 0 1 2-2Zm7.5 1.75V8.5h5.25L13.5 3.25ZM7.5 12h9v1.5h-9V12Zm0 3.5h9V17h-9v-1.5Zm0-7h3.5V10H7.5V8.5Z"/></svg></a></li>
+      <li><a class="icon-link" href="https://x.com/rzbyte_" target="_blank" rel="noopener noreferrer" aria-label="rzbyte_ on X, opens in a new tab" title="X"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a></li>
+    </ul>
   </div>
 </footer>
 <!-- /shell:footer -->

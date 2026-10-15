@@ -46,6 +46,19 @@ describe("helpers", () => {
 });
 
 describe("stylesheet", () => {
+  test("the app page model: as tall as the screen on the dynamic viewport, no page scroll, no footer", () => {
+    const css = read("lab.css");
+    assert.match(css, /body\.app \{ height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; \}/);
+    assert.match(css, /body\.app > main \{ flex: 1 1 auto; min-height: 0; \}/);
+    assert.match(css, /body\.app > \.foot \{ display: none; \}/);
+  });
+
+  test("the gutters respect the safe area, so viewport-fit=cover never puts text under a notch", () => {
+    const css = read("lab.css");
+    assert.match(css, /padding-left: max\(var\(--pad-x\), env\(safe-area-inset-left\)\); padding-right: max\(var\(--pad-x\), env\(safe-area-inset-right\)\);/);
+    assert.match(css, /padding-block: var\(--space-2\) calc\(var\(--space-2\) \+ env\(safe-area-inset-bottom\)\);/, "the footer clears the home indicator");
+  });
+
   test("phone overrides come after the base rules they override (same layer, same specificity)", () => {
     const css = read("lab.css").replace(/\/\*[\s\S]*?\*\//g, "");
     const base = css.indexOf(".beacon::after { content:");
@@ -64,10 +77,11 @@ describe("sync", () => {
     const page = "<body>\n<!-- shell:header 02 -->old<!-- /shell:header -->\n<main></main>\n<!-- shell:footer 02 --><!-- /shell:footer -->\n</body>";
     const stamped = stampShell(page, templates);
     assert.match(stamped, /<span class="sr">Task <\/span><b>02<\/b> \/ 28/);
-    assert.match(stamped, /data-task-neighbour="next"/);
     assert.equal(stampShell(stamped, templates), stamped, "stamping twice changes nothing");
     assert.doesNotMatch(shellPart(templates.header, "lab"), /shell-tasks/);
-    assert.doesNotMatch(shellPart(templates.footer, "lab"), /neighbours/);
+    // Moving between tasks is the shell bar's job only: the footer is one line, the lab and its links.
+    assert.doesNotMatch(stamped, /neighbour/);
+    assert.match(shellPart(templates.footer, "02"), /^<footer class="foot">\s*<div class="rail foot-inner">\s*<p class="foot-tag">/);
     assert.throws(() => stampShell("<body></body>", templates), /expected a shell:header and a shell:footer marker/);
   });
 });
@@ -99,30 +113,52 @@ describe("task navigation in a browser", { skip }, () => {
         const { TASKS, LAB } = await import("/tasks.js");
         renderTaskNav(TASKS, "02", LAB);
         const step = (direction) => document.querySelector(`[data-task-step="${direction}"]`);
+        const count = document.querySelector("[data-task-count]");
+        const menu = document.getElementById("task-menu");
         return {
           home: document.querySelector("[data-lab-home]").getAttribute("href"),
-          count: document.querySelector("[data-task-count]").textContent,
+          count: [count.tagName, count.textContent, count.getAttribute("aria-expanded"), count.popoverTargetElement === menu],
           previous: [step("previous").tagName, step("previous").getAttribute("href"), step("previous").getAttribute("aria-label")],
           next: [step("next").tagName, step("next").getAttribute("href"), step("next").getAttribute("aria-disabled"), step("next").tabIndex],
-          footer: [...document.querySelectorAll("[data-task-neighbour]")].map((slot) => [slot.textContent, slot.querySelector("a")?.getAttribute("href") ?? null]),
+          menu: [...menu.querySelectorAll(".task-menu-row, .task-menu-all")].map((row) => [row.textContent.trim(), row.getAttribute("href"), row.getAttribute("aria-current")]),
+          footer: document.querySelectorAll("[data-task-neighbour], .neighbours").length,
         };
       });
     };
     assert.deepEqual(await render("/tasks/02"), {
       home: "/",
-      count: "Task 02 / 28",
+      count: ["BUTTON", "Task 02 / 28, switch task", "false", true],
       previous: ["A", "/tasks/01", "Previous task: 01 Contract State"],
       next: ["A", "/tasks/03", null, 0],
-      footer: [["Previous01Contract State", "/tasks/01"], ["Next03Docs Onboarding", "/tasks/03"]],
+      menu: [
+        ["01 Contract State Read", "/tasks/01", null],
+        ["02 Event Monitor Watch", "/tasks/02", "page"],
+        ["03 Docs Onboarding Audit", "/tasks/03", null],
+        ["04 Docs Search Query", "/tasks/04", null],
+        ["All 28 tasks", "/", null],
+      ],
+      footer: 0,
     });
+    // The switcher opens and closes as a popover, and says so on its button.
+    await page.click("button.shell-count");
+    assert.equal(await page.evaluate(() => document.getElementById("task-menu").matches(":popover-open")), true);
+    await page.waitForFunction(() => document.querySelector("button.shell-count").getAttribute("aria-expanded") === "true");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.querySelector("button.shell-count").getAttribute("aria-expanded") === "false");
     // The standalone Task 02 deployment serves this page at "/": Task 01 has its own deployment to link
-    // to, Task 03 has none, and there is no lab there.
+    // to, Tasks 03 and 04 have none, and there is no lab there.
     assert.deepEqual(await render("/"), {
       home: null,
-      count: "Task 02 / 28",
+      count: ["BUTTON", "Task 02 / 28, switch task", "false", true],
       previous: ["A", "https://pharos-task-01.vercel.app", "Previous task: 01 Contract State"],
       next: ["SPAN", null, "true", -1],
-      footer: [["Previous01Contract State", "https://pharos-task-01.vercel.app"], ["Next03Docs Onboarding", null]],
+      menu: [
+        ["01 Contract State Read", "https://pharos-task-01.vercel.app", null],
+        ["02 Event Monitor Watch", "https://pharos-task-02.vercel.app", "page"],
+        ["03 Docs Onboarding Audit, not linked from here", null, null],
+        ["04 Docs Search Query, not linked from here", null, null],
+      ],
+      footer: 0,
     });
     await browser.close();
   });

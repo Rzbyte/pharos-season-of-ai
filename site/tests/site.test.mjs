@@ -159,7 +159,7 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-open" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
@@ -238,16 +238,22 @@ describe("the site in a browser", { skip }, () => {
       home: document.querySelector("[data-lab-home]").getAttribute("href"),
       previous: document.querySelector('[data-task-step="previous"]').getAttribute("href"),
       next: document.querySelector('[data-task-step="next"]').getAttribute("href"),
-      footer: [...document.querySelectorAll("[data-task-neighbour] a")].map((a) => a.getAttribute("href")),
+      menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", footer: ["/tasks/01", "/tasks/03"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
+    // The switcher jumps straight to any built task.
+    await page.click("button.shell-count");
+    await page.click('#task-menu a[href="/tasks/01"]');
+    await page.waitForURL(`${base}/tasks/01`);
     await page.click("[data-lab-home]");
     await page.waitForURL(`${base}/`);
-    await page.click('a.row-open[href="/tasks/04"]');
+    // A landing row is one target: a tap on its description lands on the name's link, which covers the row.
+    const purpose = await page.locator('.row:has(a[href="/tasks/04"]) .row-purpose').boundingBox();
+    await page.mouse.click(purpose.x + purpose.width / 2, purpose.y + purpose.height / 2);
     await page.waitForURL(`${base}/tasks/04`);
     assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "05 is planned, so not linked");
     assert.deepEqual(problems, []);

@@ -1,30 +1,32 @@
 /* The lab's landing page: an index of instruments. Shared tokens, shell and primitives are in lab.css.
-   Built tasks are rows (number, name, one line, verb, tool, open); planned ones wait behind one row. */
+   Built tasks are rows (number, name, one line, verb, tool), each one link; planned ones wait behind
+   one row. */
 @layer task {
   .lab-head { gap: var(--space-2); }
   .lab-count { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); }
   .lab-count b { font-weight: 400; color: var(--text); }
 
   .rows-index { border-top: 1px solid var(--line-strong); }
+  /* A row is one target: the name's link covers it (::after), so the name is the link's whole name. */
   .row {
-    position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto; grid-template-areas: "n main open" "n meta open";
+    position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto; grid-template-areas: "n main go" "n meta go";
     align-items: center; gap: 2px var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line);
   }
   .row-n { grid-area: n; align-self: start; padding-top: 2px; font-family: var(--mono); font-size: var(--fs-meta); color: var(--accent); }
   .row-main { grid-area: main; display: grid; gap: 2px; min-width: 0; }
-  .row-title { font-size: 1rem; font-weight: 600; }
+  .row-title { font-size: 1rem; font-weight: 600; color: var(--text); text-decoration: none; }
+  a.row-title::after { content: ""; position: absolute; inset: 0; }
+  a.row-title:focus-visible { outline: none; }
+  .row:has(a.row-title:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
   .row-purpose { color: var(--text-2); font-size: var(--fs-small); }
   .row-verb { grid-area: meta; justify-self: start; }
   .row-tool { display: none; }
-  .row-open {
-    grid-area: open; display: inline-flex; align-items: center; gap: 6px; min-height: var(--target); padding: 0 var(--space-3);
-    border: 1px solid var(--line-strong); border-radius: var(--radius); color: var(--text); font-size: var(--fs-small); font-weight: 600; text-decoration: none; white-space: nowrap;
-  }
-  .row-open svg { width: 14px; height: 14px; }
-  .row-open:hover, .row-open:active { border-color: var(--text-3); background: var(--surface-2); }
-  .row-source { color: var(--text-2); }
+  .row-go { grid-area: go; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius); color: var(--text-3); }
+  .row-go svg { width: 16px; height: 16px; }
+  .row:has(a.row-title):hover .row-go, .row:has(a.row-title):active .row-go { color: var(--text); background: var(--surface-2); }
+  .row:has(a.row-title):hover .row-title { color: var(--accent); }
   @media (min-width: 760px) {
-    .row { grid-template-columns: 3rem minmax(0, 1fr) 5rem 8.5rem auto; grid-template-areas: "n main verb tool open"; padding-block: var(--space-4); }
+    .row { grid-template-columns: 3rem minmax(0, 1fr) 5rem 8.5rem auto; grid-template-areas: "n main verb tool go"; padding-block: var(--space-4); }
     .row-n { align-self: center; padding-top: 0; }
     .row-verb { grid-area: verb; }
     .row-tool { grid-area: tool; display: block; color: var(--text-3); font-size: var(--fs-meta); }

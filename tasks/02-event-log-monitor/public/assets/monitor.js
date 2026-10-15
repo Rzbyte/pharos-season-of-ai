@@ -20,7 +20,7 @@
 // - "Initial history": events already in the first window. Collapsed and not rendered until opened;
 //   then five per page, with its own pager.
 import { applyWindow, createFeed, shortHex } from "./feed.js";
-import { clockTime, groupDigits, linkExplorer, pageOf, reducedMotion, renderTaskNav, setText, settle } from "./lab.js";
+import { clockTime, groupDigits, linkExplorer, pageOf, reducedMotion, renderTaskNav, setText, settle, splitAmount, svgIcon } from "./lab.js";
 import { LAB, TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
@@ -31,6 +31,8 @@ const INTERVAL_MS = Number(main.dataset.interval) * 1000;
 const EVERY = `${Number(main.dataset.interval)} s`;
 /** Events per page, in both lists. */
 const PAGE_SIZE = 5;
+/** Pause and play, the Stop / Start button's two icons. */
+const TOGGLE_ICON = { stop: "M5.75 3.5v9M10.25 3.5v9", start: "M5 3.25v9.5L12.25 8 5 3.25Z" };
 const STATUS = {
   starting: ["Starting", "active"],
   monitoring: ["Monitoring", "active"],
@@ -300,7 +302,9 @@ function eventNode(item) {
   node.dataset.kind = item.type;
   const part = (name) => node.querySelector(`.${name}`);
   setText(part("event-kind"), item.type);
-  setText(part("event-num"), item.amount.formatted);
+  // The digits as decoded, split at the decimal point only so a wide list can align on it.
+  const { major, minor } = splitAmount(item.amount.formatted);
+  part("event-num").replaceChildren(Object.assign(document.createElement("span"), { className: "num-major", textContent: major }), Object.assign(document.createElement("span"), { className: "num-minor", textContent: minor }));
   setText(part("event-unit"), item.amount.symbol);
 
   // From → to; a Mint only has a recipient and a Burn only a sender worth naming.
@@ -355,11 +359,16 @@ function ago(ms) {
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min ago`;
 }
 
+/** One button: Stop while checking, Start when stopped. Its name is always the whole phrase; a narrow panel shows the first word. */
 function setControls() {
   const toggle = $("toggle");
-  toggle.dataset.action = stopped ? "start" : "stop";
+  const action = stopped ? "start" : "stop";
+  toggle.dataset.action = action;
   toggle.classList.toggle("btn-primary", stopped);
-  setText(toggle, stopped ? "Start monitoring" : "Stop monitoring");
+  const label = Object.assign(document.createElement("span"), { textContent: stopped ? "Start" : "Stop" });
+  label.append(Object.assign(document.createElement("span"), { className: "toggle-tail", textContent: " monitoring" }));
+  toggle.replaceChildren(svgIcon(TOGGLE_ICON[action]), label);
+  toggle.setAttribute("aria-label", stopped ? "Start monitoring" : "Stop monitoring");
 }
 
 function report(state, detail, note = "") {

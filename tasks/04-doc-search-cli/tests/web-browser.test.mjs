@@ -150,8 +150,12 @@ describe("the docs search page in a browser", { skip }, () => {
     const { page } = await open();
     await page.fill("#q", "help");
     await page.press("#q", "Enter");
-    assert.equal(await page.getAttribute("#cli-toggle", "aria-expanded"), "true");
-    assert.equal(await page.locator("#cli-body").isVisible(), true);
+    // On a phone About opens as a sheet, with CLI usage open in it.
+    assert.equal(await page.evaluate(() => document.getElementById("about-sheet").open), true);
+    assert.equal(await page.evaluate(() => document.getElementById("cli").open), true);
+    assert.equal(await page.locator("#cli .cli-body").isVisible(), true);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.evaluate(() => document.getElementById("about-sheet").open), false);
     assert.match(await (await ask(page, "pharos-docs q --nope")).locator(".turn-note").innerText(), /Unknown option --nope/);
     assert.equal(apiCalls, 0);
     await page.fill("#q", "clear");
@@ -233,6 +237,51 @@ describe("the docs search page in a browser", { skip }, () => {
     assert.equal(await page.locator(".turn").count(), 6);
   });
 
+  test("the workspace is the screen: the page never scrolls, the box never moves, the newest question comes to the top", async () => {
+    for (const [width, height] of [[390, 844], [1280, 860]]) {
+      const { page } = await open({ viewport: { width, height } });
+      const box = async () => page.locator(".ask-box").boundingBox();
+      const start = await box();
+      assert.ok(start.y + start.height <= height, `${width}px: the box is on screen`);
+      for (const question of ["What is the chain ID of the Atlantic testnet?", "How do I set up Foundry and deploy a contract to the Atlantic testnet?", "How do I deploy an Anchor program to Solana?", "How do I use Hardhat?"]) await ask(page, question);
+      // The smooth scroll that brings the newest question up has finished.
+      await page.waitForFunction(() => {
+        const scroll = document.getElementById("scroll");
+        return Math.abs(document.querySelector(".turn:last-child").getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16) < 2;
+      }, null, { timeout: 5_000 });
+      const layout = await page.evaluate(() => ({
+        page: document.documentElement.scrollHeight - innerHeight,
+        pageScroll: scrollY,
+        thread: document.getElementById("scroll").scrollHeight > document.getElementById("scroll").clientHeight,
+      }));
+      assert.deepEqual(layout, { page: 0, pageScroll: 0, thread: true }, `${width}px`);
+      assert.deepEqual(await box(), start, `${width}px: the box stays where it was`);
+      await page.context().close();
+    }
+  });
+
+  test("About: beside the thread with room, a sheet on a phone; New clears the thread", async () => {
+    const wide = await open({ viewport: { width: 1280, height: 860 } });
+    assert.equal(await wide.page.locator("#about").isVisible(), true);
+    assert.equal(await wide.page.locator("#about-open").isVisible(), false);
+    assert.equal(await wide.page.locator(".about-foot .foot-links a").count(), 3, "the lab's links, since the page has no footer");
+    const { page } = await open();
+    assert.equal(await page.locator("#about").isVisible(), false);
+    await page.click("#about-open");
+    assert.equal(await page.evaluate(() => document.getElementById("about-sheet").open && document.getElementById("about-sheet").contains(document.getElementById("about-content"))), true);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "about-close");
+    await page.click("#about-close");
+    assert.equal(await page.evaluate(() => !document.getElementById("about-sheet").open && document.getElementById("about").contains(document.getElementById("about-content"))), true);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "about-open", "focus goes back to About");
+    assert.equal(await page.locator("#clear").isHidden(), true);
+    await ask(page, "What is the chain ID of the Atlantic testnet?");
+    await page.click("#clear");
+    assert.equal(await page.locator(".turn").count(), 0);
+    assert.equal(await state(page), "idle");
+    assert.equal(await page.locator(".chip").first().isVisible(), true, "the examples are back");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "q");
+  });
+
   for (const scheme of ["dark", "light"]) {
     test(`layout at every width, ${scheme}: no overflow, 44px targets, compact type`, async () => {
       for (const [width, height] of WIDTHS) {
@@ -243,12 +292,20 @@ describe("the docs search page in a browser", { skip }, () => {
         await ask(page, "How do I set up Foundry and deploy a contract to the Atlantic testnet?");
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         assert.equal(overflow, 0, `${width}px overflows by ${overflow}px`);
-        const small = await page.$$eval("button:not(.chip), input, .sources a", (elements) =>
-          elements.filter((element) => element.getClientRects().length && element.getBoundingClientRect().height < 44).map((element) => element.id || element.className || element.tagName),
+        // A target is its box, or its ::after where a compact control widens its hit area that way.
+        const small = await page.$$eval("button, input, .sources a", (elements) =>
+          elements
+            .filter((element) => element.getClientRects().length)
+            .filter((element) => {
+              const after = getComputedStyle(element, "::after");
+              const height = element.getBoundingClientRect().height;
+              return (after.position === "absolute" ? height - parseFloat(after.top) - parseFloat(after.bottom) : height) < 44;
+            })
+            .map((element) => element.id || element.className || element.tagName),
         );
         assert.deepEqual(small, [], `${width}px: targets under 44px`);
         const sizes = await page.evaluate(() => ({ h1: parseFloat(getComputedStyle(document.querySelector("h1")).fontSize), body: parseFloat(getComputedStyle(document.body).fontSize), meta: parseFloat(getComputedStyle(document.querySelector(".turn-meta")).fontSize) }));
-        if (width < 600) assert.ok(sizes.h1 >= 27 && sizes.h1 <= 31, `${width}px: title ${sizes.h1}px`);
+        assert.equal(sizes.h1, 16, `${width}px: the workspace title is the bar's size`);
         assert.ok(sizes.body >= 15 && sizes.body <= 16, `body ${sizes.body}px`);
         assert.ok(sizes.meta >= 12 && sizes.meta <= 13, `meta ${sizes.meta}px`);
         const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);

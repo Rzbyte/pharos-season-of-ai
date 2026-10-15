@@ -79,9 +79,12 @@ describe("the page", () => {
   });
 
   test("the outcome first, then the journey and its log, then the three gaps, then proof", () => {
-    const order = [">Docs MCP Onboarding</h1>", ">Android · Termux · ARM64<", 'class="panel outcome"', ">Atlantic RPC connected<", ">View proof<", ">Watch video<", ">Journey</h2>", ">Step-by-step log<", ">Documentation gaps</h2>", ">Proof &amp; sources</h2>"].map((needle) => html.indexOf(needle));
+    const order = [">Docs MCP Onboarding</h1>", 'class="panel outcome"', ">Atlantic RPC connected<", ">View proof<", ">Watch video<", ">Goal<", ">Android · Termux · ARM64<", ">Journey</h2>", ">Step-by-step log<", ">Documentation gaps</h2>", ">Proof &amp; sources</h2>"].map((needle) => html.indexOf(needle));
     assert.ok(order.every((index) => index > 0), JSON.stringify(order));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
+    // One summary card: the outcome and its proof, then the goal and the environment it was reached in.
+    const card = html.slice(html.indexOf('<section class="panel outcome"'), html.indexOf("</section>", html.indexOf('<section class="panel outcome"')));
+    for (const needle of [">View proof<", '<dl class="context">', ">Goal<", ">Environment<", ">No laptop was available, so the whole run was done on a phone.<"]) assert.ok(card.includes(needle), needle);
     assert.equal(html.match(/<li class="gap">/g).length, 3);
     assert.equal(html.match(/<li class="step" data-stage="/g).length, 4);
     // The log and every exact query are collapsed, so the page is not a wall of text.

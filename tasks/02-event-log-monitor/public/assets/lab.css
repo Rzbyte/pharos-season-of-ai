@@ -16,9 +16,14 @@
  * raw values; Departure Mono only for small captions (.label).
  *
  * Scale (16px root):
- *   label 12 · meta 13 · small/button 14 · body 15→16 · section 20→22 · value 22→26 · title 28→34
+ *   label 12 · meta 13 · small/button 14 · body 15→16 · section 17→19 · value 20→24 · title 22→26
  * Spacing: 4 · 8 · 12 · 16 · 24 · 32 · 40. Page gutter 18px on phones, up to 40px. Panel padding 16px.
- * Rows and lists 8–12px apart, sections 32px apart. Every control is at least 44px to hit. */
+ * Rows and lists 8–12px apart, sections 24px apart on a phone and 32px with room. Every control is at
+ * least 44px to hit.
+ *
+ * Two page models. A document (.page): the task header, the workspace, then secondary sections, and
+ * the page scrolls. An app (body.app): one workspace exactly as tall as the screen, whose own regions
+ * scroll, for an interaction that grows with use (a conversation). Pick the one the interaction needs. */
 @layer tokens, base, shell, primitives, task;
 
 /* Self-hosted, SIL Open Font License 1.1 (licences next to the files). */
@@ -65,9 +70,9 @@
     --fs-meta: .8125rem;                                       /* 13 */
     --fs-small: .875rem;                                       /* 14: buttons, secondary text */
     --fs-body: clamp(.9375rem, .9rem + .15vw, 1rem);           /* 15 -> 16 */
-    --fs-h2: clamp(1.25rem, 1.18rem + .3vw, 1.375rem);         /* 20 -> 22 */
-    --fs-value: clamp(1.375rem, 1.25rem + .55vw, 1.625rem);    /* 22 -> 26 */
-    --fs-h1: clamp(1.75rem, 1.55rem + .9vw, 2.125rem);         /* 28 -> 34 */
+    --fs-h2: clamp(1.0625rem, 1rem + .25vw, 1.1875rem);        /* 17 -> 19 */
+    --fs-value: clamp(1.25rem, 1.15rem + .5vw, 1.5rem);         /* 20 -> 24, a step under the title */
+    --fs-h1: clamp(1.375rem, 1.25rem + .5vw, 1.625rem);        /* 22 -> 26 */
 
     --space-1: 4px;
     --space-2: 8px;
@@ -80,7 +85,8 @@
     --maxw: 1120px;
     --pad-x: clamp(18px, 4.5vw, 40px);
     --panel-pad: var(--space-4);
-    --section-gap: var(--space-8);
+    --section-gap: clamp(24px, 16px + 2vw, 32px);
+    --shell-h: 52px;
     --radius: 8px;
     --radius-sm: 6px;
     --target: 44px;
@@ -183,11 +189,17 @@
 
 /* ── shell: the frame every page shares ─────────────────────────────── */
 @layer shell {
-  .rail { width: 100%; max-width: var(--maxw); margin-inline: auto; padding-inline: var(--pad-x); }
+  /* The rail: the page's column. viewport-fit=cover lets a page run under a notch, so the gutter is at
+     least the safe area on each side. */
+  .rail {
+    width: 100%; max-width: var(--maxw); margin-inline: auto;
+    padding-left: max(var(--pad-x), env(safe-area-inset-left)); padding-right: max(var(--pad-x), env(safe-area-inset-right));
+  }
 
-  /* Shell bar: the lab, where this task sits among the 28 (with arrows either side), the theme. */
+  /* Shell bar: the lab, where this task sits among the 28 (arrows either side of the counter, which
+     opens the task switcher), the theme. The only task navigation on a page. */
   .shell { border-bottom: 1px solid var(--line); }
-  .shell-bar { display: flex; align-items: center; gap: var(--space-2); min-height: 52px; }
+  .shell-bar { display: flex; align-items: center; gap: var(--space-1); min-height: var(--shell-h); }
   .shell-home {
     display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--target); min-width: 0; margin-right: auto;
     color: var(--text-2); font-size: var(--fs-small); font-weight: 600; white-space: nowrap; text-decoration: none;
@@ -199,8 +211,14 @@
   @media (min-width: 420px) { .shell-home .when-wide { display: inline; } }
 
   .shell-tasks { display: flex; align-items: center; }
-  .shell-count { min-width: 4.5ch; padding-inline: 2px; text-align: center; font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap; }
+  .shell-count {
+    display: inline-flex; align-items: center; justify-content: center; gap: 2px; min-width: 4.5ch; min-height: var(--target); padding: 0 4px;
+    border: 0; border-radius: var(--radius); background: none; font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); white-space: nowrap;
+  }
   .shell-count b { font-weight: 400; color: var(--text); }
+  button.shell-count { cursor: pointer; }
+  button.shell-count:hover, button.shell-count:active, button.shell-count[aria-expanded="true"] { background: var(--surface-2); color: var(--text-2); }
+  .shell-count svg { width: 12px; height: 12px; color: var(--text-3); }
   .shell-step {
     display: grid; place-items: center; width: var(--target); height: var(--target); border-radius: var(--radius);
     color: var(--text-2); text-decoration: none;
@@ -208,50 +226,81 @@
   .shell-step svg { width: 16px; height: 16px; }
   a.shell-step:hover, a.shell-step:active { color: var(--text); background: var(--surface-2); }
   .shell-step[aria-disabled="true"] { color: var(--line-strong); }
+  /* The narrowest phones: the arrows give up a little width, still 44px tall and 36px wide to hit. */
+  @media (max-width: 359px) { .shell-step { width: 36px; } }
+
+  /* Task switcher: every built task, this one marked, then the lab. A native popover (Esc and a tap
+     outside close it), hung from the shell bar at the rail's right edge. */
+  .task-menu {
+    position: fixed; inset: auto; top: calc(var(--shell-h) + 4px);
+    right: max(var(--pad-x), env(safe-area-inset-right), calc((100vw - var(--maxw)) / 2 + var(--pad-x)));
+    width: min(21rem, calc(100vw - 2 * var(--pad-x))); max-height: calc(100dvh - var(--shell-h) - 16px); overflow: auto;
+    margin: 0; padding: var(--space-2); border: 1px solid var(--line-strong); border-radius: var(--radius);
+    background: var(--surface); color: var(--text);
+  }
+  .task-menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding: var(--space-1) var(--space-2) var(--space-2); }
+  .task-menu-count { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); }
+  .task-menu-row {
+    display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: center; gap: var(--space-2);
+    min-height: var(--target); padding: 0 var(--space-2); border-radius: var(--radius-sm); color: var(--text); text-decoration: none;
+  }
+  a.task-menu-row:hover, a.task-menu-row:active { background: var(--surface-2); }
+  .task-menu-row[aria-current="page"] { background: var(--accent-soft); }
+  .task-menu-row[aria-disabled="true"] { color: var(--text-3); }
+  .task-menu-n { font-family: var(--mono); font-size: var(--fs-meta); color: var(--accent); }
+  .task-menu-title { min-width: 0; font-size: var(--fs-small); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-menu-all {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--target); margin-top: var(--space-2);
+    padding: 0 var(--space-2); border-top: 1px solid var(--line); color: var(--text-2); font-size: var(--fs-small); font-weight: 600; text-decoration: none;
+  }
+  .task-menu-all svg { width: 14px; height: 14px; }
+  .task-menu-all:hover, .task-menu-all:active { color: var(--text); }
 
   /* Theme toggle: offers the other theme. Icons share one cell so nothing moves. */
   .theme-toggle {
     display: none; place-items: center; width: var(--target); height: var(--target); padding: 0;
-    border: 1px solid var(--line); border-radius: var(--radius); background: none; cursor: pointer; color: var(--text-2);
+    border: 0; border-radius: var(--radius); background: none; cursor: pointer; color: var(--text-2);
   }
   .js .theme-toggle { display: grid; }
-  .theme-toggle:hover, .theme-toggle:active { color: var(--text); border-color: var(--line-strong); }
+  .theme-toggle:hover, .theme-toggle:active { color: var(--text); background: var(--surface-2); }
   .theme-icons { display: grid; }
   .theme-icons > * { grid-area: 1 / 1; }
   .theme-icons svg { width: 16px; height: 16px; }
   .when-dark { visibility: var(--if-dark); }
   .when-light { visibility: var(--if-light); }
 
-  /* Page: the task header, the workspace, then the secondary sections. */
-  .page { display: grid; align-content: start; gap: var(--section-gap); padding-block: var(--space-6) var(--space-10); }
-  @media (min-width: 900px) { .page { padding-top: var(--space-8); } }
+  /* Page (a document): the task header, the workspace, then the secondary sections. */
+  .page { display: grid; align-content: start; gap: var(--section-gap); padding-block: var(--space-4) var(--space-8); }
+  @media (min-width: 900px) { .page { padding-block: var(--space-6) var(--space-10); } }
 
   /* TaskHeader: "01 · READ", the subject, and the one line that says how it works. */
-  .task-head { display: grid; gap: var(--space-1); min-width: 0; }
+  .task-head { display: grid; gap: 2px; min-width: 0; }
   .task-kicker { display: flex; gap: var(--space-2); align-items: baseline; }
   .task-kicker .task-n { color: var(--accent); }
-  .task-title { font-size: var(--fs-h1); line-height: 1.15; letter-spacing: -.02em; }
+  .task-title { font-size: var(--fs-h1); line-height: 1.2; letter-spacing: -.015em; }
   .task-via { color: var(--text-2); font-size: var(--fs-small); }
 
-  /* Footer: the neighbours, then the lab line and its links. */
+  /* Footer: one line, the lab and its links. Moving between tasks is the shell bar's job. */
   .foot { border-top: 1px solid var(--line); }
-  .foot-inner { display: grid; gap: var(--space-4); padding-block: var(--space-6) var(--space-8); }
-  .neighbours { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2) var(--space-6); font-size: var(--fs-small); }
-  /* Linked or not, a neighbour line has the same 44px height, so the two sides line up. */
-  .neighbour { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-2); min-height: var(--target); color: var(--text-3); }
-  .neighbour[data-task-neighbour="next"] { margin-left: auto; justify-content: flex-end; text-align: right; }
-  .neighbour-n { font-family: var(--mono); font-size: var(--fs-meta); }
-  .neighbour-title { color: var(--text); font-weight: 600; text-decoration: none; }
-  a.neighbour-title { display: inline-flex; align-items: center; min-height: var(--target); }
-  a.neighbour-title:hover { color: var(--accent); }
-  .neighbour-tag { font-size: var(--fs-meta); }
-  .foot-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--line); }
-  .foot-line:first-child { padding-top: 0; border-top: 0; }
+  .foot-inner {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--space-4);
+    padding-block: var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
+  }
   .foot-tag { color: var(--text-3); font-size: var(--fs-meta); }
+  /* The narrowest phones keep the footer to one line. */
+  @media (max-width: 379px) { .foot-more { display: none; } }
   .foot-links { display: flex; margin-right: -12px; }
   .icon-link { display: grid; place-items: center; width: var(--target); height: var(--target); border-radius: var(--radius); color: var(--text-2); }
   .icon-link svg { width: 20px; height: 20px; }
   .icon-link:hover, .icon-link:focus-visible, .icon-link:active { color: var(--accent); }
+
+  /* App (a workspace): the page is exactly the screen's height, on the dynamic viewport, so a phone's
+     browser bars, and the on-screen keyboard where the browser resizes for it, never cover it. Its
+     regions scroll inside it and the document does not. The lab line moves into the page's own About. */
+  body.app { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+  body.app > .shell { flex: none; }
+  body.app > main { flex: 1 1 auto; min-height: 0; }
+  body.app > .foot { display: none; }
 }
 
 /* ── primitives ─────────────────────────────────────────────────────── */
@@ -440,6 +489,30 @@
   .toggle-row[aria-expanded="true"] .chev svg { transform: rotate(180deg); }
   .toggle-row:hover .chev, .toggle-row:active .chev { color: var(--text); }
 
+  /* Sheet: secondary content on demand, in a modal <dialog> (Esc closes it, the page behind is inert):
+     rising from the bottom edge on a phone, a panel at the right with room. Its head stays in view
+     while its body scrolls. */
+  .sheet {
+    width: 100%; max-width: none; max-height: min(88dvh, 44rem); margin: auto 0 0; padding: 0; overflow: auto; overscroll-behavior: contain;
+    border: 1px solid var(--line-strong); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--surface); color: var(--text);
+  }
+  .sheet::backdrop { background: rgb(0 0 0 / .55); }
+  .sheet-head {
+    position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+    min-height: 52px; padding: 0 var(--space-2) 0 var(--pad-x); border-bottom: 1px solid var(--line); background: var(--surface);
+  }
+  .sheet-title { font-size: 1rem; }
+  .sheet-close {
+    display: grid; place-items: center; width: var(--target); height: var(--target); padding: 0; border: 0; border-radius: var(--radius);
+    background: none; color: var(--text-2); cursor: pointer;
+  }
+  .sheet-close svg { width: 16px; height: 16px; }
+  .sheet-close:hover, .sheet-close:active { color: var(--text); background: var(--surface-2); }
+  .sheet-body { padding: var(--space-2) var(--pad-x) calc(var(--space-6) + env(safe-area-inset-bottom)); }
+  @media (min-width: 600px) {
+    .sheet { width: min(26rem, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: 16px 16px 16px auto; border-bottom: 1px solid var(--line-strong); border-radius: var(--radius); }
+  }
+
   /* Counts: one number per claim, in a ruled grid (proof). */
   .counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--line); }
   .counts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--space-3); background: var(--surface); }
@@ -492,6 +565,7 @@
   @keyframes beacon { from { transform: translateX(-100%); } to { transform: translateX(100cqw); } }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes settle { from { opacity: .35; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+  @keyframes sheet { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: no-preference) {
     :root { interpolate-size: allow-keywords; }
     .status[data-tone="active"] .status-dot { animation: pulse 1.1s ease-in-out infinite; }
@@ -499,7 +573,9 @@
     .panel[aria-busy="true"] [data-refresh] svg { animation: spin 1s linear infinite; }
     .measured { transition: opacity .2s ease; }
     .settle { animation: settle .3s var(--ease) backwards; }
-    .btn, .btn-quiet, .action, .icon-link, .input, .theme-toggle, .shell-step, .pager-btn { transition: color .15s ease, background-color .15s ease, border-color .15s ease; }
+    .btn, .btn-quiet, .action, .icon-link, .input, .theme-toggle, .shell-step, .shell-count, .pager-btn, .sheet-close, .task-menu-row { transition: color .15s ease, background-color .15s ease, border-color .15s ease; }
+    .sheet[open] { animation: sheet .22s var(--ease); }
+    .task-menu:popover-open { animation: settle .16s var(--ease); }
     .chev svg { transition: transform .2s var(--ease); }
     .disclosure::details-content { height: 0; overflow: clip; transition: height .25s var(--ease), content-visibility .25s allow-discrete; }
     .disclosure[open]::details-content { height: auto; }

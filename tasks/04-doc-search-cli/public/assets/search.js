@@ -6,16 +6,24 @@
 //
 // States, on <body data-state>: idle (nothing asked yet), searching, answer, no-answer, error, and
 // note (a version, history or option message).
-// The thread keeps the last MAX_TURNS questions; older ones are removed, so the page stays bounded.
+//
+// The page is a workspace (body.app in lab.css): it is exactly the screen's height, the question box
+// stays at the bottom, and only the thread scrolls. The thread keeps the last MAX_TURNS questions;
+// older ones are removed, so it stays bounded. A new question is brought to the top of the thread, so
+// its answer is read from its first line. New clears the thread. How it answers is beside the thread
+// with room; on a smaller screen About opens the same content in a sheet.
 import { createHistory, parseCommand, REASONS } from "./command.js";
-import { ICON, renderTaskNav, svgIcon, wireToggle } from "./lab.js";
+import { ICON, reducedMotion, renderTaskNav, svgIcon } from "./lab.js";
 import { LAB, TASKS } from "./tasks.js";
 
 const $ = (id) => document.getElementById(id);
 const API = $("main").dataset.api;
 const thread = $("thread");
+const scroller = $("scroll");
 const input = $("q");
 const go = $("go");
+const sheet = $("about-sheet");
+const about = $("about-content");
 const history = createHistory();
 const MAX_TURNS = 6;
 const STATE = { answered: "answer", no_answer: "no-answer", error: "error" };
@@ -31,7 +39,26 @@ const OUTCOME = {
 let busy = false;
 
 renderTaskNav(TASKS, "04", LAB);
-wireToggle($("cli-toggle"));
+// The lab's links: the footer is not shown on this page, so About carries a copy of its line.
+const foot = document.querySelector(".foot .foot-inner");
+if (foot) about.append(Object.assign(foot.cloneNode(true), { className: "about-foot" }));
+$("about-open").addEventListener("click", () => openAbout());
+$("about-close").addEventListener("click", () => sheet.close());
+// A tap on the backdrop (the dialog itself, outside its content) closes the sheet.
+sheet.addEventListener("click", (event) => {
+  if (event.target === sheet) sheet.close();
+});
+// Back beside the thread when the sheet closes, so there is only ever one copy of About. The dialog
+// itself returns focus to where it was before it opened. A screen that gains the room for About beside
+// the thread closes the sheet.
+sheet.addEventListener("close", () => $("about").append(about));
+matchMedia("(min-width: 1000px)").addEventListener("change", (event) => {
+  if (event.matches && sheet.open) sheet.close();
+});
+$("clear").addEventListener("click", () => {
+  clear();
+  input.focus();
+});
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -64,14 +91,11 @@ async function submit(line) {
   if (command.kind === "empty") return;
   history.push(line.trim());
   input.value = "";
-  if (command.kind === "clear") {
-    thread.replaceChildren();
-    thread.hidden = true;
-    return setState("idle");
-  }
+  if (command.kind === "clear") return clear();
   if (command.kind === "help") {
-    if ($("cli-toggle").getAttribute("aria-expanded") !== "true") $("cli-toggle").click();
-    return $("cli-toggle").focus();
+    $("cli").open = true;
+    openAbout();
+    return $("cli").querySelector("summary").focus();
   }
   if (command.kind === "version" || command.kind === "history" || command.kind === "error") {
     // The history before this command, not the command itself.
@@ -81,7 +105,8 @@ async function submit(line) {
     turn.removeAttribute("aria-busy");
     turn.append(el("p", command.kind === "error" ? "turn-note turn-note-error" : "turn-note", text));
     announce(text);
-    return setState("note");
+    setState("note");
+    return reveal(turn);
   }
 
   const turn = addTurn(command.question, command.json);
@@ -91,6 +116,9 @@ async function submit(line) {
   pending.firstChild.setAttribute("aria-hidden", "true");
   setBusy(true);
   setState("searching");
+  reveal(turn);
+  // On a touch screen the keyboard goes, so the answer has the screen; Ask again brings it back.
+  if (matchMedia("(pointer: coarse)").matches) input.blur();
 
   let result = null;
   let problem = null;
@@ -114,7 +142,30 @@ async function submit(line) {
     announce(OUTCOME[result.status] ? OUTCOME[result.status](result) : "Search failed.");
   }
   setBusy(false);
-  turn.scrollIntoView({ block: "nearest" });
+  // The answer is read from the question down: bring the question back if it has left the view.
+  if (turn.getBoundingClientRect().top < scroller.getBoundingClientRect().top) reveal(turn);
+}
+
+/** Scroll the thread (not the page) so `turn` starts at the top of it. */
+function reveal(turn) {
+  const top = scroller.scrollTop + turn.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 16;
+  scroller.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? "auto" : "smooth" });
+}
+
+/** Empty the thread: back to the start, with the examples. */
+function clear() {
+  thread.replaceChildren();
+  thread.hidden = true;
+  $("clear").hidden = true;
+  scroller.scrollTop = 0;
+  setState("idle");
+}
+
+/** About in the sheet, on a screen without room for it beside the thread. */
+function openAbout() {
+  if (getComputedStyle($("about")).display !== "none") return;
+  $("sheet-body").append(about);
+  if (!sheet.open) sheet.showModal();
 }
 
 /** One question in the thread, newest last; the oldest goes when there are more than MAX_TURNS. */
@@ -127,6 +178,7 @@ function addTurn(question, json = false) {
   turn.append(asked);
   thread.append(turn);
   thread.hidden = false;
+  $("clear").hidden = false;
   while (thread.children.length > MAX_TURNS) thread.firstElementChild.remove();
   return turn;
 }

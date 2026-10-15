@@ -109,7 +109,7 @@ export function renderMain(data) {
     data.environment && ["Environment", `<span class="env">${esc(data.environment)}</span>${data.environmentNote ? `<span class="context-note">${esc(data.environmentNote)}</span>` : ""}`],
   ].filter(Boolean);
   const contextHtml = context.length
-    ? [`  <dl class="context">`, ...context.map(([key, value]) => `    <div><dt>${key}</dt><dd>${value}</dd></div>`), `  </dl>`]
+    ? [`    <dl class="context">`, ...context.map(([key, value]) => `      <div><dt>${key}</dt><dd>${value}</dd></div>`), `    </dl>`]
     : [];
 
   const actions = [
@@ -127,6 +127,7 @@ export function renderMain(data) {
     }),
     `    </ul>`,
     ...(actions.length ? [`    <p class="outcome-actions">${actions.join("")}</p>`] : []),
+    ...contextHtml,
     `  </section>`,
   ];
 
@@ -187,7 +188,9 @@ export function renderMain(data) {
     ? [`  <dialog class="viewer" id="viewer" aria-label="Evidence"><form method="dialog"><button class="btn viewer-close" type="submit">Close</button></form><img id="viewer-img" alt=""></dialog>`]
     : [];
 
-  return [`<main id="main" class="rail page" data-task="03">`, ...head, ...contextHtml, "", ...outcome, "", ...journey, ...(gaps.length ? ["", ...gaps] : []), "", ...proof, ...dialog, `</main>`].join("\n");
+  // One summary card (the outcome, its proof, then the goal and the environment) leads on a phone and
+  // stays beside the story with room; the journey, the gaps and the proof follow in reading order.
+  return [`<main id="main" class="rail page case-page" data-task="03">`, ...head, "", ...outcome, "", ...journey, ...(gaps.length ? ["", ...gaps] : []), "", ...proof, ...dialog, `</main>`].join("\n");
 }
 
 /** The whole page. */

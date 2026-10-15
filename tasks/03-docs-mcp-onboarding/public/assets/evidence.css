@@ -1,15 +1,22 @@
-/* Task 03 workspace: an evidence journey. Shared tokens, shell and primitives are in lab.css. */
+/* Task 03 workspace: an evidence journey, read as a case study. Shared tokens, shell and primitives are
+   in lab.css. One summary card (outcome, proof, goal, environment) leads; then the journey, the gaps and
+   the proof. With room the card holds its place in a column beside the story. */
 @layer task {
-  /* Goal and environment: two short lines, not a report. */
-  .context { display: grid; gap: var(--space-1); margin-top: calc(-1 * var(--space-4)); }
-  .context > div { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); font-size: var(--fs-small); }
-  .context dt { color: var(--text-3); }
+  @media (min-width: 1024px) {
+    .case-page { grid-template-columns: minmax(0, 1fr) 21rem; column-gap: var(--space-10); }
+    .case-page > .task-head { grid-column: 1 / -1; }
+    .case-page > .outcome { grid-column: 2; grid-row: 2 / span 3; position: sticky; top: var(--space-4); align-self: start; }
+    .case-page > :not(.task-head, .outcome) { grid-column: 1; }
+  }
+
+  /* Outcome: the result first, plainly; then the goal and the environment it was reached in. */
+  .outcome { display: grid; gap: var(--space-3); }
+  .context { display: grid; gap: var(--space-2); margin-top: var(--space-1); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+  .context > div { display: grid; gap: 2px; font-size: var(--fs-small); }
+  .context dt { color: var(--text-3); font-size: var(--fs-meta); }
   .context dd { display: flex; flex-wrap: wrap; gap: 0 var(--space-2); color: var(--text-2); }
   .env { color: var(--text); font-weight: 600; }
   .context-note { color: var(--text-3); }
-
-  /* Outcome: the result first, plainly. */
-  .outcome { display: grid; gap: var(--space-3); }
   .outcome .status { align-items: center; font-size: var(--fs-body); }
   .checks { display: grid; gap: var(--space-2); }
   .checks li { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-small); color: var(--text); }
@@ -38,22 +45,22 @@
   .query + .query { margin-top: var(--space-2); }
   .cmd { margin: 0; padding: var(--space-2) var(--space-3); overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); font: 400 var(--fs-meta)/1.6 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 
-  /* Journey: four stages in a row with room, a column on a phone. The stage names carry the story;
-     a detail line appears only where the evidence gives one. */
-  .journey { display: grid; gap: 0; border-top: 1px solid var(--line); }
-  .step { position: relative; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
-  .step-mark { grid-row: span 2; font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-3); padding-top: 2px; }
-  .step-name { font-weight: 600; }
-  .step-detail { grid-column: 2; color: var(--text-2); font-size: var(--fs-small); }
-  .step[data-stage="blocked"] .step-name::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: var(--space-2); border-radius: 50%; background: var(--warning); vertical-align: .08em; }
-  .step[data-stage="successful"] .step-name::after { content: ""; display: inline-block; width: 8px; height: 8px; margin-left: var(--space-2); border-radius: 50%; background: var(--success); vertical-align: .08em; }
-  @media (min-width: 760px) {
-    .journey { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border-bottom: 1px solid var(--line); }
-    .step { grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--space-1); padding: var(--space-3) var(--space-4) var(--space-4) 0; border-bottom: 0; }
-    .step + .step { padding-left: var(--space-4); border-left: 1px solid var(--line); }
-    .step-mark { grid-row: auto; }
-    .step-detail { grid-column: 1; }
+  /* Journey: a timeline, one stage under the other at every width, so each stage's line reads at a
+     comfortable measure. The marker carries the stage's number; blocked is amber and the end green, and
+     each stage also says what it was in words. */
+  .journey { display: grid; }
+  .step { position: relative; display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); gap: 2px var(--space-3); padding-bottom: var(--space-4); }
+  .step:last-child { padding-bottom: 0; }
+  .step::before { content: ""; position: absolute; left: calc(.875rem - 1px); top: 1.75rem; bottom: 2px; width: 2px; background: var(--line); }
+  .step:last-child::before { content: none; }
+  .step-mark {
+    grid-row: span 2; display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border: 1.5px solid var(--line-strong); border-radius: 50%;
+    background: var(--bg); font-family: var(--mono); font-size: var(--fs-label); color: var(--text-2);
   }
+  .step[data-stage="blocked"] .step-mark { border-color: var(--warning); color: var(--warning); }
+  .step[data-stage="successful"] .step-mark { border-color: var(--success); background: var(--success); color: var(--bg); }
+  .step-name { padding-top: 3px; font-weight: 600; }
+  .step-detail { grid-column: 2; max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); }
 
   /* Gaps: title, one line of what happened, the suggested fix, and a thumbnail to open the evidence. */
   .gaps { display: grid; border-top: 1px solid var(--line); }

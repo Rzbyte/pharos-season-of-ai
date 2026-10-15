@@ -383,9 +383,11 @@ describe("the Task 01 page in a browser", { skip }, () => {
     const system = await look();
     assert.deepEqual([system.theme, system.saved, system.background, system.label, system.icon], [null, null, BACKGROUND.light, "Switch to dark theme", "when-light"]);
 
-    // Keyboard: from the skip link, Tab reaches the next task's arrow (a link once Task 02 has an
-    // address), then the toggle; Enter switches.
+    // Keyboard: from the skip link, Tab reaches the task switcher, then the next task's arrow (a link
+    // once Task 02 has an address), then the toggle; Enter switches.
     await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), "Task 01 / 28, switch task");
     await page.keyboard.press("Tab");
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Next task: 02 Event Monitor");
     await page.keyboard.press("Tab");
@@ -892,24 +894,30 @@ describe("the Task 01 page in a browser", { skip }, () => {
     assert.equal(verboseAi.requests.length, 1, "the same result was explained once; every other width was served from the cache");
   });
 
-  test("explain: beside the result on wide screens, under it on phones and tablets", async () => {
-    for (const [width, height, beside] of [[390, 844, false], [768, 1024, false], [1024, 768, true], [1280, 860, true]]) {
+  test("explain: under the result; on a desktop the inspector sits beside the snapshot, its result on the first screen", async () => {
+    for (const [width, height, panes] of [[390, 844, false], [768, 1024, false], [1024, 768, true], [1280, 860, true]]) {
       const { context, page } = await open({ width, height });
       await inspect(page, MINED, "success");
       await explainResult(page);
       const layout = await page.evaluate(() => {
-        const result = document.getElementById("inspect-result").getBoundingClientRect();
-        const explain = document.getElementById("explain").getBoundingClientRect();
-        const panel = document.getElementById("inspect-panel").getBoundingClientRect();
-        return { result: [result.left, result.right, result.top, result.bottom].map(Math.round), explain: [explain.left, explain.right, explain.top, explain.bottom].map(Math.round), panel: Math.round(panel.width) };
+        const box = (id) => document.getElementById(id).getBoundingClientRect();
+        const [result, explain, snapshot, inspector] = ["inspect-result", "explain", "snapshot", "inspector"].map(box);
+        return {
+          result: [result.left, result.right, result.top, result.bottom].map(Math.round),
+          explain: [explain.left, explain.right, explain.top, explain.bottom].map(Math.round),
+          snapshot: [snapshot.right, snapshot.top].map(Math.round),
+          inspector: [inspector.left, inspector.top].map(Math.round),
+          scroll: Math.round(scrollY),
+        };
       });
       const where = `${width}: ${JSON.stringify(layout)}`;
-      if (beside) {
-        assert.ok(layout.explain[0] >= layout.result[1] + 20, `${where}: the explanation starts right of the result`);
-        assert.ok(Math.abs(layout.explain[2] - layout.result[2]) <= 16, `${where}: the two start at the same height`);
+      assert.ok(layout.explain[2] >= layout.result[3], `${where}: the explanation follows the result`);
+      assert.deepEqual([layout.explain[0], layout.explain[1]], [layout.result[0], layout.result[1]], `${where}: at the same width`);
+      if (panes) {
+        assert.ok(layout.inspector[0] >= layout.snapshot[0] + 16, `${where}: the inspector is beside the snapshot`);
+        assert.ok(layout.result[2] + layout.scroll < height, `${where}: the result starts on the first screen`);
       } else {
-        assert.ok(layout.explain[2] >= layout.result[3], `${where}: the explanation follows the result`);
-        assert.deepEqual([layout.explain[0], layout.explain[1]], [layout.result[0], layout.result[1]], `${where}: at the same width`);
+        assert.ok(layout.inspector[1] > layout.snapshot[1], `${where}: the inspector follows the snapshot`);
       }
       await context.close();
     }
@@ -1099,7 +1107,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     await context.close();
   });
 
-  test("a wallet-like address, explained for what it is, fits every width in both themes, beside the result on a desktop", async () => {
+  test("a wallet-like address, explained for what it is, fits every width in both themes, the explanation under the result", async () => {
     const asked = ai.requests.length;
     for (const theme of ["dark", "light"]) {
       for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [1280, 860]]) {
@@ -1125,8 +1133,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
           const facts = [...document.querySelectorAll("#inspect-result dl > div")].map((row) => [row.querySelector("dt").textContent, Math.round(row.getBoundingClientRect().top)]);
           return { result: box("#inspect-result"), explain: box("#explain"), tops: Object.fromEntries(facts) };
         });
-        if (width === 1280) assert.ok(layout.explain.left >= layout.result.right + 20, `${where}: the explanation sits beside the result`);
-        else assert.ok(layout.explain.top >= layout.result.bottom, `${where}: the explanation follows the result`);
+        assert.ok(layout.explain.top >= layout.result.bottom, `${where}: the explanation follows the result`);
         // Where the result has room (a tablet), short rows pair up, as in every other result.
         const paired = layout.tops["Address type"] === layout.tops.Block && layout.tops["Native balance"] === layout.tops["Transactions sent"];
         assert.equal(paired, width === 768, `${where}: rows paired ${JSON.stringify(layout.tops)}`);

@@ -23,10 +23,26 @@
     .snap-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "supply rows" "contract rows"; gap: var(--space-4) var(--space-6); }
     .snap-body > .rows { align-self: start; }
   }
+  /* Narrower: the one-word values pair up (name and symbol, decimals and paused) and the network takes
+     a full line, three rows instead of five. Only the layout moves; the list is read in its own order. */
+  @container panel (max-width: 679px) {
+    .snap-body > .rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row dense; column-gap: var(--space-4); }
+    .snap-body > .rows > div { grid-template-columns: 4.75rem minmax(0, 1fr); gap: 2px var(--space-2); }
+    .snap-body > .rows > .row-wide { grid-column: 1 / -1; }
+  }
 
   /* The supply: one line at the value size; below 18px the unit wraps instead (fitFigure). */
   .figure { display: block; white-space: nowrap; }
   .figure.wrap .figure-unit { display: block; margin-left: 0; }
+
+  /* With room, two panes: the contract's state on the left, held in view, and the inspector on the
+     right, so a result lands beside the state instead of below it. */
+  @media (min-width: 1024px) {
+    .state-page { grid-template-columns: minmax(25rem, 5fr) minmax(0, 7fr); column-gap: var(--space-6); }
+    .state-page > .task-head, .state-page > #proof { grid-column: 1 / -1; }
+    .state-page > #snapshot { position: sticky; top: var(--space-4); align-self: start; }
+    .state-page > #inspector { align-self: start; }
+  }
 
   /* Inspector */
   .field-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--space-4); }
@@ -46,7 +62,9 @@
   .inspect-result .hex-sub { margin-top: 2px; }
   .inspect-message { margin-top: var(--space-3); max-width: 62ch; color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
 
-  /* Explain this result: after the result; beside it on a wide panel, so it never doubles the page. */
+  /* Explain this result: after the result; beside it on a panel wide enough for both (the inspector
+     in a full-width page). On a desktop the inspector shares the page with the snapshot, so there the
+     explanation follows the result. */
   .explain { min-width: 0; margin-top: var(--space-4); }
   .btn-explain { width: 100%; }
   @container panel (min-width: 460px) { .btn-explain { width: auto; } }

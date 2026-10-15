@@ -23,15 +23,24 @@ describe("the landing page", () => {
     const rows = [...html.matchAll(/<li class="row">([\s\S]*?)<\/li>/g)].map(([, row]) => row);
     assert.equal(rows.length, 4);
     for (const [index, task] of TASKS.filter((entry) => entry.status === "built").entries()) {
-      for (const part of [`<span class="row-n">${task.n}</span>`, `<span class="row-title">${task.title}</span>`, `>${task.verb}</span>`, `>${task.purpose.replaceAll("'", "&#39;")}</span>`]) assert.ok(rows[index].includes(part), `${task.n}: ${part}`);
+      for (const part of [`<span class="row-n">${task.n}</span>`, `<a class="row-title" href="/tasks/${task.n}">${task.title}</a>`, `>${task.verb}</span>`, `>${task.purpose.replaceAll("'", "&#39;")}</span>`]) assert.ok(rows[index].includes(part), `${task.n}: ${part}`);
     }
     assert.match(html, /<p class="lab-count"><b>4<\/b> \/ 28 built<\/p>/);
   });
 
   test("every built row opens its page on this site, /tasks/NN, in place; never a dead link", () => {
-    assert.deepEqual([...html.matchAll(/<a class="row-open" href="([^"]+)">/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04"]);
-    assert.doesNotMatch(html, /vercel\.app|row-source/);
+    assert.deepEqual([...html.matchAll(/<a class="row-title" href="([^"]+)">/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04"]);
+    assert.doesNotMatch(html, /vercel\.app|row-source|row-open/);
     assert.doesNotMatch(html, /href=""|href="#"|href="null"/);
+  });
+
+  test("a row is one target: the name is the link and it covers the whole row; one link per row", () => {
+    const css = read("public/assets/landing.css");
+    assert.match(css, /\.row \{\s*position: relative;/);
+    assert.match(css, /a\.row-title::after \{ content: ""; position: absolute; inset: 0; \}/);
+    // The focus ring is drawn around the whole row, since the link covers it.
+    assert.match(css, /\.row:has\(a\.row-title:focus-visible\) \{ outline: 2px solid var\(--accent\);/);
+    for (const [, row] of html.matchAll(/<li class="row">([\s\S]*?)<\/li>/g)) assert.equal(row.match(/<a\b/g).length, 1, row);
   });
 
   test("planned tasks wait behind one collapsed row, never as links; Task 03 is built, not planned", () => {

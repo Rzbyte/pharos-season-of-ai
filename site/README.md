@@ -31,8 +31,8 @@ NODE_PATH="$(npm root -g)" npm test
 ```
 
 The standalone deployments of Task 01 and Task 02 (their own `vercel.json`) still work as before; a
-page served there links its neighbours through `LEGACY` in `shared/ui/tasks.js`. On the unified site
-every link is a same-domain route.
+page served there links the other tasks (arrows and task switcher) through `LEGACY` in
+`shared/ui/tasks.js`. On the unified site every link is a same-domain route.
 
 Environment: Explain on Task 01 needs `DEEPSEEK_API_KEY` set on the project, as on Task 01's own
 deployment.

@@ -66,18 +66,49 @@ describe("static page", () => {
     for (const name of ["lab.css", "lab.js", "theme.js", "tasks.js"]) assert.equal(await read(`public/assets/${name}`), await shared(name), name);
   });
 
-  test("minimal first screen: title, one line, the box, three examples; CLI usage and proof behind disclosures", async () => {
+  test("a workspace, not a document: the bar, the welcome and three examples, the box at the bottom; About holds the rest", async () => {
     const html = await read("public/index.html");
-    const order = ['<h1 class="task-title">Docs Search</h1>', "Ask anything documented about building on Pharos.", 'placeholder="Ask the docs…"', ">Deploy with Foundry<", ">Atlantic RPC<", ">Use Chainlink<", ">CLI usage<", ">How it answers &amp; proof</h2>"].map((needle) => html.indexOf(needle));
+    // The page is the screen's height (lab.css body.app); on Android the keyboard resizes it, so the box stays above it.
+    assert.match(html, /<body class="app" data-state="idle">/);
+    assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">/);
+    const order = [
+      '<h1 class="ws-title"><span class="task-n">04</span><span>Docs Search</span></h1>',
+      'id="scroll"',
+      "Ask anything documented about building on Pharos.",
+      ">Deploy with Foundry<",
+      ">Atlantic RPC<",
+      ">Use Chainlink<",
+      'id="thread" aria-label="Questions and answers" hidden',
+      'id="about-h">How it answers</h2>',
+      ">CLI usage</h3>",
+      'id="proof-h">Proof</h3>',
+      '<form class="ask" id="ask"',
+      'placeholder="Ask the docs…"',
+      '<dialog class="sheet" id="about-sheet" aria-labelledby="sheet-h">',
+    ].map((needle) => html.indexOf(needle));
     assert.ok(order.every((index) => index > 0), JSON.stringify(order));
     assert.deepEqual([...order].sort((a, b) => a - b), order);
-    assert.match(html, /<button class="toggle-row" id="cli-toggle" type="button" aria-expanded="false" aria-controls="cli-body">/);
-    assert.match(html, /<div class="cli-body" id="cli-body" hidden>/);
+    // One title: the kicker no longer repeats the heading.
+    assert.equal(html.match(/>Docs Search</g).length, 1);
+    // New and About are the bar's two tools; New shows once something is asked.
+    assert.match(html, /<button class="action" id="clear" type="button" hidden>/);
+    assert.match(html, /<button class="action ws-about-open" id="about-open" type="button" aria-haspopup="dialog" aria-controls="about-sheet">/);
+    assert.match(html, /<details class="disclosure cli" id="cli">/);
     assert.doesNotMatch(html, /<details[^>]*\sopen/);
     // The transport disclosure stays word for word.
     assert.match(html, /Not MCP: a public Developer Docs MCP endpoint is not documented yet\./);
     // No terminal: no prompt, no log, no command echo.
     assert.doesNotMatch(html, /\$ pharos-docs<\/label>|role="log"|Documentation Terminal/);
+  });
+
+  test("the thread scrolls inside the workspace; the newest turn can always be brought to the top", async () => {
+    const css = await read("public/assets/search.css");
+    assert.match(css, /\.ws-scroll \{ position: relative; flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; container: thread \/ size; \}/);
+    assert.match(css, /\.thread > \.turn:last-child \{ min-height: calc\(100cqh - 2 \* var\(--ws-pad\)\); padding-bottom: 0; \}/);
+    assert.match(css, /\.ask \{ flex: none; padding-block: var\(--space-3\) calc\(var\(--space-3\) \+ env\(safe-area-inset-bottom\)\);/);
+    const script = await read("public/assets/search.js");
+    assert.match(script, /scroller\.scrollTo\(\{ top: Math\.max\(0, top\), behavior: reducedMotion\(\) \? "auto" : "smooth" \}\)/);
+    assert.doesNotMatch(script, /scrollIntoView/, "only the thread scrolls, never the page");
   });
 
   test("every element the script looks up exists; text only, never HTML", async () => {

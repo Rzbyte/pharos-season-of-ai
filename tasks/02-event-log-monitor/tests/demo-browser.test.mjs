@@ -440,6 +440,40 @@ describe("the Task 02 page in a browser", { skip }, () => {
     assert.equal(await page.locator("#proof").evaluate((details) => details.open), true);
   });
 
+  test("every row has the same shape whatever its amount; wide rows align amounts on the decimal point", async () => {
+    for (const [width, height] of [[320, 568], [390, 844], [1280, 860]]) {
+      chain.head = START;
+      chain.logs = [];
+      const { page, context } = await open({ viewport: { width, height } });
+      await monitoring(page);
+      // Amounts of every length, a Mint among them, all found by one check.
+      const amounts = [5_000_000n, 1_234_567_890_123n, 120_500_000n, 987_654n, 42_000_001n];
+      chain.head += 1n;
+      amounts.forEach((amount, index) => chain.logs.push(makeLog({ block: chain.head, index, amount, ...(index === 3 ? { from: ZERO } : {}) })));
+      await page.waitForFunction(() => document.querySelectorAll("#feed > li").length === 5);
+      const rows = await page.$$eval("#feed > li", (items) =>
+        items.map((item) => {
+          const eyebrow = item.querySelector(".event-eyebrow");
+          const minor = item.querySelector(".num-minor").getBoundingClientRect();
+          return { height: Math.round(item.getBoundingClientRect().height - (eyebrow.hidden ? 0 : eyebrow.getBoundingClientRect().height + 2)), point: Math.round(minor.left), end: Math.round(item.querySelector(".event-amount").getBoundingClientRect().right) };
+        }),
+      );
+      const heights = new Set(rows.slice(1).map((row) => row.height));
+      assert.equal(heights.size, 1, `${width}px: row heights ${rows.map((row) => row.height)}`);
+      if (width >= 1024) {
+        assert.equal(new Set(rows.map((row) => row.point)).size, 1, `${width}px: decimal points at ${rows.map((row) => row.point)}`);
+        assert.equal(new Set(rows.map((row) => row.end)).size, 1, `${width}px: amounts end at ${rows.map((row) => row.end)}`);
+      }
+      // The digits are the decoded amount, unchanged: the split is only for alignment.
+      assert.deepEqual(await page.$$eval("#feed .event-num", (cells) => cells.map((cell) => cell.textContent)), ["42.000001", "0.987654", "120.5", "1,234,567.890123", "5"]);
+      // The one control stays a compact button beside the state, never a full-width bar; its name is the whole phrase.
+      const toggle = await page.$eval("#toggle", (button) => ({ width: button.getBoundingClientRect().width, panel: document.getElementById("monitor").getBoundingClientRect().width, name: button.getAttribute("aria-label") }));
+      assert.ok(toggle.width < toggle.panel / 2, `${width}px: toggle ${toggle.width}px of ${toggle.panel}px`);
+      assert.equal(toggle.name, "Stop monitoring");
+      await context.close();
+    }
+  });
+
   for (const scheme of ["dark", "light"]) {
     test(`layout at every width, ${scheme} theme: no overflow, 44px targets, readable text`, async () => {
       chain.logs.push(makeLog({ block: START - 1n, index: 9, amount: 123_456_789_012_345_678n }));

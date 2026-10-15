@@ -214,7 +214,10 @@ describe("the words on the page", () => {
 
   test("paused reads Yes or No: Yes in the warning tone, No in none, and nothing claims more than the flag", () => {
     // The fifth read sits last, so the four rows above it keep their place on the smallest screens.
-    assert.match(html, /<div><dt>network<\/dt><dd>[\s\S]*?<\/dd><\/div>\n {8}<div><dt>paused<\/dt><dd id="v-paused">—<\/dd><\/div>\n {6}<\/dl>/);
+    assert.match(html, /<div class="row-wide"><dt>network<\/dt><dd>[\s\S]*?<\/dd><\/div>\n {8}<div><dt>paused<\/dt><dd id="v-paused">—<\/dd><\/div>\n {6}<\/dl>/);
+    // On a narrow panel the one-word values pair up (paused beside decimals) and the network takes a full line;
+    // the list keeps its order for screen readers, only the layout moves.
+    assert.match(read("public/assets/task-01.css"), /@container panel \(max-width: 679px\) \{\n {4}\.snap-body > \.rows \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); grid-auto-flow: row dense;[^}]*\}[\s\S]*?\.snap-body > \.rows > \.row-wide \{ grid-column: 1 \/ -1; \}/);
     assert.match(pageJs, /setText\(paused, values\.paused === true \? "Yes" : values\.paused === false \? "No" : "—"\);/);
     assert.match(pageJs, /if \(values\.paused === true\) paused\.dataset\.tone = "warning";\n {2}else delete paused\.dataset\.tone;/);
     assert.match(rules, /\.rows dd\[data-tone="warning"\] \{ color: var\(--warning\); font-weight: 600; \}/);
@@ -815,8 +818,10 @@ describe("accessible structure", () => {
     assert.match(html, /<html lang="en">/);
     assert.match(html, /<a class="skip" href="#snapshot">Skip to the snapshot<\/a>/);
     assert.match(html, /<section class="panel snapshot" id="snapshot" aria-labelledby="snapshot-h" tabindex="-1">/);
-    // An address, not a contract address: the Inspector reads wallet-like addresses too.
-    assert.match(html, /<label class="field-label" for="inspect-input">Address or transaction hash<\/label>/);
+    // An address, not a contract address: the Inspector reads wallet-like addresses too. The label is for
+    // screen readers; on screen the Inspect heading and its line say the same right above the box.
+    assert.match(html, /<label class="field-label sr" for="inspect-input">Address or transaction hash<\/label>/);
+    assert.match(html, /<h2 class="section-title" id="inspect-h">Inspect<\/h2>\n {6}<p class="section-meta">Any address or transaction on Pharos Mainnet<\/p>/);
     assert.match(html, /aria-live="polite">Accepts an address \(42 characters\) or a transaction hash \(66\)\.<\/p>/);
     assert.doesNotMatch(html, /contract address \(42|Inspect another contract|Read any contract/);
     // Show details says whether it is open, and what it opens.

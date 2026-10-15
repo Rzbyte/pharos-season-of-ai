@@ -230,6 +230,9 @@ export const ICON = {
   previous: "M10 3.5 5.5 8l4.5 4.5",
   next: "M6 3.5 10.5 8 6 12.5",
   out: "M5 11l6-6M6 5h5v5",
+  down: "M4 6l4 4 4-4",
+  across: "M3 8h10M9 4l4 4-4 4",
+  close: "M4 4l8 8M12 4l-8 8",
 };
 
 /** A decorative 16px stroke icon (hidden from assistive technology), built without parsing markup. */
@@ -250,38 +253,58 @@ export function onUnifiedSite(pathname = typeof location === "undefined" ? "" : 
   return /^\/tasks\/\d{2}\/?$/.test(pathname);
 }
 
+/** Where a task links from this page: its route on the unified site, else its standalone deployment, else nowhere. */
+export function taskLink(task, unified) {
+  if (!task) return null;
+  return unified ? task.href : (task.legacy ?? null);
+}
+
+const make = (tag, className, text) => Object.assign(document.createElement(tag), className ? { className } : {}, text === undefined ? {} : { textContent: text });
+
 /**
  * The shell's place among the tasks, from the manifest: the lab link, the arrows either side of the
- * "02 / 28" counter, and the neighbours line in the footer. On the unified site every link is a
- * same-domain route ("/", "/tasks/NN"). A page served from a standalone deployment cannot reach those
- * routes, so there a neighbour links to its own standalone deployment if it has one (task.legacy), and
- * the lab is not linked. A neighbour without a link is shown as text, marked, and never focusable.
+ * "02 / 28" counter, and the counter itself, which opens the task switcher (taskMenu). On the unified
+ * site every link is a same-domain route ("/", "/tasks/NN"). A page served from a standalone deployment
+ * cannot reach those routes, so there a task links to its own standalone deployment if it has one
+ * (task.legacy), and the lab is not linked. A task without a link is shown as text, marked, and never
+ * focusable. Where the browser has no popover support the counter stays plain text.
  */
 export function renderTaskNav(tasks, current, lab, root = document, unified = onUnifiedSite()) {
-  const { index, previous: before, next: after } = neighbours(tasks, current);
+  const { index, previous, next } = neighbours(tasks, current);
   if (index === -1) return;
-  const linked = (task) => (task ? { ...task, href: unified ? task.href : (task.legacy ?? null) } : null);
-  const previous = linked(before);
-  const next = linked(after);
   for (const home of root.querySelectorAll("[data-lab-home]")) {
     if (unified && lab?.home) home.href = lab.home;
     else home.removeAttribute("href");
   }
+  const total = String(lab?.total ?? tasks.length).padStart(2, "0");
+  const position = () => [make("span", "sr", "Task "), make("b", "", current), ` / ${total}`];
+  const popover = typeof HTMLElement !== "undefined" && Object.hasOwn(HTMLElement.prototype, "popover");
   for (const count of root.querySelectorAll("[data-task-count]")) {
-    const n = document.createElement("b");
-    n.textContent = current;
-    count.replaceChildren(Object.assign(document.createElement("span"), { className: "sr", textContent: "Task " }), n, ` / ${String(lab?.total ?? tasks.length).padStart(2, "0")}`);
+    if (!popover) {
+      count.replaceChildren(...position());
+      continue;
+    }
+    const menu = taskMenu(tasks, current, lab, unified);
+    const button = make("button", "shell-count");
+    button.type = "button";
+    button.dataset.taskCount = "";
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-controls", menu.id);
+    button.popoverTargetElement = menu;
+    button.append(...position(), make("span", "sr", ", switch task"), svgIcon(ICON.down));
+    menu.addEventListener("toggle", (event) => button.setAttribute("aria-expanded", String(event.newState === "open")));
+    count.replaceWith(button);
+    (button.closest(".shell") ?? document.body).append(menu);
   }
   for (const [direction, task] of [["previous", previous], ["next", next]]) {
     const word = direction === "previous" ? "Previous" : "Next";
+    const href = taskLink(task, unified);
     for (const slot of root.querySelectorAll(`[data-task-step="${direction}"]`)) {
-      const linked = Boolean(task?.href);
-      const step = document.createElement(linked ? "a" : "span");
-      step.className = "shell-step";
+      const step = make(href ? "a" : "span", "shell-step");
       step.dataset.taskStep = direction;
       step.append(svgIcon(ICON[direction]));
-      if (linked) {
-        step.href = task.href;
+      if (href) {
+        step.href = href;
         step.rel = direction === "previous" ? "prev" : "next";
         step.setAttribute("aria-label", `${word} task: ${task.n} ${task.title}`);
         step.title = `${task.n} ${task.title}`;
@@ -292,20 +315,46 @@ export function renderTaskNav(tasks, current, lab, root = document, unified = on
       }
       slot.replaceWith(step);
     }
-    for (const slot of root.querySelectorAll(`[data-task-neighbour="${direction}"]`)) {
-      if (!task) {
-        slot.hidden = true;
-        continue;
-      }
-      const label = Object.assign(document.createElement("span"), { className: "neighbour-word", textContent: word });
-      const n = Object.assign(document.createElement("span"), { className: "neighbour-n", textContent: task.n });
-      const title = Object.assign(document.createElement(task.href ? "a" : "span"), { className: "neighbour-title", textContent: task.title });
-      if (task.href) title.href = task.href;
-      slot.replaceChildren(label, n, title);
-      if (task.status !== "built") slot.append(Object.assign(document.createElement("span"), { className: "neighbour-tag", textContent: "Planned" }));
-      slot.hidden = false;
-    }
   }
+}
+
+/**
+ * The task switcher: a popover <nav> listing every built task (number, name, verb), the current one
+ * marked with aria-current, then the lab with its total. Links follow taskLink; a built task with no
+ * link from here is listed as text.
+ */
+export function taskMenu(tasks, current, lab, unified) {
+  const built = tasks.filter((task) => task.status === "built");
+  const menu = make("nav", "task-menu");
+  menu.id = "task-menu";
+  menu.setAttribute("popover", "");
+  menu.setAttribute("aria-label", "Switch task");
+  const head = make("p", "task-menu-head");
+  head.append(make("span", "label", "Built"), make("span", "task-menu-count", `${built.length} of ${lab?.total ?? tasks.length}`));
+  const list = make("ul", "task-menu-list");
+  for (const task of built) {
+    const href = taskLink(task, unified);
+    const row = make(href ? "a" : "span", "task-menu-row");
+    if (href) row.href = href;
+    else row.setAttribute("aria-disabled", "true");
+    if (task.n === current) row.setAttribute("aria-current", "page");
+    // Spaces between the parts, so the link's name reads "01 Contract State"; the verb is only for the eye.
+    const verb = make("span", "label", task.verb ?? "");
+    verb.setAttribute("aria-hidden", "true");
+    row.append(make("span", "task-menu-n", task.n), " ", make("span", "task-menu-title", task.title), " ", verb);
+    if (!href) row.append(make("span", "sr", ", not linked from here"));
+    const item = make("li");
+    item.append(row);
+    list.append(item);
+  }
+  menu.append(head, list);
+  if (unified && lab?.home) {
+    const all = make("a", "task-menu-all");
+    all.href = lab.home;
+    all.append(make("span", "", `All ${lab.total ?? tasks.length} tasks`), svgIcon(ICON.across));
+    menu.append(all);
+  }
+  return menu;
 }
 
 /**

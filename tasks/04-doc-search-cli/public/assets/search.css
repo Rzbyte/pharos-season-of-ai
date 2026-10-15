@@ -1,25 +1,38 @@
-/* Task 04 workspace: docs search. Shared tokens, shell and primitives are in lab.css.
-   One column at reading width: the question box, then each question with its answer and sources,
-   newest last, with the box under them for the next one. Not a terminal and not a chat app. */
+/* Task 04 workspace: docs search. Shared tokens, shell, sheet and primitives are in lab.css.
+   An app page (body.app), not a document: the bar, the thread, the question box, exactly the screen's
+   height. Only the thread scrolls; the box stays at the bottom, above the keyboard where the browser
+   resizes for it, so asking again never means scrolling to find the box. Each question is its own
+   search, newest last; the newest is brought to the top of the thread with its answer under it. With
+   room, How it answers sits beside the thread; on a phone it opens as a sheet from About. */
 @layer task {
-  /* A reading-width column, aligned with the shell's left edge. */
-  .search-page > * { max-width: 760px; min-width: 0; }
+  .ws { display: flex; flex-direction: column; min-height: 0; }
+  /* One grid for the bar, the thread and the box, so the three line up: the thread's column, and with
+     room the side column. */
+  .ws-grid { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--space-8); }
+  .ws-grid > :first-child { width: 100%; max-width: 46rem; min-width: 0; }
+  @media (min-width: 1000px) { .ws-grid { grid-template-columns: minmax(0, 1fr) 18.5rem; } }
 
-  /* The box: one input and Ask. Examples only before the first question. */
-  .ask { display: grid; gap: var(--space-3); }
-  .ask-box { display: flex; align-items: center; gap: var(--space-2); }
-  .ask-input {
-    flex: 1 1 0; width: 0; min-width: 0; height: 48px; padding: 0 14px; appearance: none; -webkit-appearance: none; border: 1px solid var(--field-line); border-radius: var(--radius);
-    background: var(--field); color: var(--text); font: 400 1rem/1.4 var(--sans);
-  }
-  .ask-input::placeholder { color: var(--text-3); opacity: 1; }
-  .ask-input:hover { border-color: var(--text-3); }
-  .ask-input:focus-visible { outline-offset: 0; border-color: var(--accent); }
-  .ask-input::-webkit-search-cancel-button { display: none; }
-  .ask-go { height: 48px; }
-  .try { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+  /* The bar: the task, and the two tools (New, About). */
+  .ws-bar { flex: none; border-bottom: 1px solid var(--line); }
+  .ws-bar-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; }
+  .ws-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; font-size: 1rem; line-height: 1.3; letter-spacing: 0; }
+  .ws-title .task-n { font-family: var(--mono); font-size: var(--fs-meta); font-weight: 400; color: var(--accent); }
+  .ws-tools { display: flex; gap: var(--space-2); }
+  @media (min-width: 1000px) { .ws-about-open { display: none; } }
+
+  /* The thread's scroll area. A size container, so a turn can be as tall as the area (cqh), and the
+     containing block of what it holds (screen-reader text included), so nothing in it reaches the page. */
+  .ws-scroll { position: relative; flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; container: thread / size; }
+  .ws-col { --ws-pad: var(--space-4); display: flex; flex-direction: column; min-height: 100cqh; padding-block: var(--ws-pad); }
+
+  /* Before the first question: what this is, and three to try, near the box on a phone. */
+  .welcome { display: grid; gap: var(--space-3); margin-top: auto; }
+  @media (min-width: 760px) { .welcome { margin-block: auto; padding-bottom: 8vh; } }
+  .welcome-title { font-size: var(--fs-h2); font-weight: 600; line-height: 1.3; letter-spacing: -.01em; }
+  .welcome-text { max-width: 60ch; color: var(--text-2); font-size: var(--fs-small); }
+  body:not([data-state="idle"]) .welcome { display: none; }
+  .try { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
   .try .label { margin-right: var(--space-1); }
-  body:not([data-state="idle"]) .try { display: none; }
   .chip {
     position: relative; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 999px;
     background: none; color: var(--text-2); font-size: var(--fs-small); cursor: pointer;
@@ -27,13 +40,17 @@
   .chip::after { content: ""; position: absolute; inset: -4px 0; }
   .chip:hover, .chip:active { color: var(--text); border-color: var(--text-3); background: var(--surface-2); }
 
-  /* The thread: each question, then its answer. Rules between turns, no bubbles. */
+  /* The thread: each question, then its answer. Rules between turns, no bubbles. The newest turn is at
+     least the area's height, so it can always be brought to the top. */
   .thread { display: grid; }
-  .turn { display: grid; gap: var(--space-3); padding-block: var(--space-6); border-top: 1px solid var(--line); min-width: 0; }
+  .turn { display: grid; align-content: start; gap: var(--space-3); padding-block: var(--space-6); border-top: 1px solid var(--line); min-width: 0; }
   .turn:first-child { border-top: 0; padding-top: 0; }
-  .turn-q { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); font-size: var(--fs-small); color: var(--text-2); overflow-wrap: anywhere; }
-  .turn-q::before { content: ""; width: 3px; align-self: stretch; border-radius: 2px; background: var(--accent); }
-  .turn-flag { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  .thread > .turn:last-child { min-height: calc(100cqh - 2 * var(--ws-pad)); padding-bottom: 0; }
+  .turn-q {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); padding-left: var(--space-3); border-left: 2px solid var(--accent);
+    font-size: var(--fs-body); font-weight: 600; line-height: 1.45; color: var(--text); overflow-wrap: anywhere;
+  }
+  .turn-flag { font-family: var(--mono); font-size: var(--fs-label); font-weight: 400; color: var(--text-3); }
   .turn-note { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-2); white-space: pre-wrap; }
   .turn-note-error { color: var(--text); }
   .turn-label { margin-bottom: calc(-1 * var(--space-1)); }
@@ -59,13 +76,33 @@
     background: var(--surface); color: var(--text); font: 400 var(--fs-label)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
   }
 
-  /* Secondary: CLI usage and how it answers, as two quiet rows. */
-  .secondary { display: grid; }
-  .cli { border-top: 1px solid var(--line); }
-  .cli-head { font-size: 1rem; }
-  .cli-body { display: grid; gap: var(--space-3); padding-bottom: var(--space-6); }
-  .code { margin: 0; padding: var(--space-3); overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); font: 400 var(--fs-meta)/1.7 var(--mono); color: var(--text); }
-  .disclosure-title { font-size: 1rem; }
-  .secondary .disclosure { border-top: 1px solid var(--line); }
-  .secondary .disclosure-body .sources { margin-top: 0; }
+  /* How it answers: beside the thread with room (it stays in view as the thread scrolls); on a phone
+     the same content opens in the About sheet. */
+  .ws-side { display: none; min-width: 0; }
+  @media (min-width: 1000px) {
+    .ws-side { display: block; position: sticky; top: 0; align-self: start; max-height: 100cqh; overflow-y: auto; padding-block: var(--space-4); }
+  }
+  .about { display: grid; gap: var(--space-3); align-content: start; }
+  .about-title, .about-sub { font-size: var(--fs-small); font-weight: 600; }
+  .about-sub { margin-top: var(--space-2); }
+  .about .kv > div { grid-template-columns: minmax(0, 1fr); }
+  .about .disclosure > summary { min-height: var(--target); font-size: var(--fs-small); }
+  .about .disclosure-title { font-size: var(--fs-small); }
+  .cli-body { display: grid; gap: var(--space-3); padding-bottom: var(--space-4); }
+  .code { margin: 0; padding: var(--space-3); overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); font: 400 var(--fs-meta)/1.7 var(--mono); color: var(--text); }
+  .about-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--line); }
+  .sheet .about { padding-top: var(--space-2); }
+
+  /* The question box: always at the bottom of the screen, clear of the home indicator. */
+  .ask { flex: none; padding-block: var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); }
+  .ask-box { display: flex; align-items: center; gap: var(--space-2); }
+  .ask-input {
+    flex: 1 1 0; width: 0; min-width: 0; height: 48px; padding: 0 14px; appearance: none; -webkit-appearance: none; border: 1px solid var(--field-line); border-radius: var(--radius);
+    background: var(--field); color: var(--text); font: 400 1rem/1.4 var(--sans);
+  }
+  .ask-input::placeholder { color: var(--text-3); opacity: 1; }
+  .ask-input:hover { border-color: var(--text-3); }
+  .ask-input:focus-visible { outline-offset: 0; border-color: var(--accent); }
+  .ask-input::-webkit-search-cancel-button { display: none; }
+  .ask-go { height: 48px; }
 }

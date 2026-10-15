@@ -28,7 +28,7 @@ export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];
 export function shellPart(template, n) {
   let html = template.replaceAll("{{n}}", n);
   if (n === "lab") {
-    html = html.replace(/\n\s*<nav class="shell-tasks"[\s\S]*?<\/nav>/, "").replace(/\n\s*<nav class="neighbours"[\s\S]*?<\/nav>/, "");
+    html = html.replace(/\n\s*<nav class="shell-tasks"[\s\S]*?<\/nav>/, "");
   }
   return html.trim();
 }

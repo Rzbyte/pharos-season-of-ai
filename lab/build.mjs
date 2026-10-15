@@ -13,16 +13,19 @@ const esc = (text) => String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const ACROSS = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CHEV = '<span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 
-/** One built task: number, name and verb, its one line, and its page on this site (/tasks/NN). */
+/**
+ * One built task: number, name and verb, its one line, and its page on this site (/tasks/NN). The name
+ * is the link, and it covers the whole row, so the row is one target however narrow the screen.
+ */
 function row(task) {
-  const open = task.href ? `<a class="row-open" href="${esc(task.href)}"><span>Open</span>${ACROSS}<span class="sr"> ${esc(task.n)} ${esc(task.title)}</span></a>` : "";
+  const title = task.href ? `<a class="row-title" href="${esc(task.href)}">${esc(task.title)}</a>` : `<span class="row-title">${esc(task.title)}</span>`;
   return [
     `      <li class="row">`,
     `        <span class="row-n">${esc(task.n)}</span>`,
-    `        <span class="row-main"><span class="row-title">${esc(task.title)}</span><span class="row-purpose">${esc(task.purpose ?? "")}</span></span>`,
+    `        <span class="row-main">${title}<span class="row-purpose">${esc(task.purpose ?? "")}</span></span>`,
     `        <span class="row-verb label">${esc(task.verb ?? "")}</span>`,
     `        <span class="row-tool">${esc(task.tool ?? "")}</span>`,
-    `        ${open}`,
+    `        <span class="row-go" aria-hidden="true">${ACROSS}</span>`,
     `      </li>`,
   ].join("\n");
 }
