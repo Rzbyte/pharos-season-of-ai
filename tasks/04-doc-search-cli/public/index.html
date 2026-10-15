@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>04 · Doc Search · Pharos Developer Lab</title>
+<meta name="description" content="Pharos Developer Lab, task 04: ask the official Pharos Developer Docs a question from one command and get a short answer with its source pages, or a plain no-answer.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#EFF1F2" media="(prefers-color-scheme: light)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20rx='3'%20fill='%230113B7'/%3E%3Crect%20x='3'%20y='7'%20width='10'%20height='2'%20fill='%23FFFFFF'/%3E%3C/svg%3E">
+<script src="/assets/theme.js"></script>
+<link rel="preload" href="/assets/fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/terminal.css">
+<script type="module" src="/assets/terminal.js"></script>
+</head>
+<body>
+<a class="skip" href="#cmd">Skip to the command line</a>
+
+<header class="topbar">
+  <div class="rail topbar-inner">
+    <p class="label brand"><span class="brand-mark" aria-hidden="true"></span><span><b>Pharos</b> Developer Lab</span></p>
+    <p class="label task-count"><span class="sr">Task </span><b>04</b> / 28</p>
+    <button class="theme-toggle" id="theme-toggle" type="button">
+      <span class="theme-icons" aria-hidden="true">
+        <svg class="when-dark" viewBox="0 0 16 16" focusable="false"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.06 1.06M11.74 11.74l1.06 1.06M3.2 12.8l1.06-1.06M11.74 4.26l1.06-1.06" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <svg class="when-light" viewBox="0 0 16 16" focusable="false"><path d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+      <span class="theme-words"><span class="when-dark">Light</span><span class="when-light">Dark</span></span>
+    </button>
+  </div>
+</header>
+
+<main id="main" class="rail" data-api="/api/search">
+  <div class="head">
+    <p class="label">Task <b>04</b> / Doc search</p>
+    <h1>Documentation Terminal</h1>
+    <p class="lede">Official Pharos docs, queried from one command.</p>
+  </div>
+
+  <section class="terminal" id="terminal" aria-labelledby="term-h">
+    <div class="term-bar">
+      <h2 class="label" id="term-h">pharos-docs</h2>
+      <span class="term-state" id="term-state">Ready</span>
+    </div>
+    <div class="log" id="log" role="log" aria-live="polite" aria-labelledby="term-h">
+      <div class="entry">
+        <p class="out-note">Ask a question about building on Pharos. Answers come only from docs.pharos.xyz, with their source pages; when the docs do not answer, it says so. Type <code>help</code> for commands.</p>
+      </div>
+    </div>
+    <form class="prompt" id="prompt" autocomplete="off">
+      <label for="cmd">$ pharos-docs</label>
+      <input id="cmd" name="cmd" type="text" inputmode="text" enterkeyhint="send" spellcheck="false" autocapitalize="off" autocorrect="off" maxlength="320" placeholder="how do I deploy a contract?" aria-describedby="term-h">
+      <button class="btn" id="run" type="submit">Run</button>
+    </form>
+    <div class="examples">
+      <p class="label">Try</p>
+      <button class="chip" type="button" data-q="What is the chain ID of the Atlantic testnet?">Atlantic testnet chain ID</button>
+      <button class="chip" type="button" data-q="How do I set up Foundry and deploy a contract to the Atlantic testnet?">Deploy with Foundry</button>
+      <button class="chip" type="button" data-q="How do I deploy an Anchor program to Solana?">Something the docs don't cover</button>
+    </div>
+  </section>
+
+  <section class="about" aria-labelledby="about-h">
+    <h2 id="about-h">How it answers</h2>
+    <dl class="facts">
+      <div><dt>Source</dt><dd>Only the official Pharos Developer Docs at docs.pharos.xyz. Every answer lists the pages it comes from.</dd></div>
+      <div><dt>Transport</dt><dd>HTTPS GET to the docs' public query interface: <code>sitemap.md</code> for the page list, then <code>&lt;page&gt;.md?ask=&lt;question&gt;</code> for one or two pages. Not MCP: a public Developer Docs MCP endpoint is not documented yet.</dd></div>
+      <div><dt>No answer</dt><dd>When the matching page does not answer, or does not state the value asked for, the result is "No good answer found", never a guess.</dd></div>
+      <div><dt>Same as the CLI</dt><dd>This terminal calls the same search code as <code>pharos-docs</code>, and returns the same result, as JSON with <code>--json</code>.</dd></div>
+    </dl>
+    <p class="links">
+      <a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/04-doc-search-cli" target="_blank" rel="noopener noreferrer">Source code<span class="sr">, opens in a new tab</span></a>
+      <a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/04-doc-search-cli/proof" target="_blank" rel="noopener noreferrer">Proof<span class="sr">, opens in a new tab</span></a>
+      <a href="/api/search?q=How%20do%20I%20deploy%20a%20contract%3F">API JSON</a>
+    </p>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="rail foot-inner">
+    <p class="label">Pharos Developer Lab</p>
+    <p>28 on-chain and AI agent experiments for Pharos Season of AI.</p>
+  </div>
+</footer>
+</body>
+</html>

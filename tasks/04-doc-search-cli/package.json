@@ -1,0 +1,29 @@
+{
+  "name": "pharos-docs",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pharos Agent Arena Task 04: search the official Pharos Developer Docs from one command, with sources",
+  "type": "module",
+  "bin": {
+    "pharos-docs": "dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "start": "node dist/src/cli.js",
+    "probe": "tsc && node dist/src/probe.js",
+    "proof": "tsc && node dist/src/run-proof.js",
+    "verify-proof": "tsc && node dist/src/verify-proof.js",
+    "test": "tsc && node --test dist/tests/*.test.js",
+    "test:web": "tsc && node --test tests/web-api.test.mjs tests/web-page.test.mjs",
+    "test:browser": "tsc && node --test tests/web-browser.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}
