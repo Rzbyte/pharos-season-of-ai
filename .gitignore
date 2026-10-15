@@ -150,3 +150,6 @@ vite.config.ts.timestamp-*
 
 # Unified site build output (site/build.mjs)
 site/public/
+
+# Vercel local project metadata
+.vercel/
