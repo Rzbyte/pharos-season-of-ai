@@ -75,14 +75,86 @@ forge create src/Counter.sol:Counter --rpc-url $RPC_URL --private-key $PRIVATE_K
 
 - [Gas Model](https://docs.pharos.xyz/getting-started/gas-model)
 `,
+  /** A long procedure with code blocks, citing more pages than are shown: the shape of a live how-to answer. */
+  longHowTo: `To run a fixture validator node (test fixture), prepare the host, install the binary, then join the network.
+
+1. Open the ports the node uses:
+
+   \`\`\`bash
+   sudo ufw allow 18100/tcp
+   sudo ufw allow 19000/tcp
+   \`\`\`
+2. Download the fixture binary and check its version:
+
+   \`\`\`bash
+   tar -xzf pharos-node-fixture.tar.gz && ./pharos-node --version
+   \`\`\`
+3. Write the node configuration:
+
+   \`\`\`toml
+   [network]
+   seeds = ["fixture-seed-1:19000", "fixture-seed-2:19000"]
+   \`\`\`
+4. Start the node and follow its logs until it reaches the chain head.
+
+# Sources
+
+- [Validator Node Deployment: Using Binary Deployment on a Linux Server](https://docs.pharos.xyz/node-and-validator-guide/validator-node-deployment/using-binary-deployment)
+- [Node Management](https://docs.pharos.xyz/node-and-validator-guide/node-management)
+- [Pharos Network Snapshots](https://docs.pharos.xyz/node-and-validator-guide/pharos-network-snapshots)
+- [Rapid Node Initialization (Testnet)](https://docs.pharos.xyz/node-and-validator-guide/rapid-node-initialization/rapid-node-initialization-testnet)
+- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet)
+- [Network](https://docs.pharos.xyz/getting-started/network)
+- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts)
+`,
+  /** A one-line answer whose Sources list runs long, with a long title: the shape of a live factual answer. */
+  manySources: `The fixture token registry lists three test tokens (test fixture). See [Token Registry](/getting-started/token-registry).
+
+# Sources
+
+- [Token Registry](https://docs.pharos.xyz/getting-started/token-registry)
+- [Canonical Contracts](https://docs.pharos.xyz/getting-started/canonical-contracts)
+- [Chainlink CCIP: Cross-Chain Interoperability Protocol for Token Transfers](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/chainlink-ccip)
+- [LayerZero](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/layerzero)
+- [Cross Chain Infrastructure](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain)
+- [Circle CCTP](https://docs.pharos.xyz/tooling-and-infrastructure/cross-chain/circle-cctp)
+- [Network](https://docs.pharos.xyz/getting-started/network)
+`,
+  /** Indonesian: an answer, a truthful "the docs do not cover this", and a negative fact about the product. */
+  idChainId: `Chain ID Atlantic testnet adalah 424242 (fixture uji).
+
+# Sources
+
+- [Atlantic Testnet](https://docs.pharos.xyz/getting-started/network/atlantic-testnet)
+`,
+  idNotCovered: `Tidak. Dokumentasi Pharos Developer tidak membahas topik ini (fixture uji).
+
+# Sources
+
+- [Overview](https://docs.pharos.xyz/getting-started/overview)
+- [Foundry](https://docs.pharos.xyz/developer-guide/foundry)
+`,
+  idFactualNo: `Tidak. Pharos tidak mendukung fixture blob; transaksi hanya membawa calldata (fixture uji).
+
+# Sources
+
+- [Gas Model](https://docs.pharos.xyz/getting-started/gas-model)
+`,
 };
 
-/** Which fixture a question gets: by its words, the way a test asks them. */
+/** Which fixture a question gets: by its words, the way a test asks them. Indonesian questions get Indonesian answers. */
 function fixtureFor(question: string): string {
+  if (/\b(?:berapa|bagaimana|apakah|cara)\b/i.test(question)) {
+    if (/chain\s*id/i.test(question)) return ANSWERS.idChainId;
+    if (/fixture blob/i.test(question)) return ANSWERS.idFactualNo;
+    return ANSWERS.idNotCovered;
+  }
   if (/chain\s*id/i.test(question)) return ANSWERS.chainId;
   if (/foundry|deploy a contract/i.test(question)) return ANSWERS.foundry;
   if (/hardhat/i.test(question)) return ANSWERS.hardhat;
   if (/fixture blobs/i.test(question)) return ANSWERS.factualNo;
+  if (/validator node|run a node/i.test(question)) return ANSWERS.longHowTo;
+  if (/registry/i.test(question)) return ANSWERS.manySources;
   return ANSWERS.notCovered;
 }
 

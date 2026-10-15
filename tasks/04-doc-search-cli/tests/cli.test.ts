@@ -101,6 +101,18 @@ describe("pharos-docs CLI: the Developer Docs MCP (default)", () => {
     assert.deepEqual([json.status, json.answer, json.sources, json.reason, json.suggestions.length], ["no_answer", null, [], "not_in_docs", 2]);
   });
 
+  test("Indonesian: a question the docs do not cover is a no-answer; an answer, or a negative fact, is still an answer", async () => {
+    const none = await cli(["Bagaimana cara deploy program fixture ke chain lain?", "--no-cache"]);
+    assert.equal(none.code, 1);
+    assert.match(none.stdout, /^No good answer found in the Pharos Developer Docs\.\n {2}The Pharos Developer Docs say they do not cover this\.\n\nNearby documented topics\n01 {2}Overview\n/);
+    assert.doesNotMatch(none.stdout, /^Answer$/m);
+    const fact = await cli(["Apakah Pharos mendukung fixture blob?", "--no-cache"]);
+    assert.equal(fact.code, 0);
+    assert.match(fact.stdout, /^Answer\n {2}Tidak\. Pharos tidak mendukung fixture blob/);
+    const value = JSON.parse((await cli(["Berapa chain ID Atlantic testnet?", "--json", "--no-cache"])).stdout);
+    assert.deepEqual([value.status, value.answer, value.sources.length], ["answered", "Chain ID Atlantic testnet adalah 424242 (fixture uji).", 1]);
+  });
+
   test("a negative answer about Pharos itself is still an answer", async () => {
     const { code, stdout } = await cli(["Does Pharos support fixture blobs?", "--no-cache"]);
     assert.equal(code, 0);

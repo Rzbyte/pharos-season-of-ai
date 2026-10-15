@@ -79,6 +79,13 @@ describe("/api/search", () => {
     assert.deepEqual(body.suggestions.map((page) => page.title), ["Overview", "Foundry"]);
   });
 
+  test("an Indonesian question the docs do not cover is a no_answer too; an Indonesian answer stays an answer", async () => {
+    const none = await answer("Bagaimana cara deploy program fixture ke chain lain?", { mcpUrl: mcp.url });
+    assert.deepEqual([none.status, none.body.status, none.body.reason, none.body.answer], [200, "no_answer", "not_in_docs", null]);
+    const fact = await answer("Apakah Pharos mendukung fixture blob?", { mcpUrl: mcp.url });
+    assert.deepEqual([fact.body.status, fact.body.sources.length], ["answered", 1]);
+  });
+
   test("a missing or oversized question is a 400 before any MCP request", async () => {
     for (const path of ["/api/search", "/api/search?q=", "/api/search?q=%20%20", `/api/search?q=${"x".repeat(400)}`]) {
       const { status, headers, body } = await get(createHandler({ mcpUrl: mcp.url }), path);

@@ -9,7 +9,7 @@ import { askTool, DeveloperDocsMcpProvider, parseToolList, readToolsCache, toolT
 import { jsonRpcMessages, McpHttpClient, parseSse, responseFor } from "../src/providers/mcp-http.js";
 import { ProviderError, type DocsAnswer } from "../src/providers/provider.js";
 import { MCP_GOAL, search } from "../src/search.js";
-import { cleanAnswer, explicitNonCoverage, judgeAnswer } from "../src/source-gate.js";
+import { cleanAnswer, explicitNonCoverage, judgeAnswer, NON_COVERAGE_RULES } from "../src/source-gate.js";
 import { answerAndSources } from "../src/text.js";
 import { ANSWERS, startFakeMcp, TOOLS, type FakeMcp, type Mode } from "./fake-mcp.js";
 
@@ -376,6 +376,71 @@ describe("the source gate on MCP answers", () => {
     for (const [question, text] of answers) {
       assert.equal(explicitNonCoverage(cleanAnswer(answerAndSources(text).body)), false, question);
       assert.equal(judgeAnswer(asked(text), question).status, "answered", question);
+    }
+  });
+
+  test("Indonesian: the docs say they do not cover it, in many phrasings, on made-up topics", () => {
+    const statements = [
+      "Tidak. Dokumentasi Pharos Developer tidak membahas cara deploy program fixture ke chain lain.",
+      "Panduan Pharos tidak mencakup topik ini.",
+      "Dokumentasi Pharos tidak mencakup topik ini.",
+      "Topik ini tidak dibahas di dokumentasi.",
+      "Lotere fixture tidak tercakup dalam dokumentasi Pharos.",
+      "Fitur ini belum didokumentasikan.",
+      "Tidak ada informasi tentang lotere fixture di dokumentasi Pharos.",
+      "Belum ada panduan khusus untuk lotere fixture.",
+      "Tidak ada dokumentasi yang membahas lotere fixture.",
+      "Saya tidak menemukan informasi tentang lotere fixture di Pharos Developer Docs.",
+      "Maaf, saya tidak dapat menemukan panduan untuk lotere fixture.",
+      "Tidak ditemukan informasi mengenai lotere fixture.",
+      "Informasi tentang lotere fixture tidak ditemukan di dokumentasi.",
+      "Pertanyaan ini berada di luar cakupan dokumentasi Pharos.",
+      "Maaf, Pharos Developer Docs tidak membahas lotere fixture.",
+      "Dokumentasi resmi Pharos saat ini tidak secara khusus menjelaskan lotere fixture.",
+      "Dokumentasi Pharos berfokus pada EVM dan tidak mencakup lotere fixture.",
+      "Lotere fixture tidak ada di dokumentasi Pharos.",
+      "Jawaban singkat: tidak. Dokumentasi Pharos tidak menyebutkan lotere fixture.",
+      "Lotere fixture bukan bagian dari dokumentasi Pharos.",
+    ];
+    for (const statement of statements) {
+      assert.equal(explicitNonCoverage(statement), true, statement);
+      const verdict = judgeAnswer(asked(`${statement} Pharos kompatibel dengan EVM (fixture uji).${NEARBY}`), "Bagaimana cara memainkan lotere fixture?");
+      assert.deepEqual([verdict.status, verdict.reason, verdict.answer, verdict.sources.length, verdict.suggestions.length], ["no_answer", "not_in_docs", null, 0, 2], statement);
+    }
+  });
+
+  test("Indonesian: a negative fact about Pharos, or a docs gap after a real answer, is still an answer", () => {
+    const answers: Array<[string, string]> = [
+      ["Apakah Pharos mendukung fixture blob?", ANSWERS.idFactualNo],
+      ["Apakah validator fixture bisa melewati staking?", `Tidak, validator fixture tidak bisa melewati staking di Pharos; setiap validator wajib stake (fixture uji).${NEARBY}`],
+      ["Apakah ada biaya untuk membaca state fixture?", `Tidak ada biaya untuk membaca state fixture di Pharos; pembacaan state gratis (fixture uji).${NEARBY}`],
+      ["Apakah fitur fixture sudah ada di mainnet?", `Belum. Fitur fixture belum tersedia di mainnet, hanya di testnet (fixture uji).${NEARBY}`],
+      ["Berapa chain ID Atlantic testnet?", `Chain ID Atlantic testnet adalah 424242. Dokumentasi tidak menyebutkan chain ID devnet (fixture uji).\n\n# Sources\n\n- [Atlantic Testnet](${DOCS}/getting-started/network/atlantic-testnet)\n`],
+    ];
+    for (const [question, text] of answers) {
+      assert.equal(explicitNonCoverage(cleanAnswer(answerAndSources(text).body)), false, question);
+      assert.equal(judgeAnswer(asked(text), question).status, "answered", question);
+    }
+  });
+
+  test("what the docs report is not a gap in the docs, in either language", () => {
+    for (const statement of [
+      "The docs state that the faucet is rate-limited and does not provide more than one fixture token a day.",
+      "The Pharos docs say the explorer is fast and does not provide fixture traces.",
+      "Dokumentasi menyebutkan bahwa faucet dibatasi dan tidak menyediakan lebih dari satu token fixture per hari.",
+      "Dokumentasi Pharos menyebutkan bahwa testnet tidak memiliki faucet otomatis.",
+      "Dokumentasi menyebutkan bahwa Pharos kompatibel dengan EVM dan tidak mendukung fixture VM.",
+      "Kontrak fixture tidak ditemukan di explorer.",
+    ]) {
+      assert.equal(explicitNonCoverage(statement), false, statement);
+    }
+  });
+
+  test("the rules are listed per language, and name no topic", () => {
+    assert.deepEqual(Object.keys(NON_COVERAGE_RULES), ["en", "id"]);
+    for (const rules of Object.values(NON_COVERAGE_RULES)) {
+      assert.ok(rules.length > 5);
+      for (const rule of rules) assert.doesNotMatch(rule, /anchor|solana|chain\s*id|foundry|hardhat/i, rule);
     }
   });
 

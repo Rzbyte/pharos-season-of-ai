@@ -284,27 +284,27 @@ export function combineAnswers(parts: Array<{ title: string; answer: string }>):
 // ---------------------------------------------------------------------------
 // The Developer Docs MCP: one answer across the docs, with the sources it lists
 
-/** The documentation as the subject of a sentence: "the (official) (Pharos) (Developer) docs / documentation". */
-const DOCS = String.raw`(?:the\s+)?(?:official\s+)?(?:pharos\s+)?(?:developer\s+)?(?:(?:docs|documentation|knowledge\s+base)(?:\s+(?:site|pages?|portal))?|doc\s+pages?)`;
-/** What an info-type "no ... about X" names: information, a guide, instructions, a page. */
-const INFO = String.raw`(?:information|documentation|mention|guide|guidance|details|instructions|tutorial|page|section|reference)s?`;
+// "The docs do not cover this", per language. Every rule is about the documentation (or the search of
+// it) as the subject, never about the product, so a factual negative ("No. Pharos does not support X.",
+// "Tidak. Pharos tidak mendukung X.") stays an answer. Generic: no topic, product or question is named.
+// A language is one more entry in NON_COVERAGE_RULES.
 
-/**
- * Statements that the documentation does not cover a question. Each one is about the docs (or the search
- * of them), never about the product, so a factual negative ("No. Pharos does not support X.") stays an
- * answer. Generic: no topic, product or question is named here.
- */
-/** What the docs would do with a topic: cover it, mention it, document it. */
-const COVER = String.raw`(?:cover|contain|mention|include|describe|document|explain|address|discuss|have|specify|reference|detail|provide)`;
-/** "is not", "isn't", "are not", "aren't", "it's not", "they're not". */
-const IS_NOT = String.raw`(?:\b(?:is|are|was|were)|'s|'re)(?:\s+not|n't)`;
-
-const NON_COVERAGE = new RegExp(
-  [
+/** English. */
+const ENGLISH = (() => {
+  /** The documentation as the subject of a sentence: "the (official) (Pharos) (Developer) docs / documentation". */
+  const DOCS = String.raw`(?:the\s+)?(?:official\s+)?(?:pharos\s+)?(?:developer\s+)?(?:(?:docs|documentation|knowledge\s+base)(?:\s+(?:site|pages?|portal))?|doc\s+pages?)`;
+  /** What an info-type "no ... about X" names: information, a guide, instructions, a page. */
+  const INFO = String.raw`(?:information|documentation|mention|guide|guidance|details|instructions|tutorial|page|section|reference)s?`;
+  /** What the docs would do with a topic: cover it, mention it, document it. */
+  const COVER = String.raw`(?:cover|contain|mention|include|describe|document|explain|address|discuss|have|specify|reference|detail|provide)`;
+  /** "is not", "isn't", "are not", "aren't", "it's not", "they're not". */
+  const IS_NOT = String.raw`(?:\b(?:is|are|was|were)|'s|'re)(?:\s+not|n't)`;
+  return [
     // "The Pharos Developer Docs don't cover X", "the documentation does not mention X"
     String.raw`\b${DOCS}\s+(?:(?:currently|also)\s+)?(?:do|does|did)(?:\s+not|n't)\s+(?:(?:currently|appear\s+to|seem\s+to)\s+)?${COVER}\b`,
-    // "The Pharos docs focus on EVM tooling and don't include X": the docs stay the subject
-    String.raw`\b${DOCS}\s+(?:\w+\s+){1,8}?and\s+(?:do|does)(?:\s+not|n't)\s+${COVER}\b`,
+    // "The Pharos docs focus on EVM tooling and don't include X": the docs stay the subject. Not across
+    // reported speech: in "the docs state that the faucet ... and does not provide X" the faucet is.
+    String.raw`\b${DOCS}\s+(?:(?!(?:that|which|says?|said|states?|stated|notes?|noted|shows?|explains?|mentions?)\b)\w+\s+){1,8}?and\s+(?:do|does)(?:\s+not|n't)\s+${COVER}\b`,
     // "X is not covered in the docs", "it's not mentioned in the Pharos documentation"
     String.raw`${IS_NOT}\s+(?:(?:currently|explicitly)\s+)?(?:covered|mentioned|described|addressed|discussed|included|explained|specified|documented)\s+(?:anywhere\s+)?(?:in|by|within)\s+${DOCS}`,
     // "X is not documented"
@@ -321,9 +321,51 @@ const NON_COVERAGE = new RegExp(
     String.raw`\bi\s+(?:do\s*not|don't)\s+see\s+(?:any|anything)\b`,
     // "outside the scope of the Pharos docs"
     String.raw`\boutside\s+(?:of\s+)?(?:the\s+)?scope\s+of\s+${DOCS}`,
-  ].join("|"),
-  "i",
-);
+  ];
+})();
+
+/** Indonesian (Bahasa Indonesia). */
+const INDONESIAN = (() => {
+  /** The documentation as the subject: "dokumentasi (resmi) (Pharos) (Developer)", "panduan Pharos", "Pharos Developer Docs". */
+  const DOCS = String.raw`(?:(?:dokumentasi|dokumen|panduan)(?:\s+(?:resmi|pharos|developer|pengembang)){0,3}|(?:pharos\s+)?(?:developer\s+)?docs)`;
+  /** "tidak" (not), "tak", "belum" (not yet). */
+  const NOT = String.raw`(?:tidak|tak|belum)`;
+  /** "secara khusus" (specifically) and the like, between the negation and the verb. */
+  const HOW = String.raw`(?:secara\s+(?:khusus|spesifik|eksplisit|rinci|detail|langsung)\s+)?`;
+  /** What the docs would do with a topic, active: cover, discuss, explain, mention, contain, have, provide. */
+  const COVER = String.raw`(?:mencakup|membahas|menjelaskan|menyebutkan|memuat|berisi|mengandung|mendokumentasikan|memberikan|menyediakan|meliputi|memiliki|punya|menyertakan|mencantumkan|menyinggung|mengulas|menerangkan|menguraikan|menjabarkan|membicarakan)`;
+  /** The same, passive: covered, discussed, explained, mentioned, listed, documented, available. */
+  const COVERED = String.raw`(?:dibahas|dicakup|tercakup|dijelaskan|disebutkan|dicantumkan|tercantum|dimuat|termuat|diulas|disinggung|diterangkan|diuraikan|dijabarkan|didokumentasikan|terdokumentasi(?:kan)?|tersedia|ada)`;
+  /** What an info-type "tidak ada ... tentang X" names: information, documentation, a guide, an explanation. */
+  const INFO = String.raw`(?:informasi|dokumentasi|panduan|penjelasan|petunjuk|instruksi|tutorial|halaman|bagian|referensi|pembahasan|keterangan|rincian)`;
+  return [
+    // "Dokumentasi Pharos tidak mencakup X", "Panduan Pharos tidak membahas X", "Pharos Developer Docs belum menjelaskan X"
+    String.raw`\b${DOCS}\s+(?:(?:saat\s+ini|sejauh\s+ini|memang|juga|masih|sepertinya|tampaknya)\s+)?${NOT}\s+${HOW}${COVER}\b`,
+    // "Dokumentasi Pharos berfokus pada EVM dan tidak mencakup X": the docs stay the subject. Not across
+    // reported speech: in "dokumentasi menyebutkan bahwa faucet ... dan tidak menyediakan X" the faucet is.
+    String.raw`\b${DOCS}\s+(?:(?!(?:bahwa|yang|menyebutkan|menyatakan|menjelaskan|mengatakan|menunjukkan)\b)\w+\s+){1,8}?(?:dan|tetapi|namun)\s+${NOT}\s+${HOW}${COVER}\b`,
+    // "Topik ini tidak dibahas di dokumentasi", "X tidak tercakup dalam dokumentasi Pharos"
+    String.raw`\b${NOT}\s+${HOW}${COVERED}\s+(?:di\s+dalam|di|dalam|pada|oleh)\s+${DOCS}`,
+    // "X tidak didokumentasikan" (is not documented)
+    String.raw`\b${NOT}\s+${HOW}(?:didokumentasikan|terdokumentasi(?:kan)?)\b`,
+    // "Tidak ada informasi tentang X", "belum ada panduan khusus untuk X", "tidak ada dokumentasi yang membahas X"
+    String.raw`\b${NOT}\s+(?:ada|terdapat|tersedia)\s+${INFO}(?:\s+\w+){0,2}?\s+(?:tentang|mengenai|soal|terkait|untuk|seputar|perihal)\b`,
+    String.raw`\b${NOT}\s+(?:ada|terdapat|tersedia)\s+${INFO}(?:\s+\w+){0,2}?\s+yang\s+${COVER}\b`,
+    // "Saya tidak menemukan informasi tentang X", "saya tidak dapat menemukan X"
+    String.raw`\b(?:saya|kami|aku)\s+${NOT}\s+(?:dapat\s+|bisa\s+|berhasil\s+|mampu\s+)?(?:menemukan|mendapatkan|menjumpai)\b`,
+    // "Tidak ditemukan informasi tentang X", "informasi tentang X tidak ditemukan"
+    String.raw`\b(?:tidak|tak)\s+(?:dapat\s+|bisa\s+)?ditemukan\s+(?:informasi|dokumentasi|panduan|penjelasan)\b`,
+    String.raw`\b(?:informasi|dokumentasi|panduan|penjelasan)\s+(?:\w+\s+){0,6}?(?:tidak|tak)\s+(?:dapat\s+|bisa\s+)?ditemukan\b`,
+    // "di luar cakupan dokumentasi Pharos" (outside the scope of), "bukan bagian dari dokumentasi" (not part of)
+    String.raw`\bdi\s+luar\s+(?:cakupan|lingkup|ruang\s+lingkup|jangkauan)\s+${DOCS}`,
+    String.raw`\bbukan\s+bagian\s+(?:dari\s+)?${DOCS}`,
+  ];
+})();
+
+/** The languages whose "the docs do not cover this" is recognised. */
+export const NON_COVERAGE_RULES: Readonly<Record<string, readonly string[]>> = { en: ENGLISH, id: INDONESIAN };
+
+const NON_COVERAGE = new RegExp(Object.values(NON_COVERAGE_RULES).flat().join("|"), "i");
 
 /**
  * An answer's opening: its first sentence, and the second too when the first is only a short opener
