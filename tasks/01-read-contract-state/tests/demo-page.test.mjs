@@ -309,14 +309,14 @@ describe("task manifest", () => {
     assert.ok(Object.isFrozen(TASKS) && TASKS.every(Object.isFrozen));
   });
 
-  test("Tasks 01 to 04 are built; every other task is planned, with no link", () => {
-    assert.deepEqual(TASKS.filter((task) => task.status === "built").map((task) => task.n), ["01", "02", "03", "04"]);
-    for (const task of TASKS.slice(4)) assert.deepEqual([task.status, task.href], ["planned", null], task.n);
+  test("Tasks 01 to 04 are built; a built task links to its route, a planned one never links", () => {
+    assert.deepEqual(TASKS.slice(0, 4).map((task) => task.status), ["built", "built", "built", "built"]);
+    for (const task of TASKS) assert.equal(task.href, task.status === "built" ? `/tasks/${task.n}` : null, task.n);
   });
 
-  test("names a tool only where it is already known, and never calls Task 04's HTTP transport MCP", () => {
-    const tools = Object.fromEntries(TASKS.filter((task) => task.tool !== null).map((task) => [task.n, task.tool]));
-    assert.deepEqual(tools, { "01": "Chain MCP", "02": "Chain MCP", "03": "Docs MCP", "04": "Developer Docs", 30: "Composition" });
+  test("names a tool only where it is already known: every built task, no planned one but 30's", () => {
+    assert.deepEqual(TASKS.slice(0, 4).map((task) => task.tool), ["Chain MCP", "Chain MCP", "Docs MCP", "Developer Docs"]);
+    for (const task of TASKS) assert.ok(task.status === "built" ? typeof task.tool === "string" : task.tool === null || (task.n === "30" && task.tool === "Composition"), task.n);
   });
 
   test("the page links to no other task page", () => {
@@ -410,7 +410,7 @@ describe("DOM helpers write text, never markup", () => {
     assert.equal(previous, null);
     assert.deepEqual([next.n, next.title, next.status], ["02", "Event Monitor", "built"]);
     assert.deepEqual(TASKS.slice(0, 4).map((task) => task.status), ["built", "built", "built", "built"]);
-    assert.ok(TASKS.slice(4).every((task) => task.status === "planned" && task.href === null), "a planned task never has a link");
+    assert.ok(TASKS.filter((task) => task.status === "planned").every((task) => task.href === null), "a planned task never has a link");
     assert.ok(TASKS.every((task) => task.href === null || /^\/tasks\/\d{2}$/.test(task.href)), "a link is a same-domain /tasks/NN route or nothing");
   });
 });

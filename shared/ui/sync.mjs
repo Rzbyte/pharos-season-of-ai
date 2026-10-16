@@ -21,6 +21,7 @@ export const TARGETS = [
   "tasks/02-event-log-monitor/public",
   "tasks/03-docs-mcp-onboarding/public",
   "tasks/04-doc-search-cli/public",
+  "tasks/05-threshold-guardian/public",
 ];
 export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];
 

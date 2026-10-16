@@ -37,9 +37,9 @@ describe("helpers", () => {
     assert.equal(neighbours(TASKS, "99").index, -1);
   });
 
-  test("the manifest: 01 to 04 built at /tasks/NN, legacy addresses only as fallbacks", () => {
+  test("the manifest: 01 to 05 built at /tasks/NN, legacy addresses only as fallbacks", () => {
     assert.equal(TASKS.length, LAB.total);
-    assert.equal(BUILT, 4);
+    assert.equal(BUILT, 5);
     assert.equal(LAB.home, "/");
     for (const task of TASKS) {
       assert.equal(task.href, task.status === "built" ? route(task.n) : null, task.n);
@@ -78,8 +78,9 @@ describe("the official task map", () => {
       ["02", "Event / Log Monitor", "/tasks/02", "https://pharos-task-02.vercel.app"],
       ["03", "Docs MCP Onboarding", "/tasks/03", null],
       ["04", "Doc-Search CLI", "/tasks/04", null],
+      ["05", "Threshold Guardian", "/tasks/05", null],
     ]);
-    for (const task of TASKS.slice(4)) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
+    for (const task of TASKS.slice(5)) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
   });
 
   test("moving through the map: 04 then 05, 19 then the x402 tasks then 22, and 30 is the last", () => {
@@ -197,6 +198,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["02 Event Monitor Watch", "/tasks/02", "page"],
         ["03 Docs Onboarding Audit", "/tasks/03", null],
         ["04 Docs Search Query", "/tasks/04", null],
+        ["05 Threshold Guardian Guard", "/tasks/05", null],
         ["All 30 tasks", "/", null],
       ],
       footer: 0,
@@ -219,18 +221,19 @@ describe("task navigation in a browser", { skip }, () => {
         ["02 Event Monitor Watch", "https://pharos-task-02.vercel.app", "page"],
         ["03 Docs Onboarding Audit, not linked from here", null, null],
         ["04 Docs Search Query, not linked from here", null, null],
+        ["05 Threshold Guardian Guard, not linked from here", null, null],
       ],
       footer: 0,
     });
-    // The last built task: its next arrow names Task 05, planned and so not linked; the switcher still
+    // The last built task: its next arrow names Task 06, planned and so not linked; the switcher still
     // ends with the lab and the full total.
-    const last = await render("/tasks/04", "04");
+    const last = await render("/tasks/05", "05");
     assert.deepEqual([last.count[1], last.previous, last.next], [
-      "Task 04 / 30, switch task",
-      ["A", "/tasks/03", "Previous task: 03 Docs Onboarding"],
+      "Task 05 / 30, switch task",
+      ["A", "/tasks/04", "Previous task: 04 Docs Search"],
       ["SPAN", null, "true", -1],
     ]);
-    assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 05 Threshold Guardian, not linked");
+    assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 06 Saga Executor, not linked");
     assert.deepEqual(last.menu.at(-1), ["All 30 tasks", "/", null]);
   });
 });

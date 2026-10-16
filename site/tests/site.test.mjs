@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -16,7 +17,7 @@ import { createSiteServer } from "../serve.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const at = (path) => pathToFileURL(join(REPO, path)).href;
-const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search" };
+const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian" };
 
 let out;
 let site;
@@ -48,7 +49,18 @@ before(async () => {
   // Task 04: the real handler on its fake Developer Docs MCP.
   const { startFakeMcp } = await import(at(`${TASK_DIRS["04"]}/dist/tests/fake-mcp.js`));
   const docs = await startFakeMcp();
-  fakes.push(chain01, ai, chain02, docs);
+  // The agent (Tasks 05 onward): its real handler on the official Chain MCP server (HTTP mode) over a fake chain.
+  const { defaultState, startFakeChain } = await import(at("agent/dist/tests/fake-chain.js"));
+  const chain05 = await startFakeChain(defaultState({ headTime: BigInt(Math.floor(Date.now() / 1000)), native: { "0x912c9ade24d44d8922f0866d8dcb079f1363f647": 10n ** 18n }, tokens: { [USDC]: { decimals: 6, balances: { "0x912c9ade24d44d8922f0866d8dcb079f1363f647": 1_000_000_000n } } } }));
+  const { loadConfig } = await import(at("agent/dist/vendor/pharos-mcp/src/config.js"));
+  const { startHttpServer } = await import(at("agent/dist/vendor/pharos-mcp/src/http.js"));
+  const official = await new Promise((resolve, reject) => {
+    const probe = createNetServer().listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => startHttpServer(loadConfig({ MCP_TRANSPORT: "http", MCP_PORT: String(port), PHAROS_RPC_URL: chain05.url, PHAROS_CHAIN_ID: "1672" })).then((server) => resolve({ server, url: `http://127.0.0.1:${port}/mcp` }), reject));
+    });
+  });
+  fakes.push(chain01, ai, chain02, docs, chain05, { close: () => new Promise((resolve) => (official.server.closeAllConnections?.(), official.server.close(resolve))) });
 
   const handler = async (path, args) => (await import(at(path))).createHandler(args);
   const apis = {
@@ -57,6 +69,7 @@ before(async () => {
     explain: await handler(`${TASK_DIRS["01"]}/api/explain.js`, { apiKey: "sk-site-test", providerUrl: ai.url, log: () => undefined }),
     events: await handler(`${TASK_DIRS["02"]}/api/events.js`, chain02.url),
     search: await handler(`${TASK_DIRS["04"]}/api/search.js`, { mcpUrl: docs.url }),
+    agent: await handler("agent/api/agent.js", { chainMcpUrl: official.url }),
   };
   const counted = Object.fromEntries(Object.entries(apis).map(([name, fn]) => [name, (req, res) => (apiHits.push(name), fn(req, res))]));
   site = await createSiteServer({ root: out, apis: counted });
@@ -76,7 +89,7 @@ const get = (path, init) => fetch(`${base}${path}`, init);
 describe("one project, thin adapters, no collisions", () => {
   test("each /api/<name> is a one-line re-export of exactly one task's own handler", async () => {
     const map = await apiMap();
-    assert.deepEqual([...map.keys()].sort(), ["events.js", "explain.js", "inspect.js", "search.js", "state.js"]);
+    assert.deepEqual([...map.keys()].sort(), ["agent.js", "events.js", "explain.js", "inspect.js", "search.js", "state.js"]);
     for (const [name, { target }] of map) {
       const adapter = await readFile(join(REPO, "api", name), "utf8");
       assert.equal(adapter.split("\n").filter((line) => line && !line.startsWith("//")).length, 1, `${name}: nothing but the re-export`);
@@ -85,7 +98,7 @@ describe("one project, thin adapters, no collisions", () => {
     assert.deepEqual((await readdir(join(REPO, "api"))).sort(), [...map.keys()].sort(), "no adapter without a task handler");
   });
 
-  test("vercel.json: one output, the five functions with their standalone limits, /tasks/NN rewrites", async () => {
+  test("vercel.json: one output, the task functions with their standalone limits plus the agent's, /tasks/NN rewrites", async () => {
     const config = JSON.parse(await readFile(join(REPO, "vercel.json"), "utf8"));
     assert.equal(config.outputDirectory, "site/public");
     assert.equal(config.buildCommand, "npm run build");
@@ -94,7 +107,7 @@ describe("one project, thin adapters, no collisions", () => {
       const own = JSON.parse(await readFile(join(REPO, dir, "vercel.json"), "utf8"));
       for (const [file, value] of Object.entries(own.functions)) limits[file] = value;
     }
-    assert.deepEqual(config.functions, limits, "the same functions and maxDuration as each standalone deployment");
+    assert.deepEqual(config.functions, { ...limits, "api/agent.js": { maxDuration: 60 } }, "each standalone deployment's functions and limits, and the agent's one function");
     assert.deepEqual(config.rewrites.map((rule) => rule.source), ["/tasks/:n(\\d{2})", "/tasks/:n(\\d{2})/"]);
   });
 
@@ -134,7 +147,7 @@ describe("routes", () => {
   });
 
   test("unknown routes are 404, never another page", async () => {
-    for (const path of ["/tasks/05", "/tasks/1", "/tasks/001", "/tasks/01/extra", "/tasks", "/tasks/", "/index.htm", "/api/nope", "/api/state/x"]) {
+    for (const path of ["/tasks/06", "/tasks/1", "/tasks/001", "/tasks/01/extra", "/tasks", "/tasks/", "/index.htm", "/api/nope", "/api/state/x"]) {
       assert.equal((await get(path)).status, 404, path);
     }
   });
@@ -149,7 +162,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 25, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 27, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
@@ -159,11 +172,11 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
-    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04"]);
+    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05"]);
   });
 });
 
@@ -190,6 +203,23 @@ describe("APIs on the one domain", () => {
     assert.equal(result.schema, "pharos-docs-result/1");
     assert.equal(result.status, "answered");
     assert.equal(result.meta.transport, "docs-mcp");
+  });
+
+  test("Task 05: /api/agent?task=05 runs the guardian through Chain MCP; bad input is a 400, an unknown task too", async () => {
+    const response = await get("/api/agent?task=05");
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("cache-control"), /^public, s-maxage=15/);
+    const body = await response.json();
+    assert.equal(body.result.schema, "pharos-agent/guardian-run/1");
+    assert.equal(body.result.outcome, "fire");
+    assert.equal(body.result.chainMcp.server, "pharos-mcp-server 0.1.0");
+    assert.deepEqual(body.calls.map((call) => call.tool).slice(0, 2), ["get_chain_info", "get_block_number"]);
+    const bad = await get("/api/agent?task=05&payer=0x123");
+    assert.equal(bad.status, 400);
+    assert.equal(bad.headers.get("cache-control"), "no-store");
+    assert.match((await bad.json()).error.message, /payer must be a 0x address/);
+    assert.equal((await get("/api/agent?task=99")).status, 400);
+    assert.equal((await get("/api/agent?task=05", { method: "POST" })).status, 405);
   });
 });
 
@@ -242,7 +272,7 @@ describe("the site in a browser", { skip }, () => {
       menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
@@ -256,7 +286,10 @@ describe("the site in a browser", { skip }, () => {
     const purpose = await page.locator('.row:has(a[href="/tasks/04"]) .row-purpose').boundingBox();
     await page.mouse.click(purpose.x + purpose.width / 2, purpose.y + purpose.height / 2);
     await page.waitForURL(`${base}/tasks/04`);
-    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "05 is planned, so not linked");
+    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("href"), "/tasks/05", "05 is built, so linked");
+    await page.click('[data-task-step="next"]');
+    await page.waitForURL(`${base}/tasks/05`);
+    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "06 is planned, so not linked");
     assert.deepEqual(problems, []);
     await page.context().close();
   });

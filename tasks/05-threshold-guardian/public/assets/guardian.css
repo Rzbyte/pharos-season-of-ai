@@ -1,0 +1,83 @@
+/* Task 05 workspace: the guardian. Shared tokens, shell, panel, status, rows and disclosure are in
+   lab.css. One panel holds the decision: its status and the one control, the block it was read at,
+   the six conditions as rows (a mark, the condition, then the value seen against the threshold and the
+   Chain MCP tool that read it), and the payout when it fires. The inputs and the proof wait in
+   disclosures below. */
+@layer task {
+  /* Geist Mono's contextual alternates join a space and "--" ("payout --proof" reads "payout--proof"):
+     off for this page's code, commands and call lists. */
+  #main :is(pre, code, .calls, .check-evidence) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+  .guard { display: grid; gap: var(--space-3); }
+  .guard-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .guard-head .status { min-width: 0; font-size: 1rem; }
+  .guard-head .status-word { font-size: var(--fs-h2); }
+  .guard-head .btn { flex: none; }
+  .guard .note { margin-top: 0; }
+  /* Narrow panels keep the control beside the status; the detail drops to its own line. */
+  @container panel (max-width: 419px) {
+    .guard-head { align-items: flex-start; }
+    .guard-head .status { flex-direction: column; align-items: flex-start; gap: 0; }
+    .guard-head .status-dot { display: none; }
+    .guard-head .status-detail::before { content: none; }
+  }
+
+  /* The conditions, and the payout beside them once there is room for both. */
+  .guard-body { display: grid; gap: var(--space-4); min-width: 0; }
+  .guard-main { display: grid; gap: var(--space-3); min-width: 0; }
+  @media (min-width: 1000px) {
+    .guard-body:has(> .act:not([hidden])) { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); column-gap: var(--space-8); align-items: start; }
+    .guard-body:has(> .act:not([hidden])) > .act { padding-top: 0; }
+    .guard-body:not(:has(> .act:not([hidden]))) > .guard-main { max-width: 46rem; }
+  }
+
+  /* Conditions: one row each, a mark then two lines. */
+  .checks { border-top: 1px solid var(--line); }
+  .checks:empty { display: none; }
+  .check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+  .check-mark { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; color: var(--on-brand); background: var(--tone, var(--text-3)); }
+  .check-mark svg { width: 12px; height: 12px; }
+  .check[data-state="pass"] { --tone: var(--success); }
+  .check[data-state="fail"] { --tone: var(--error); }
+  .check[data-state="unknown"] { --tone: var(--warning); }
+  .check-main { display: grid; gap: 2px; min-width: 0; }
+  .check-label { font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .check-evidence { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); font-size: var(--fs-meta); color: var(--text-3); }
+  .check-seen { font-family: var(--mono); font-size: var(--fs-label); color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .check[data-state="fail"] .check-seen { color: var(--error); font-weight: 600; }
+  .check-need { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-2); }
+  .check-tool { margin-left: auto; font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  .check-error { flex-basis: 100%; color: var(--text-2); overflow-wrap: anywhere; }
+  .rule { color: var(--text-2); font-size: var(--fs-small); }
+
+  /* The payout, when the rule holds. */
+  .act { display: grid; gap: var(--space-2); padding-top: var(--space-2); }
+  .act .rows > div { grid-template-columns: 6rem minmax(0, 1fr); }
+  .act a { color: var(--text); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .act a:hover { text-decoration-color: var(--text-3); }
+  .act .short { font-size: var(--fs-small); }
+  .act .sub { margin-top: 2px; }
+
+  /* Inputs: the two addresses full width, amount and gas cap side by side. */
+  .payout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-3); max-width: 46rem; }
+  .payout-field { grid-column: 1 / -1; min-width: 0; }
+  .payout-field.payout-short { grid-column: auto; }
+  .payout .input { width: 100%; }
+  .payout-go { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+  .payout-note { max-width: 62ch; color: var(--text-3); font-size: var(--fs-meta); }
+  @media (max-width: 339px) { .payout-field.payout-short { grid-column: 1 / -1; } }
+
+  /* Proof: the calls of the latest run, the raw result, the CLI. */
+  .calls { display: grid; gap: 0; border-top: 1px solid var(--line); counter-reset: call; }
+  .calls > li { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: var(--space-2); padding: 6px 0; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: var(--fs-label); color: var(--text-2); counter-increment: call; }
+  .call-body { min-width: 0; overflow-wrap: anywhere; }
+  .calls > li::before { content: counter(call); color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+  .calls > li.calls-empty { display: block; font-family: var(--sans); font-size: var(--fs-meta); color: var(--text-3); }
+  .calls > li.calls-empty::before { content: none; }
+  .calls .call-tool { color: var(--text); font-weight: 600; }
+  .calls .call-failed { color: var(--error); }
+  .sub-meta { margin-left: var(--space-2); color: var(--text-3); font-weight: 400; }
+  /* The collapsed payout summary (amount and gas cap) needs a wide row; phones keep just the title. */
+  @media (max-width: 519px) { #change-meta { display: none; } }
+  .json, .cmd { margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); font-family: var(--mono); font-size: var(--fs-label); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+  .cmd code { font-size: inherit; }
+}

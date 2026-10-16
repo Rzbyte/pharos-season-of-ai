@@ -10,8 +10,9 @@ commit on `main`.
 
 ## Next action
 
-Task 05, Threshold Guardian: build the shared agent core in `agent/` and the guardian capability on
-branch `task-05-threshold-guardian`. After that, follow the [build order](#build-order).
+Task 08, Dry-Run Executor, on branch `task-08-dry-run-executor`. It builds on the agent core and the
+guardian's action simulation (`agent/src/guardian/run.ts`, `prepareAction`). After that, follow the
+[build order](#build-order).
 
 ## User actions required
 
@@ -31,7 +32,7 @@ branch `task-05-threshold-guardian`. After that, follow the [build order](#build
    - All three report `meta.transport` `docs-mcp`.
 
    If C comes back `answered`, keep that JSON: it is a real regression. The lab at `/` should read
-   "4 / 30 built".
+   "5 / 30 built", and `/tasks/05` should open with a guardian decision.
 2. **Optional, speeds up everything: network access for Claude sessions.** In the cloud
    environment's settings (Network access, Allowed domains), add:
    - `mcp.pharos.xyz`
@@ -41,8 +42,24 @@ branch `task-05-threshold-guardian`. After that, follow the [build order](#build
    - `pharos-agent-lab.vercel.app`
 
    With those, read-only live proofs can be captured in-session instead of from Termux.
-3. **Live proof runs.** Each built task lists its exact Termux command in its row below. Run it, then
-   commit the `proof/` files it writes. The offline verifier re-checks them.
+3. **Live proof runs.** Run these from Termux, then commit the `proof/` files they write. The offline
+   verifier re-checks them in any later session.
+
+   ```sh
+   cd ~/pharos-season-of-ai && git checkout main && git pull origin main
+   cd agent && npm ci
+   # Task 05 (mainnet, read-only, no key):
+   node dist/src/cli.js guardian payout --proof ../tasks/05-threshold-guardian/proof/payout-mainnet.json
+   node dist/src/cli.js verify ../tasks/05-threshold-guardian/proof/payout-mainnet.json
+   cd .. && git add tasks/*/proof && git commit -m "Live proof: Task 05" && git push origin main
+   ```
+
+   Optionally, Task 05 can also execute on Atlantic. Use a testnet key holding at least 1 USDC and some
+   PHRS, from the Atlantic faucet:
+
+   ```sh
+   PRIVATE_KEY=0x... node dist/src/cli.js guardian atlantic-payout --execute --proof ../tasks/05-threshold-guardian/proof/atlantic-executed.json
+   ```
 
 ## Environment facts (verified; don't re-check)
 
@@ -63,14 +80,17 @@ branch `task-05-threshold-guardian`. After that, follow the [build order](#build
 
 ## Architecture (decided)
 
-- **`agent/`** is one TypeScript package, the agent runtime that Tasks 05 to 30 share. It holds the
-  core and one module per capability:
-  - a Chain MCP client that records a transcript;
+- **`agent/`** is one TypeScript package, the agent runtime that Tasks 05 to 30 share
+  ([README](agent/README.md)). It holds the core and one module per capability:
+  - a Chain MCP client on the official SDK that records a transcript;
   - the official network config;
   - reads pinned to one block;
-  - keys that stay local.
+  - local signing, with `send_raw_transaction` as the only way out;
+  - proofs verified by replay.
 
-  Tasks 01 to 04 keep their own code.
+  It vendors the official Chain MCP server, unmodified, with a test that pins its git blob hashes.
+  Tests talk to that real server code; only the chain under it is a fake. Tasks 01 to 04 keep their
+  own code.
 - **`tasks/NN-name/`** holds each task's page, README, SUBMISSION and proof. Its HTTP endpoint is a
   route of one shared serverless function, so the project stays within Vercel's function limits.
 - **Chain MCP use:**
@@ -95,10 +115,10 @@ Pharos protocol addresses not yet verified.
 | 02 | Event / Log Monitor | DONE | `get_logs` monitor, dedup | `305daf4` | pass | live, verified, 2026-10-14 | on site (not checkable here) | [ready](tasks/02-event-log-monitor/SUBMISSION.md); submitted | none |
 | 03 | Docs MCP Onboarding | DONE | onboarding evidence page | `305daf4` | pass | Drive proof + video | on site (not checkable here) | [ready](tasks/03-docs-mcp-onboarding/SUBMISSION.md); submitted | none |
 | 04 | Doc-Search CLI | DONE | Docs MCP `askQuestion` + source gate (EN/ID) | `26c64fe` | pass | live, verified, 2026-10-15 | main not deployed yet | [ready](tasks/04-doc-search-cli/SUBMISSION.md) | user action 1 |
-| 05 | Threshold Guardian | NOT STARTED | multi-condition decision at one block, then action | | | | | | next action |
+| 05 | Threshold Guardian | BLOCKED | six conditions at one block, rule, simulated action; Atlantic execution with re-check (`agent/src/guardian`) | main, "Task 05:" | pass: agent 27; site, shared and page 47 | pending the first live run | in main, not deployed yet | [ready](tasks/05-threshold-guardian/SUBMISSION.md) | user action 3 (live proof), then DONE |
 | 06 | Saga Executor | NOT STARTED | dependent steps with retry and rollback | | | | | | |
 | 07 | Arbitrage Scanner | NOT STARTED | two-source rates net of fees | | | | | | needs verified Pharos DEX sources |
-| 08 | Dry-Run Executor | NOT STARTED | simulate outcome and cost before submission | | | | | | |
+| 08 | Dry-Run Executor | NOT STARTED | simulate outcome and cost before submission | | | | | | next action |
 | 09 | Trend Watcher | NOT STARTED | persisted observations, trend condition | | | | | | |
 | 10 | Batch Executor | NOT STARTED | bundle independent actions | | | | | | |
 | 11 | Policy Gatekeeper | NOT STARTED | spend limits, allowlists, time windows | | | | | | |

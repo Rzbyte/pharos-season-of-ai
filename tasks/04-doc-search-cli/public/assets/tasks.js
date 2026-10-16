@@ -27,7 +27,7 @@ export const TASKS = Object.freeze([
   task("02", "Event Monitor", { official: "Event / Log Monitor", verb: "Watch", tool: "Chain MCP", status: "built", purpose: "Transfer events as they land, each shown once." }),
   task("03", "Docs Onboarding", { official: "Docs MCP Onboarding", verb: "Audit", tool: "Docs MCP", status: "built", purpose: "From the docs to a working Atlantic RPC call, with the gaps on the way." }),
   task("04", "Docs Search", { official: "Doc-Search CLI", verb: "Query", tool: "Developer Docs", status: "built", purpose: "Answers from the official Pharos docs, with sources, or no answer." }),
-  task("05", "Threshold Guardian"),
+  task("05", "Threshold Guardian", { verb: "Guard", tool: "Chain MCP", status: "built", purpose: "A payout that fires only when every on-chain condition holds at one block." }),
   task("06", "Saga Executor"),
   task("07", "Arbitrage Scanner"),
   task("08", "Dry-Run Executor"),

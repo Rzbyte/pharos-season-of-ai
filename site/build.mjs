@@ -27,7 +27,14 @@ export const TASK_DIRS = Object.freeze({
   "02": "tasks/02-event-log-monitor",
   "03": "tasks/03-docs-mcp-onboarding",
   "04": "tasks/04-doc-search-cli",
+  "05": "tasks/05-threshold-guardian",
 });
+
+/**
+ * The agent (agent/): the runtime behind Tasks 05 onward, compiled once, with one API function for all of
+ * them (agent/api/agent.js, served at /api/agent?task=NN).
+ */
+export const AGENT_DIR = "agent";
 
 /** Tasks whose API handlers import their compiled core from dist/ (built by `npm run build` there). */
 const COMPILED = ["01", "02", "04"];
@@ -58,7 +65,7 @@ async function place(from, to, placed) {
 /** The API files of each task, and the root adapters that expose them. Throws on a duplicate name or a missing adapter. */
 export async function apiMap() {
   const map = new Map();
-  for (const [n, dir] of Object.entries(TASK_DIRS)) {
+  for (const [n, dir] of [...Object.entries(TASK_DIRS), ["agent", AGENT_DIR]]) {
     const api = join(REPO, dir, "api");
     if (!existsSync(api)) continue;
     for (const name of (await readdir(api)).filter((file) => file.endsWith(".js"))) {
@@ -80,8 +87,8 @@ export async function assemble({ out = join(REPO, "site", "public") } = {}) {
   for (const args of [["shared/ui/sync.mjs", "--check"], ["lab/build.mjs", "--check"], ["tasks/03-docs-mcp-onboarding/build.mjs", "--check"]]) {
     execFileSync(process.execPath, [join(REPO, args[0]), ...args.slice(1)], { stdio: "inherit" });
   }
-  for (const n of COMPILED) {
-    if (!existsSync(join(REPO, TASK_DIRS[n], "dist", "src"))) throw new Error(`${TASK_DIRS[n]}/dist is missing: run npm run build there first`);
+  for (const dir of [...COMPILED.map((n) => TASK_DIRS[n]), AGENT_DIR]) {
+    if (!existsSync(join(REPO, dir, "dist", "src"))) throw new Error(`${dir}/dist is missing: run npm run build there first`);
   }
   const apis = await apiMap();
 

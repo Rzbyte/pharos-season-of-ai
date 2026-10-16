@@ -497,7 +497,8 @@ describe("the Task 02 page in a browser", { skip }, () => {
           const after = getComputedStyle(link, "::after");
           return box.height - parseFloat(after.top) - parseFloat(after.bottom);
         });
-        assert.ok(hit >= 44, `${width}px: explorer link hit area ${hit}px`);
+        // Sub-pixel layout can land a hair under 44 (43.99997 at 320 px): compare at 0.01 px.
+        assert.ok(hit >= 44 - 0.01, `${width}px: explorer link hit area ${hit}px`);
         // Event text stays readable at every width.
         const sizes = await page.$$eval(".event-path, .event-block, .event-kind, .section-meta", (elements) => elements.map((element) => parseFloat(getComputedStyle(element).fontSize)));
         assert.ok(Math.min(...sizes) >= 12, `${width}px: smallest event text ${Math.min(...sizes)}px`);

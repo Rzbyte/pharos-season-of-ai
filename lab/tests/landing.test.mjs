@@ -21,16 +21,18 @@ describe("the landing page", () => {
 
   test("one row per built task, with its number, name, verb and one line; the count says how many", () => {
     const rows = [...html.matchAll(/<li class="row">([\s\S]*?)<\/li>/g)].map(([, row]) => row);
-    assert.equal(rows.length, 4);
+    const built = TASKS.filter((entry) => entry.status === "built");
+    assert.ok(built.length >= 5);
+    assert.equal(rows.length, built.length);
     for (const [index, task] of TASKS.filter((entry) => entry.status === "built").entries()) {
       for (const part of [`<span class="row-n">${task.n}</span>`, `<a class="row-title" href="/tasks/${task.n}">${task.title}</a>`, `>${task.verb}</span>`, `>${task.purpose.replaceAll("'", "&#39;")}</span>`]) assert.ok(rows[index].includes(part), `${task.n}: ${part}`);
     }
-    assert.match(html, /<p class="lab-count"><b>4<\/b> \/ 30 built<\/p>/);
+    assert.ok(html.includes(`<p class="lab-count"><b>${built.length}</b> / 30 built</p>`));
     assert.equal(LAB.total, 30);
   });
 
   test("every built row opens its page on this site, /tasks/NN, in place; never a dead link", () => {
-    assert.deepEqual([...html.matchAll(/<a class="row-title" href="([^"]+)">/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04"]);
+    assert.deepEqual([...html.matchAll(/<a class="row-title" href="([^"]+)">/g)].map(([, href]) => href), TASKS.filter((task) => task.status === "built").map((task) => `/tasks/${task.n}`));
     assert.doesNotMatch(html, /vercel\.app|row-source|row-open/);
     assert.doesNotMatch(html, /href=""|href="#"|href="null"/);
   });
@@ -49,8 +51,9 @@ describe("the landing page", () => {
     // Not hidden in the markup: without JavaScript the list is shown; landing.js collapses it.
     const planned = html.match(/<ol class="planned" id="planned-body">([\s\S]*?)<\/ol>/)[1];
     assert.match(read("public/assets/landing.css"), /\.js \.planned:not\(\[data-ready\]\) \{ display: none; \}/);
-    assert.equal(planned.match(/<li>/g).length, 26);
-    assert.match(html, /<span class="disclosure-meta">26 tasks, 05–30<\/span>/);
+    const plannedTasks = TASKS.filter((task) => task.status !== "built");
+    assert.equal(planned.match(/<li>/g).length, plannedTasks.length);
+    assert.ok(html.includes(`<span class="disclosure-meta">${plannedTasks.length} tasks, ${plannedTasks[0].n}–30</span>`));
     assert.doesNotMatch(planned, /<a\b/);
     assert.doesNotMatch(planned, /Docs MCP Onboarding|Docs Onboarding/);
   });
@@ -59,7 +62,8 @@ describe("the landing page", () => {
     const planned = html.match(/<ol class="planned" id="planned-body">([\s\S]*?)<\/ol>/)[1];
     const rows = [...planned.matchAll(/<li><span class="row-n">(\d{2})<\/span><span>([^<]*)<\/span><\/li>/g)].map(([, n, title]) => [n, title]);
     assert.deepEqual(rows, TASKS.filter((task) => task.status !== "built").map((task) => [task.n, task.title]));
-    assert.deepEqual(rows.slice(14, 18), [["19", "Invoice-to-Payment Agent"], ["20", "X402 Paywalled API"], ["21", "X402 Agent Buyer"], ["22", "On-Chain Alert Bot"]]);
+    const title = (n) => TASKS.find((task) => task.n === n).title;
+    assert.deepEqual(["19", "20", "21", "22"].map(title), ["Invoice-to-Payment Agent", "X402 Paywalled API", "X402 Agent Buyer", "On-Chain Alert Bot"]);
     assert.deepEqual(rows.at(-1), ["30", "Multi-Protocol Aggregator"]);
   });
 
