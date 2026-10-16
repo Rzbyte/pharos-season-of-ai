@@ -1,80 +1,126 @@
 # Program status: Pharos Agent Lab
 
-What is built, what is frozen, and what needs a person. Updated 2026-10-16.
+Resume with: *"Continue the Pharos Agent Lab program exactly from PROGRAM_STATUS.md. Do not re-plan
+completed work. Continue from the next unfinished action."* This file is updated in every checkpoint
+commit on `main`.
 
-## USER ACTION REQUIRED
+- **Canonical site:** https://pharos-agent-lab.vercel.app (one Vercel project, built from the repo root)
+- **Repository:** https://github.com/Rzbyte/pharos-season-of-ai
+- **Updated:** 2026-10-16
 
-**Deploy `main` to the existing Pharos Agent Lab project, then check Task 04 in production.** This build
-environment can't do either step. It has no Vercel CLI, token or project link, and its proxy refuses
-`vercel.com`, `*.vercel.app` and `docs.pharos.xyz` (CONNECT 403). Deploy from your checkout that is
-already linked to the canonical project; don't create or link another project:
+## Next action
 
-```sh
-git checkout main && git pull origin main
-vercel --prod
-```
+Task 05, Threshold Guardian: build the shared agent core in `agent/` and the guardian capability on
+branch `task-05-threshold-guardian`. After that, follow the [build order](#build-order).
 
-Then ask each question on the production site's `/tasks/04`:
+## User actions required
 
-| | Question (exact) | Expected |
+1. **Deploy `main` and check Task 04 in production.** From the Termux checkout linked to the existing
+   project (don't create or link another project): `git checkout main && git pull origin main && vercel --prod`.
+   Then ask these on `/tasks/04`:
+
+   | | Question (exact) | Expected |
+   |---|---|---|
+   | A | `What is the Atlantic chain ID?` | An answer with numbered `docs.pharos.xyz` sources; the run line reads "Developer Docs MCP (askQuestion)" |
+   | B | `How do I deploy a contract with Foundry on Pharos?` | A procedural answer with `docs.pharos.xyz` sources; same run line |
+   | C | `bagaimana cara deploy Anchor program ke Solana?` | Tagged "No answer": "No good answer found." with a reason; no answer text, no steps; "Nearby in the docs" may follow |
+
+   The shell check is `curl -sG https://pharos-agent-lab.vercel.app/api/search --data-urlencode "q=<question>"`:
+   - A and B give `status` `answered`.
+   - C gives `no_answer`, with reason `not_in_docs` expected.
+   - All three report `meta.transport` `docs-mcp`.
+
+   If C comes back `answered`, keep that JSON: it is a real regression. The lab at `/` should read
+   "4 / 30 built".
+2. **Optional, speeds up everything: network access for Claude sessions.** In the cloud
+   environment's settings (Network access, Allowed domains), add:
+   - `mcp.pharos.xyz`
+   - `docs.pharos.xyz`
+   - `rpc.pharos.xyz`
+   - `atlantic.dplabs-internal.com`
+   - `pharos-agent-lab.vercel.app`
+
+   With those, read-only live proofs can be captured in-session instead of from Termux.
+3. **Live proof runs.** Each built task lists its exact Termux command in its row below. Run it, then
+   commit the `proof/` files it writes. The offline verifier re-checks them.
+
+## Environment facts (verified; don't re-check)
+
+- **This build sandbox** can't reach Pharos, Vercel, the docs or the explorers (proxy CONNECT 403).
+  `npm` and `git clone` of public GitHub repositories work.
+- **The owner's Termux** (Android, ARM64) runs Node. Foundry does not run there
+  ([Task 03 evidence](tasks/03-docs-mcp-onboarding/evidence.json)), so the Skill Engine is used
+  through its official viem TypeScript script templates, not `cast`/`forge`.
+
+## Verified integrations
+
+| Integration | Official source | What it provides |
 |---|---|---|
-| A | `What is the Atlantic chain ID?` | An answer with numbered `docs.pharos.xyz` sources. The run line under it reads "Developer Docs MCP (askQuestion)". |
-| B | `How do I deploy a contract with Foundry on Pharos?` | A procedural answer with `docs.pharos.xyz` sources and the same run line. |
-| C | `bagaimana cara deploy Anchor program ke Solana?` | The band is tagged "No answer" and reads "No good answer found." with a reason. There is no answer text and no steps. A "Nearby in the docs" list may follow. |
+| Chain MCP | [PharosNetwork/pharos-mcp](https://github.com/PharosNetwork/pharos-mcp) at `9a3750c`; hosted `https://mcp.pharos.xyz/mcp` (mainnet, chain 1672, read-only, 120 req/min) | `get_chain_info`, `get_block_number`, `get_balance`, `get_transaction_count`, `get_gas_price`, `get_block`, `get_transaction`, `get_transaction_receipt`, `get_code`, `get_storage_at`, `eth_call`, `estimate_gas`, `get_logs` (≤1,000 blocks). `send_raw_transaction` is disabled on the hosted endpoint and enabled by `ENABLE_SEND_RAW_TRANSACTION` when self-hosted (`PHAROS_RPC_URL`, `PHAROS_CHAIN_ID`). |
+| Developer Docs MCP | `https://docs.pharos.xyz/~gitbook/mcp` (Task 04 proof) | `searchDocumentation`, `getPage`, `askQuestion`, `sendFeedback` |
+| Skill Engine | [PharosNetwork/pharos-skill-engine](https://github.com/PharosNetwork/pharos-skill-engine) at `a873387` (v0.1.0) | Networks: Atlantic 688689 at `https://atlantic.dplabs-internal.com`, mainnet 1672 at `https://rpc.pharos.xyz`. Also token addresses, `cast`/`forge` recipes, and viem/ethers/web3.py script templates. |
+| x402 | [PharosNetwork/examples `skills/x402-pharos`](https://github.com/PharosNetwork/examples/tree/main/skills/x402-pharos) at `f08e921` | `@x402/core`, `@x402/evm`, `@x402/fetch`, `@x402/express` v2 with viem. Networks `eip155:1672` and `eip155:688689`. The facilitator URL and USDC address are supplied by the builder. |
 
-The same checks work from a shell: `curl -sG https://<production-domain>/api/search --data-urlencode "q=<question>"`.
+## Architecture (decided)
 
-- A and B should return `status` `answered`.
-- C should return `status` `no_answer`, with reason `not_in_docs` expected.
-- All three should report `meta.provider` `developer-docs-mcp` and `meta.transport` `docs-mcp`.
+- **`agent/`** is one TypeScript package, the agent runtime that Tasks 05 to 30 share. It holds the
+  core and one module per capability:
+  - a Chain MCP client that records a transcript;
+  - the official network config;
+  - reads pinned to one block;
+  - keys that stay local.
 
-If C comes back `answered`, that is a real regression. Keep that JSON, because the gate can only be
-fixed against the live wording. When all three pass, Task 04 is done.
+  Tasks 01 to 04 keep their own code.
+- **`tasks/NN-name/`** holds each task's page, README, SUBMISSION and proof. Its HTTP endpoint is a
+  route of one shared serverless function, so the project stays within Vercel's function limits.
+- **Chain MCP use:**
+  - The hosted endpoint for mainnet reads.
+  - The official server, run locally over stdio against Atlantic, when a task must sign and broadcast.
+    It signs locally and broadcasts with `send_raw_transaction`.
 
-The same deploy also carries the 30-task map, so the lab at `/` should read "4 / 30 built".
+## Build order
+
+05 → 08 → 11 → 09 → 22 → 23 → 24 → 27 → 25 → 26 → 28 → 13 → 29 → 17 → 19 → 18 → 20 → 21 → 10 →
+06 → 12 → 07 → 14 → 15 → 16 → 30.
+
+Read-only Chain MCP capabilities come first, each reusing the last. Then come the Docs MCP
+compositions, then payments and x402, then write-heavy flows. Last are the DeFi tasks, which need
+Pharos protocol addresses not yet verified.
 
 ## Tasks
 
-| Task | Route | Status | Proof |
-|---|---|---|---|
-| 01 Read Contract State | `/tasks/01` | Built | Live Chain MCP read, 2026-10-14T07:10:47Z, block 20202384 ([transcript](tasks/01-read-contract-state/proof/mcp-transcript.json)) |
-| 02 Event / Log Monitor | `/tasks/02` | Built | 19 live Transfer events, 2026-10-14T20:47:42Z, verified ([proof](tasks/02-event-log-monitor/proof)) |
-| 03 Docs MCP Onboarding | `/tasks/03` | Built | The evidence page; proof folder and video on Drive ([evidence.json](tasks/03-docs-mcp-onboarding/evidence.json)) |
-| 04 Doc-Search CLI | `/tasks/04` | **Frozen**; done once the production check above passes | Live Developer Docs MCP runs, 2026-10-15T20:39:19Z, 3/3 verified ([SUBMISSION.md](tasks/04-doc-search-cli/SUBMISSION.md)) |
+| # | Task | Status | Capability | Commit | Tests | Proof | Deploy | Submission | Next / blocker |
+|---|---|---|---|---|---|---|---|---|---|
+| 01 | Read Contract State | DONE | 5 pinned `eth_call` reads; address/tx inspector | `305daf4` | pass | live, 2026-10-14 | on site (not checkable here) | [ready](tasks/01-read-contract-state/SUBMISSION.md); submitted | none |
+| 02 | Event / Log Monitor | DONE | `get_logs` monitor, dedup | `305daf4` | pass | live, verified, 2026-10-14 | on site (not checkable here) | [ready](tasks/02-event-log-monitor/SUBMISSION.md); submitted | none |
+| 03 | Docs MCP Onboarding | DONE | onboarding evidence page | `305daf4` | pass | Drive proof + video | on site (not checkable here) | [ready](tasks/03-docs-mcp-onboarding/SUBMISSION.md); submitted | none |
+| 04 | Doc-Search CLI | DONE | Docs MCP `askQuestion` + source gate (EN/ID) | `26c64fe` | pass | live, verified, 2026-10-15 | main not deployed yet | [ready](tasks/04-doc-search-cli/SUBMISSION.md) | user action 1 |
+| 05 | Threshold Guardian | NOT STARTED | multi-condition decision at one block, then action | | | | | | next action |
+| 06 | Saga Executor | NOT STARTED | dependent steps with retry and rollback | | | | | | |
+| 07 | Arbitrage Scanner | NOT STARTED | two-source rates net of fees | | | | | | needs verified Pharos DEX sources |
+| 08 | Dry-Run Executor | NOT STARTED | simulate outcome and cost before submission | | | | | | |
+| 09 | Trend Watcher | NOT STARTED | persisted observations, trend condition | | | | | | |
+| 10 | Batch Executor | NOT STARTED | bundle independent actions | | | | | | |
+| 11 | Policy Gatekeeper | NOT STARTED | spend limits, allowlists, time windows | | | | | | |
+| 12 | Skill + Chain MCP Flow | NOT STARTED | Skill Engine skill + Chain MCP | | | | | | |
+| 13 | Docs MCP + Chain MCP Agent | NOT STARTED | understand via docs, then call | | | | | | |
+| 14 | Portfolio Assistant | NOT STARTED | balances, positions, yields Q&A | | | | | | needs verified protocol sources |
+| 15 | Yield Optimizer | NOT STARTED | compare yields, rebalance | | | | | | needs verified protocol sources |
+| 16 | Liquidation Watchdog | NOT STARTED | lending risk warnings | | | | | | needs a verified lending protocol |
+| 17 | Natural-Language Payment Agent | NOT STARTED | request → prepared payment | | | | | | |
+| 18 | Recurring Payment Agent | NOT STARTED | repeating payments | | | | | | |
+| 19 | Invoice-to-Payment Agent | NOT STARTED | invoice → prepared payment | | | | | | |
+| 20 | X402 Paywalled API | NOT STARTED | paid endpoint + facilitator + paying client | | | | | | live payment needs funded wallets |
+| 21 | X402 Agent Buyer | NOT STARTED | buys x402 data within a budget | | | | | | after 20 |
+| 22 | On-Chain Alert Bot | NOT STARTED | conditions → alerts | | | | | | |
+| 23 | Whale-Watching Agent | NOT STARTED | tracked addresses, significant activity | | | | | | |
+| 24 | Gas Fee Optimizer | NOT STARTED | gas observation → timing and cost | | | | | | |
+| 25 | Wallet Risk Checker | NOT STARTED | wallet/contract history before a tx | | | | | | |
+| 26 | Audit-Log Agent | NOT STARTED | plain-language activity report | | | | | | |
+| 27 | dApp Support Agent | NOT STARTED | explain transaction failures | | | | | | |
+| 28 | Weekly Digest Agent | NOT STARTED | periodic activity summary | | | | | | |
+| 29 | Doc-Grounded Builder Agent | NOT STARTED | docs how-to, then perform/prepare | | | | | | |
+| 30 | Multi-Protocol Aggregator | NOT STARTED | across more than one protocol | | | | | | needs verified protocol sources |
 
-Every route is served by the one Vercel project built from the repository root ([site/](site)).
-Whether production is up to date can't be checked from this environment.
-
-## Task map
-
-The manifest ([shared/ui/tasks.js](shared/ui/tasks.js)) follows the official map of 30 tasks. That map
-inserted two x402 tasks as 20 and 21, so the legacy Tasks 20 to 28 are now 22 to 30, titles unchanged.
-Tasks 01 to 04 keep their numbers, their routes (`/tasks/01` to `/tasks/04`) and their proof. Every
-page's counter reads `NN / 30`, and the lab reads "4 / 30 built".
-
-The shared tests ([shared/ui/tests/ui.test.mjs](shared/ui/tests/ui.test.mjs)) pin all of this: the
-numbering, the insertion, the built routes, each page's counter, and the neighbours around 04/05,
-19 to 22, and 30.
-
-The official titles of Tasks 20 and 21 aren't in this repository, and no reachable source gives them.
-So the manifest doesn't guess: their `official` is null, and the lab lists them as
-"x402 task (title pending)".
-
-## Needed to continue
-
-1. **The official brief for Task 05, Threshold Guardian**, the next task in order.
-   - Each brief so far came with its task (difficulty, tool, goal, requirements), as for Tasks 02 and 04.
-     For Tasks 05 to 30 this repository has only titles, and no public source lists the briefs.
-   - Building Task 05 from its title alone would mean guessing what it must do and which integration it
-     uses.
-2. **The official titles of Tasks 20 and 21** (x402). Each is a one-line change in `shared/ui/tasks.js`,
-   plus the two test lists that pin the titles.
-
-Integrations already verified in this repository:
-
-- **Pharos Chain MCP** at `https://mcp.pharos.xyz/mcp`, used by Tasks 01 and 02: `get_chain_info`,
-  `get_block_number`, `eth_call`, `get_logs`, `get_code`, `get_balance`, `get_transaction_count`,
-  `get_transaction` and `get_transaction_receipt`.
-- **The Pharos Developer Docs MCP** `askQuestion`, used by Task 04.
-
-SkillEngine and x402 are not verified from this environment yet.
+The task summaries come from the owner's restatement of the official map. A task's full official brief
+is checked before it is built, where a source is reachable.

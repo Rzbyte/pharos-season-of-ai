@@ -8,7 +8,7 @@ deployment (each task deploys from its own folder, so it cannot load files from 
 | `lab.css` | Tokens (Pharos palette, dark and light), the compact type and spacing scale, the shell (bar, task switcher, one-line footer, the two page models below), and primitives: panel, status, rows, technical values, actions, buttons, field, pager, pill, state block, disclosure, toggle row, sheet, counts, steps, key/value, sources. A page adds its own workspace styles in the `task` layer. |
 | `lab.js` | DOM-free helpers (digits, hex, explorer links, `pageOf`, `neighbours`, `taskLink`) and small DOM helpers (`renderHex`, `wireCopy`, `linkExplorer`, `renderTaskNav`, `taskMenu`, `wireToggle`). |
 | `theme.js` | Light and dark, following the system until the reader chooses. |
-| `tasks.js` | The task manifest: one entry per task of the official map, 30 in all, in order (Tasks 20 and 21 are the x402 tasks, their official titles still to confirm). A built task's link is its route on the unified site, `/tasks/NN`; `LEGACY` keeps the standalone Task 01 and 02 addresses, used only by pages served from those deployments. |
+| `tasks.js` | The task manifest: one entry per task of the official map, 30 in all, in order (Tasks 20 and 21 are the x402 tasks). A built task's link is its route on the unified site, `/tasks/NN`; `LEGACY` keeps the standalone Task 01 and 02 addresses, used only by pages served from those deployments. |
 | `header.html`, `footer.html` | The shell markup, stamped into each page between `<!-- shell:header NN -->` markers. |
 | `fonts/` | Geist, Geist Mono and Departure Mono (SIL OFL 1.1). |
 

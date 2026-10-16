@@ -67,13 +67,9 @@ describe("the official task map", () => {
     assert.deepEqual(TASKS.slice(0, 19).map((task) => [task.n, task.official]), LEGACY_MAP.slice(0, 19).map((title, index) => [String(index + 1).padStart(2, "0"), title]));
     assert.deepEqual(TASKS.slice(21).map((task) => [task.n, task.official]), LEGACY_MAP.slice(19).map((title, index) => [String(index + 22), title]));
     assert.equal(TASKS.find((task) => task.n === "30").tool, "Composition", "a task keeps its metadata when it moves");
-    for (const n of ["20", "21"]) {
-      const task = TASKS.find((entry) => entry.n === n);
-      assert.equal(task.official, null, `${n}: no official title is guessed`);
-      assert.equal(task.title, "x402 task (title pending)", n);
-      assert.deepEqual([task.status, task.href, task.legacy, task.tool], ["planned", null, null, null], n);
-    }
-    assert.deepEqual(TASKS.filter((task) => task.official === null).map((task) => task.n), ["20", "21"], "every other task has its official title");
+    assert.deepEqual(TASKS.slice(19, 21).map((task) => [task.n, task.official, task.title]), [["20", "X402 Paywalled API", "X402 Paywalled API"], ["21", "X402 Agent Buyer", "X402 Agent Buyer"]]);
+    for (const task of TASKS.slice(19, 21)) assert.deepEqual([task.status, task.href, task.legacy, task.tool], ["planned", null, null, null], task.n);
+    assert.ok(TASKS.every((task) => typeof task.official === "string" && task.official.length > 0), "every task has its official title");
   });
 
   test("the built tasks keep their numbers, routes and fallbacks; nothing planned is linked", () => {

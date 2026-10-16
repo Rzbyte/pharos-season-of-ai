@@ -43,10 +43,9 @@ export const TASKS = Object.freeze([
   task("18", "Recurring Payment Agent"),
   task("19", "Invoice-to-Payment Agent"),
   // 20 and 21 are the two x402 tasks the official map inserted here; the tasks that were 20 to 28 are now
-  // 22 to 30. Their official titles are not confirmed in this repository yet, so none is guessed:
-  // `official` is null and the title says so (PROGRAM_STATUS.md).
-  task("20", "x402 task (title pending)", { official: null }),
-  task("21", "x402 task (title pending)", { official: null }),
+  // 22 to 30.
+  task("20", "X402 Paywalled API"),
+  task("21", "X402 Agent Buyer"),
   task("22", "On-Chain Alert Bot"),
   task("23", "Whale-Watching Agent"),
   task("24", "Gas Fee Optimizer"),

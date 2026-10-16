@@ -1,54 +1,66 @@
 # Task 04 submission: Doc-Search CLI
 
-**Status:** frozen. The code is final on `main`; the task is marked done once the production checks in
-[PROGRAM_STATUS.md](../../PROGRAM_STATUS.md) pass. Do not change its design unless a real regression is
-found.
-
 | | |
 |---|---|
-| What it is | `pharos-docs`: a question in, a short answer from the official Pharos Developer Docs with its source pages out, or a plain no-answer. A docs search page runs the same search. |
-| Tool | Pharos Developer Docs MCP, `https://docs.pharos.xyz/~gitbook/mcp`, tool `askQuestion` (Streamable HTTP, JSON-RPC 2.0, no authentication) |
-| Code | [`tasks/04-doc-search-cli/`](.) on `main` |
-| Web page | `/tasks/04` on the unified Pharos Agent Lab site, backed by `GET /api/search?q=` (the same `search()` and provider as the CLI) |
-| Release commits | `14d30b1` (no-answer detection in Indonesian as well as English), `26c64fe` (the question-log page), on top of `bed7068` (live MCP proof) |
+| Live route | https://pharos-agent-lab.vercel.app/tasks/04 |
+| Repository | [`tasks/04-doc-search-cli/`](https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/04-doc-search-cli) |
+| Proof | [`proof/query-a.json`](proof/query-a.json), [`query-b.json`](proof/query-b.json), [`query-c.json`](proof/query-c.json): three live runs, 2026-10-15T20:39:19Z, each verified 11/11 by `npm run verify-proof` |
+| Pharos technology | Pharos Developer Docs MCP, `https://docs.pharos.xyz/~gitbook/mcp`, tool `askQuestion` (Streamable HTTP, JSON-RPC 2.0) |
 
-## Official requirements
+## Reviewer note
 
-1. **Accepts a natural-language question.** `pharos-docs "<question>"`, quoted or not ([Usage](README.md#usage)).
-2. **Returns a concise answer with source links.** The MCP's answer, then numbered `docs.pharos.xyz`
-   sources taken from it ([Text output](README.md#text-output)).
-3. **Says so when there is no good answer.** "No good answer found in the Pharos Developer Docs.", with
-   the reason and nearby pages; never an invented answer ([No-answer behavior](README.md#no-answer-behavior)).
-   A docs answer that says the docs do not cover the topic is recognised in English and Indonesian.
-4. **README with installation, usage and at least 3 example queries with output.**
-   [Installation](README.md#installation), [Usage](README.md#usage), [Examples](README.md#examples).
+`pharos-docs "<question>"` returns a short answer from the official Pharos docs and the
+`docs.pharos.xyz` pages it cites. When the docs don't answer, it prints "No good answer found." with
+the reason and nearby pages, and never invents an answer. The `/tasks/04` page runs the same search
+through `/api/search`.
 
-## Proof
+| Requirement | Where |
+|---|---|
+| Natural-language question | [Usage](README.md#usage) |
+| Concise answer with source links | [Text output](README.md#text-output) |
+| Says so when there is no good answer | [No-answer behavior](README.md#no-answer-behavior) |
+| README: install, usage, 3 examples with output | [Installation](README.md#installation), [Examples](README.md#examples) |
 
-Captured 2026-10-15T20:39:19Z against the live Developer Docs MCP by `npm run proof`. Each of the
-three runs was then checked against its saved JSON-RPC requests and raw responses by
-`npm run verify-proof`, 11/11 checks each.
+| Proof query | Result |
+|---|---|
+| What is the Atlantic chain ID? | answered, 5 sources |
+| How do I deploy a contract with Foundry? | answered, 5 sources |
+| How do I deploy an Anchor program to Solana? | no answer (`not_in_docs`), 3 nearby pages |
 
-| Query | Result | Transcript |
-|---|---|---|
-| What is the Atlantic chain ID? | answered, 5 sources | [proof/query-a.json](proof/query-a.json) |
-| How do I deploy a contract with Foundry? | answered, 5 sources | [proof/query-b.json](proof/query-b.json) |
-| How do I deploy an Anchor program to Solana? | no answer (`not_in_docs`), 3 nearby pages | [proof/query-c.json](proof/query-c.json) |
+## Key implementation detail
 
-The verifier recomputes each result from the saved MCP response with the current code. It still passes
-after the Indonesian rules were added, so they changed none of the proven results.
+The MCP client is about 200 lines with no SDK. It POSTs one JSON-RPC request per call, refuses
+redirects, caps the body at 2 MB, and accepts only a response with its own request id.
 
-## Run it
+Between the MCP and the reader sits a deterministic source gate:
+- An answer is shown only with official `docs.pharos.xyz` sources.
+- An answer that says the docs don't cover the topic becomes a no-answer. This is detected from the
+  docs' own wording in English and Indonesian, with no topic list and no LLM. A factual "no" stays an
+  answer.
 
-```sh
-cd tasks/04-doc-search-cli
-npm ci
-node dist/src/cli.js "What is the Atlantic chain ID?"
-npm test && npm run test:web && npm run verify-proof
-```
+The verifier recomputes every proof result from the saved MCP response bytes.
 
-## Production
+## Video walkthrough (about 60 s)
 
-Not yet checked: this build environment cannot reach Vercel or `docs.pharos.xyz`. To deploy `main` to
-the existing Pharos Agent Lab project and check queries A, B and C on `/tasks/04`, follow the user
-action in [PROGRAM_STATUS.md](../../PROGRAM_STATUS.md).
+1. Open `/tasks/04`, tap "What is the Atlantic chain ID?": the answer, then numbered sources.
+2. Ask "How do I deploy a contract with Foundry on Pharos?": numbered steps, code with Copy.
+3. Ask "bagaimana cara deploy Anchor program ke Solana?": "No good answer found." with nearby pages.
+4. Open the JSON toggle on a result: `developer-docs-mcp`, `docs-mcp`, the endpoint.
+5. In a terminal: `pharos-docs "What is the Atlantic chain ID?"`.
+
+## X post draft
+
+A small docs search for Pharos: ask in plain English or Indonesian, get an answer from the official
+docs with the pages it came from, or a straight "no good answer". It runs on the Pharos Developer
+Docs MCP, and the proof is the raw MCP responses. https://pharos-agent-lab.vercel.app/tasks/04
+
+## How it works (reply)
+
+It asks the Developer Docs MCP's `askQuestion` and shows the answer only with the official pages it
+cites. When the docs say a topic isn't covered, a deterministic gate turns that into "No good answer
+found." instead of an answer.
+
+## Status
+
+Frozen. Production check pending: deploy `main` and run queries A, B and C on `/tasks/04`
+([PROGRAM_STATUS.md](../../PROGRAM_STATUS.md)).

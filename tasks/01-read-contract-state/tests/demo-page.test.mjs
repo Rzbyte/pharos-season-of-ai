@@ -297,8 +297,7 @@ describe("task manifest", () => {
     "Read Contract State", "Event / Log Monitor", "Docs MCP Onboarding", "Doc-Search CLI", "Threshold Guardian", "Saga Executor", "Arbitrage Scanner",
     "Dry-Run Executor", "Trend Watcher", "Batch Executor", "Policy Gatekeeper", "Skill + Chain MCP Flow", "Docs MCP + Chain MCP Agent", "Portfolio Assistant",
     "Yield Optimizer", "Liquidation Watchdog", "Natural-Language Payment Agent", "Recurring Payment Agent", "Invoice-to-Payment Agent",
-    // The two x402 tasks of the official map; their official titles are not confirmed yet.
-    null, null,
+    "X402 Paywalled API", "X402 Agent Buyer",
     "On-Chain Alert Bot", "Whale-Watching Agent", "Gas Fee Optimizer", "Wallet Risk Checker", "Audit-Log Agent", "dApp Support Agent", "Weekly Digest Agent",
     "Doc-Grounded Builder Agent", "Multi-Protocol Aggregator",
   ];

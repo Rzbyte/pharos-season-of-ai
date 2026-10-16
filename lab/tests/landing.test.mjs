@@ -59,7 +59,7 @@ describe("the landing page", () => {
     const planned = html.match(/<ol class="planned" id="planned-body">([\s\S]*?)<\/ol>/)[1];
     const rows = [...planned.matchAll(/<li><span class="row-n">(\d{2})<\/span><span>([^<]*)<\/span><\/li>/g)].map(([, n, title]) => [n, title]);
     assert.deepEqual(rows, TASKS.filter((task) => task.status !== "built").map((task) => [task.n, task.title]));
-    assert.deepEqual(rows.slice(14, 18), [["19", "Invoice-to-Payment Agent"], ["20", "x402 task (title pending)"], ["21", "x402 task (title pending)"], ["22", "On-Chain Alert Bot"]]);
+    assert.deepEqual(rows.slice(14, 18), [["19", "Invoice-to-Payment Agent"], ["20", "X402 Paywalled API"], ["21", "X402 Agent Buyer"], ["22", "On-Chain Alert Bot"]]);
     assert.deepEqual(rows.at(-1), ["30", "Multi-Protocol Aggregator"]);
   });
 
