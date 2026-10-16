@@ -1,86 +1,194 @@
 /* Task 04 workspace: docs search. Shared tokens, shell, sheet and primitives are in lab.css.
    An app page (body.app), not a document: the bar, the thread, the question box, exactly the screen's
-   height. Only the thread scrolls; the box stays at the bottom, above the keyboard where the browser
-   resizes for it, so asking again never means scrolling to find the box. Each question is its own
-   search, newest last; the newest is brought to the top of the thread with its answer under it. With
-   room, How it answers sits beside the thread; on a phone it opens as a sheet from About. */
+   height. The thread scrolls; the box stays at the bottom, above the keyboard where the browser resizes
+   for it. Each question is a turn: a heading band (the question, its outcome) and the result under it.
+   Asking again folds the earlier turns to their bands, so the thread reads as a list of questions. With
+   room, How it answers sits beside the thread as its own region; on a phone it opens as a sheet. No
+   region scrolls inside another. */
 @layer task {
+  /* Geist Mono's contextual alternates pull a "--" into the space before it ("Counter --rpc-url" reads
+     "Counter--rpc-url"): commands and flags are shown exactly as typed. */
+  .search-page :is(pre, code, kbd, .turn-flag) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+
   .ws { display: flex; flex-direction: column; min-height: 0; }
   /* One grid for the bar, the thread and the box, so the three line up: the thread's column, and with
      room the side column. */
   .ws-grid { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--space-8); }
-  .ws-grid > :first-child { width: 100%; max-width: 46rem; min-width: 0; }
+  .ws-grid > :first-child { width: 100%; max-width: 44rem; min-width: 0; }
   @media (min-width: 1000px) { .ws-grid { grid-template-columns: minmax(0, 1fr) 18.5rem; } }
 
-  /* The bar: the task, and the two tools (New, About). */
+  /* The bar: the task, and the two tools (New, About). On the narrowest phones, when both show, they
+     keep their icons and lose their words, so the title stays on one line. */
   .ws-bar { flex: none; border-bottom: 1px solid var(--line); }
-  .ws-bar-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 48px; }
-  .ws-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; font-size: 1rem; line-height: 1.3; letter-spacing: 0; }
+  /* Where scrollbars take room (Windows, Linux), the thread's takes it from the thread's width: the
+     shell, the bar, the box and the side panel keep the same room, so every column lines up with the
+     thread's (and with the other task pages, whose page scrollbar takes the same room). */
+  .ws-bar, .ask, body.app > .shell { overflow: hidden; scrollbar-gutter: stable; }
+  .ws-bar-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: 44px; }
+  .ws-title { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; font-size: .9375rem; line-height: 1.3; letter-spacing: 0; white-space: nowrap; }
   .ws-title .task-n { font-family: var(--mono); font-size: var(--fs-meta); font-weight: 400; color: var(--accent); }
-  .ws-tools { display: flex; gap: var(--space-2); }
+  .ws-tools { display: flex; flex: none; gap: var(--space-2); }
+  @media (max-width: 379px) {
+    .ws-tools:has(#clear:not([hidden])) .action { width: 36px; padding: 0; justify-content: center; }
+    .ws-tools:has(#clear:not([hidden])) .tool-label { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  }
   @media (min-width: 1000px) { .ws-about-open { display: none; } }
 
-  /* The thread's scroll area. A size container, so a turn can be as tall as the area (cqh), and the
-     containing block of what it holds (screen-reader text included), so nothing in it reaches the page. */
-  .ws-scroll { position: relative; flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; container: thread / size; }
-  .ws-col { --ws-pad: var(--space-4); display: flex; flex-direction: column; min-height: 100cqh; padding-block: var(--ws-pad); }
+  /* The body: the thread, and with room How it answers beside it. Two regions that each scroll on
+     their own, never one inside the other. The thread keeps room for its scrollbar, so a growing
+     thread never reflows sideways when the scrollbar appears. */
+  .ws-body { position: relative; display: flex; flex: 1 1 0; min-height: 0; }
+  /* The containing block of everything in the thread (screen-reader text included), so nothing in it
+     reaches the page. */
+  .ws-scroll { position: relative; flex: 1 1 0; min-width: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; container: thread / size; }
+  .ws-col { display: flex; flex-direction: column; min-height: 100cqh; padding-block: var(--space-4) var(--space-6); }
 
-  /* Before the first question: what this is, and three to try, near the box on a phone. */
-  .welcome { display: grid; gap: var(--space-3); margin-top: auto; }
-  @media (min-width: 760px) { .welcome { margin-block: auto; padding-bottom: 8vh; } }
+  /* Before the first question: what this is, and three questions to try, near the box on a phone. */
+  .welcome { display: grid; gap: var(--space-2); margin-top: auto; }
+  @media (min-width: 760px) { .welcome { margin-block: auto; padding-bottom: 6vh; } }
   .welcome-title { font-size: var(--fs-h2); font-weight: 600; line-height: 1.3; letter-spacing: -.01em; }
-  .welcome-text { max-width: 60ch; color: var(--text-2); font-size: var(--fs-small); }
+  .welcome-text { max-width: 58ch; color: var(--text-2); font-size: var(--fs-small); line-height: 1.5; }
   body:not([data-state="idle"]) .welcome { display: none; }
-  .try { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
-  .try .label { margin-right: var(--space-1); }
-  .chip {
-    position: relative; min-height: 36px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 999px;
-    background: none; color: var(--text-2); font-size: var(--fs-small); cursor: pointer;
+  .try { display: grid; gap: var(--space-2); margin-top: var(--space-3); }
+  .suggestions { display: grid; gap: var(--space-1); }
+  .suggestion {
+    display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--target); padding: var(--space-2) var(--space-3);
+    border: 0; border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left;
+    color: var(--text-2); font-size: var(--fs-small); line-height: 1.4;
   }
-  .chip::after { content: ""; position: absolute; inset: -4px 0; }
-  .chip:hover, .chip:active { color: var(--text); border-color: var(--text-3); background: var(--surface-2); }
+  .suggestion svg { width: 14px; height: 14px; flex: none; color: var(--text-3); }
+  .suggestion:hover, .suggestion:active { background: var(--surface-2); color: var(--text); }
+  .suggestion:hover svg, .suggestion:active svg { color: var(--accent); }
 
-  /* The thread: each question, then its answer. Rules between turns, no bubbles. The newest turn is at
-     least the area's height, so it can always be brought to the top. */
-  .thread { display: grid; }
-  .turn { display: grid; align-content: start; gap: var(--space-3); padding-block: var(--space-6); border-top: 1px solid var(--line); min-width: 0; }
-  .turn:first-child { border-top: 0; padding-top: 0; }
-  .thread > .turn:last-child { min-height: calc(100cqh - 2 * var(--ws-pad)); padding-bottom: 0; }
-  .turn-q {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); padding-left: var(--space-3); border-left: 2px solid var(--accent);
-    font-size: var(--fs-body); font-weight: 600; line-height: 1.45; color: var(--text); overflow-wrap: anywhere;
+  /* The thread: turns, newest last. */
+  .thread { display: flex; flex-direction: column; gap: var(--space-2); }
+  .turn { display: grid; min-width: 0; }
+  .turn:has(> .turn-body:not([hidden])):not(:last-child) { padding-bottom: var(--space-4); }
+
+  /* A turn's band: the question, its outcome, and the fold. The band is the turn's heading; a tap on
+     it opens or folds the result. */
+  .turn-head { font: inherit; }
+  .turn-toggle {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "q tag fold"; align-items: start; gap: 2px var(--space-3);
+    width: 100%; min-height: var(--target); padding: 11px var(--space-3);
+    border: 0; border-radius: var(--radius); background: var(--surface); cursor: pointer; text-align: left; color: var(--text);
   }
+  @container thread (max-width: 30rem) {
+    .turn-toggle { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "q fold" "tag fold"; }
+    .turn-tag { justify-self: start; }
+  }
+  .turn-toggle:hover { background: var(--surface-2); }
+  /* A folded turn's question steps back, so the open one leads. */
+  .turn-toggle[aria-expanded="false"] .turn-q { color: var(--text-2); }
+  .turn-toggle[aria-expanded="false"]:hover .turn-q { color: var(--text); }
+  .turn-q { grid-area: q; min-width: 0; font-size: var(--fs-small); font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
   .turn-flag { font-family: var(--mono); font-size: var(--fs-label); font-weight: 400; color: var(--text-3); }
+  .turn-tag { grid-area: tag; display: inline-flex; align-items: center; gap: 6px; min-height: 20px; color: var(--text-3); font-size: var(--fs-label); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .turn-tag:empty { display: none; }
+  .turn-tag[data-tone]::before { content: ""; width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--text-3); }
+  .turn-tag[data-tone="active"]::before { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+  .turn-tag[data-tone="neutral"]::before { box-sizing: border-box; border: 1.5px solid var(--text-3); background: none; }
+  .turn-tag[data-tone="error"] { color: var(--text-2); }
+  .turn-tag[data-tone="error"]::before { background: var(--error); }
+  .turn-tag[data-tone="answer"]::before { display: none; }
+  .turn-toggle .chev { grid-area: fold; width: 20px; height: 20px; color: var(--text-3); }
+  .turn-toggle[aria-expanded="true"] .chev svg { transform: rotate(180deg); }
+  .turn-toggle:hover .chev { color: var(--text); }
+
+  /* The result, aligned with the question's text. */
+  .turn-body { display: grid; gap: var(--space-4); min-width: 0; padding: var(--space-3) var(--space-3) 0; container: turn / inline-size; }
+
+  /* While it is asked: how long so far. The MCP takes seconds, so the wait is said, not only shown. */
+  .pending { display: grid; gap: 2px; }
+  .pending .status { font-size: var(--fs-small); }
+  .pending-note { color: var(--text-3); font-size: var(--fs-meta); }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+
+  /* The answer, as the docs gave it: paragraphs, items, numbered steps with their numbers hanging, and
+     code in monospace with its own indentation, wrapped rather than scrolled. */
+  .answer { display: grid; gap: var(--space-3); font-size: var(--fs-body); line-height: 1.55; color: var(--text); overflow-wrap: anywhere; }
+  .answer p { max-width: 70ch; white-space: pre-line; }
+  .answer-list { display: grid; gap: var(--space-1); max-width: 70ch; padding-left: 1.15em; list-style: disc; }
+  .answer-list li::marker { color: var(--text-3); }
+  .answer-steps { display: grid; gap: var(--space-3); }
+  .answer-step { display: grid; grid-template-columns: 1.5em minmax(0, 1fr); column-gap: var(--space-1); }
+  .answer-step-n { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .answer-step-body { display: grid; gap: var(--space-2); min-width: 0; }
+  .answer-step-body > p { max-width: 70ch; }
+  .code-block { position: relative; min-width: 0; }
+  .answer-code {
+    margin: 0; padding: 10px clamp(10px, 2.5vw, 12px); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--text);
+    font: 400 clamp(.75rem, .7rem + .2vw, .8125rem)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4;
+  }
+  .answer-code code { font-size: inherit; }
+  /* Room for Copy on the first line only: the rest of the code uses the full width. */
+  .answer-code::before { content: ""; float: right; width: 2.25rem; height: 1.4em; }
+  .code-copy { position: absolute; top: 5px; right: 5px; width: 28px; height: 28px; padding: 0; justify-content: center; background: var(--surface); }
+  .code-copy::after { inset: -8px; }
+  .code-copy[data-copy="copied"] { color: var(--success); }
+  .answer-cut { color: var(--text-3); font-size: var(--fs-meta); }
+
+  /* Sources: numbered rows, the page title and where it sits in the docs, the full address on the
+     link. The first three are listed; the rest are one tap away, in place. */
+  .src { display: grid; gap: var(--space-1); min-width: 0; }
+  .src-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); }
+  .src-count { color: var(--text-3); font-size: var(--fs-label); }
+  .src-list { display: grid; }
+  .src-row {
+    display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) 14px; align-items: center; column-gap: var(--space-2);
+    min-height: var(--target); padding: 5px var(--space-2) 5px 0; border-radius: var(--radius-sm); color: var(--text); text-decoration: none;
+  }
+  a.src-row:hover, a.src-row:active { background: var(--surface); }
+  .src-n { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); text-align: center; }
+  .src-main { display: grid; min-width: 0; }
+  .src-title { font-size: var(--fs-small); line-height: 1.35; overflow-wrap: anywhere; }
+  .src-where { color: var(--text-3); font-size: var(--fs-label); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .src-arrow { width: 14px; height: 14px; color: var(--text-3); }
+  a.src-row:hover .src-title, a.src-row:hover .src-arrow, a.src-row:active .src-title { color: var(--accent); }
+  .src-text .src-title { color: var(--text-2); }
+  /* With room, the section sits after the title, or under it when the title is long. */
+  @container turn (min-width: 34rem) {
+    .src-main { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-3); }
+    .src-where { max-width: 100%; }
+  }
+  .src-more {
+    justify-self: start; display: inline-flex; align-items: center; gap: 6px; min-height: var(--target); margin-left: calc(1.5rem + var(--space-2)); padding: 0;
+    border: 0; background: none; cursor: pointer; color: var(--text-2); font-size: var(--fs-meta); font-weight: 600;
+  }
+  .src-more svg { width: 14px; height: 14px; color: var(--text-3); }
+  .src-more[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .src-more:hover, .src-more:active { color: var(--text); }
+
+  /* No answer, or a failure: what happened, in one line each. */
+  .state-block { gap: var(--space-1); padding: 0; }
+  .state-title { font-size: var(--fs-body); }
+  .state-text { max-width: 62ch; }
+  .retry { margin-top: var(--space-2); }
   .turn-note { font-family: var(--mono); font-size: var(--fs-meta); color: var(--text-2); white-space: pre-wrap; }
   .turn-note-error { color: var(--text); }
-  .turn-label { margin-bottom: calc(-1 * var(--space-1)); }
 
-  /* The answer: editorial, at reading size; a several-page answer names each page above its part. */
-  .answer { display: grid; gap: var(--space-2); font-size: var(--fs-body); line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
-  .answer-text { white-space: pre-line; }
-  .answer ul { display: grid; gap: var(--space-1); padding-left: 1.2em; list-style: disc; }
-  .answer-from { margin-top: var(--space-2); font-size: var(--fs-meta); font-weight: 600; color: var(--text-2); }
-  .answer-from:first-child { margin-top: 0; }
-
-  .turn .sources a, .turn .sources .source-text { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 var(--space-3); min-height: var(--target); padding-block: var(--space-2); border-bottom: 1px solid var(--line); text-decoration: none; }
-  .turn .source-text .source-title { color: var(--text-2); }
-
-  .state-block { padding: 0; }
-  .state-reason { color: var(--text-3); font-size: var(--fs-meta); max-width: 52ch; }
-  .retry { margin-top: var(--space-1); }
-
-  .turn-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--space-3); color: var(--text-3); font-size: var(--fs-meta); }
-  .json-toggle { font-size: var(--fs-meta); }
+  /* The run, in one quiet line, and its JSON on demand, at full length (no box that scrolls). */
+  .turn-meta { display: flex; align-items: center; gap: var(--space-3); color: var(--text-3); font-size: var(--fs-label); line-height: 1.45; }
+  .turn-run { flex: 1 1 auto; min-width: 0; }
+  .turn-run > span { white-space: nowrap; }
+  .json-toggle { flex: none; font-size: var(--fs-label); }
   .json {
-    max-height: 22rem; overflow: auto; margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius);
-    background: var(--surface); color: var(--text); font: 400 var(--fs-label)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+    margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+    color: var(--text); font: 400 var(--fs-label)/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
   }
 
-  /* How it answers: beside the thread with room (it stays in view as the thread scrolls); on a phone
-     the same content opens in the About sheet. */
+  /* How it answers: beside the thread with room, its own region in the side column, which scrolls on
+     its own when it is taller than the screen. The frame around it only measures the column (with the
+     same scrollbar room as the thread) and lets every tap through to the thread. On a phone the same
+     content opens in the About sheet. */
   .ws-side { display: none; min-width: 0; }
   @media (min-width: 1000px) {
-    .ws-side { display: block; position: sticky; top: 0; align-self: start; max-height: 100cqh; overflow-y: auto; padding-block: var(--space-4); }
+    .ws-side { display: block; position: absolute; inset: 0; overflow: hidden; scrollbar-gutter: stable; pointer-events: none; }
+    .ws-side > .about {
+      position: absolute; inset-block: 0; width: 18.5rem; overflow-y: auto; overscroll-behavior: contain; padding-block: var(--space-4); pointer-events: auto;
+      right: max(var(--pad-x), env(safe-area-inset-right), calc((100% - var(--maxw)) / 2 + var(--pad-x)));
+    }
   }
   .about { display: grid; gap: var(--space-3); align-content: start; }
   .about-title, .about-sub { font-size: var(--fs-small); font-weight: 600; }
@@ -89,20 +197,25 @@
   .about .disclosure > summary { min-height: var(--target); font-size: var(--fs-small); }
   .about .disclosure-title { font-size: var(--fs-small); }
   .cli-body { display: grid; gap: var(--space-3); padding-bottom: var(--space-4); }
-  .code { margin: 0; padding: var(--space-3); overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); font: 400 var(--fs-meta)/1.7 var(--mono); color: var(--text); }
+  .code { margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); font: 400 var(--fs-meta)/1.7 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .code code { font-size: inherit; }
   .about-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--line); }
   .sheet .about { padding-top: var(--space-2); }
 
   /* The question box: always at the bottom of the screen, clear of the home indicator. */
-  .ask { flex: none; padding-block: var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); }
+  .ask { flex: none; padding-block: 10px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); }
   .ask-box { display: flex; align-items: center; gap: var(--space-2); }
   .ask-input {
-    flex: 1 1 0; width: 0; min-width: 0; height: 48px; padding: 0 14px; appearance: none; -webkit-appearance: none; border: 1px solid var(--field-line); border-radius: var(--radius);
+    flex: 1 1 0; width: 0; min-width: 0; height: 44px; padding: 0 14px; appearance: none; -webkit-appearance: none; border: 1px solid var(--field-line); border-radius: var(--radius);
     background: var(--field); color: var(--text); font: 400 1rem/1.4 var(--sans);
   }
   .ask-input::placeholder { color: var(--text-3); opacity: 1; }
   .ask-input:hover { border-color: var(--text-3); }
   .ask-input:focus-visible { outline-offset: 0; border-color: var(--accent); }
   .ask-input::-webkit-search-cancel-button { display: none; }
-  .ask-go { height: 48px; }
+  .ask-go { height: 44px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pulse, .turn-tag[data-tone="active"]::before { animation: none; }
+  }
 }

@@ -149,7 +149,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 24, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 25, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
