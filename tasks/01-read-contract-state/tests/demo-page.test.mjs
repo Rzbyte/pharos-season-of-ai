@@ -296,12 +296,14 @@ describe("task manifest", () => {
   const titles = [
     "Read Contract State", "Event / Log Monitor", "Docs MCP Onboarding", "Doc-Search CLI", "Threshold Guardian", "Saga Executor", "Arbitrage Scanner",
     "Dry-Run Executor", "Trend Watcher", "Batch Executor", "Policy Gatekeeper", "Skill + Chain MCP Flow", "Docs MCP + Chain MCP Agent", "Portfolio Assistant",
-    "Yield Optimizer", "Liquidation Watchdog", "Natural-Language Payment Agent", "Recurring Payment Agent", "Invoice-to-Payment Agent", "On-Chain Alert Bot",
-    "Whale-Watching Agent", "Gas Fee Optimizer", "Wallet Risk Checker", "Audit-Log Agent", "dApp Support Agent", "Weekly Digest Agent",
+    "Yield Optimizer", "Liquidation Watchdog", "Natural-Language Payment Agent", "Recurring Payment Agent", "Invoice-to-Payment Agent",
+    // The two x402 tasks of the official map; their official titles are not confirmed yet.
+    null, null,
+    "On-Chain Alert Bot", "Whale-Watching Agent", "Gas Fee Optimizer", "Wallet Risk Checker", "Audit-Log Agent", "dApp Support Agent", "Weekly Digest Agent",
     "Doc-Grounded Builder Agent", "Multi-Protocol Aggregator",
   ];
 
-  test("lists all 28 tasks in order, with their exact titles", () => {
+  test("lists all 30 tasks in order, with their exact titles", () => {
     assert.deepEqual(TASKS.map((task) => task.n), titles.map((_, index) => String(index + 1).padStart(2, "0")));
     assert.deepEqual(TASKS.map((task) => task.official), titles);
     assert.deepEqual(TASKS.slice(0, 4).map((task) => [task.title, task.verb]), [["Contract State", "Read"], ["Event Monitor", "Watch"], ["Docs Onboarding", "Audit"], ["Docs Search", "Query"]]);
@@ -315,7 +317,7 @@ describe("task manifest", () => {
 
   test("names a tool only where it is already known, and never calls Task 04's HTTP transport MCP", () => {
     const tools = Object.fromEntries(TASKS.filter((task) => task.tool !== null).map((task) => [task.n, task.tool]));
-    assert.deepEqual(tools, { "01": "Chain MCP", "02": "Chain MCP", "03": "Docs MCP", "04": "Developer Docs", 28: "Composition" });
+    assert.deepEqual(tools, { "01": "Chain MCP", "02": "Chain MCP", "03": "Docs MCP", "04": "Developer Docs", 30: "Composition" });
   });
 
   test("the page links to no other task page", () => {
@@ -403,9 +405,9 @@ describe("DOM helpers write text, never markup", () => {
     });
   });
 
-  test("the shell places Task 01 first of 28, with 02 to 04 built and nothing linked without an address", () => {
+  test("the shell places Task 01 first of 30, with 02 to 04 built and nothing linked without an address", () => {
     const { previous, next } = neighbours(TASKS, "01");
-    assert.equal(TASKS.length, 28);
+    assert.equal(TASKS.length, 30);
     assert.equal(previous, null);
     assert.deepEqual([next.n, next.title, next.status], ["02", "Event Monitor", "built"]);
     assert.deepEqual(TASKS.slice(0, 4).map((task) => task.status), ["built", "built", "built", "built"]);

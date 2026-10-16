@@ -8,7 +8,7 @@ deployment (each task deploys from its own folder, so it cannot load files from 
 | `lab.css` | Tokens (Pharos palette, dark and light), the compact type and spacing scale, the shell (bar, task switcher, one-line footer, the two page models below), and primitives: panel, status, rows, technical values, actions, buttons, field, pager, pill, state block, disclosure, toggle row, sheet, counts, steps, key/value, sources. A page adds its own workspace styles in the `task` layer. |
 | `lab.js` | DOM-free helpers (digits, hex, explorer links, `pageOf`, `neighbours`, `taskLink`) and small DOM helpers (`renderHex`, `wireCopy`, `linkExplorer`, `renderTaskNav`, `taskMenu`, `wireToggle`). |
 | `theme.js` | Light and dark, following the system until the reader chooses. |
-| `tasks.js` | The 28-task manifest. A built task's link is its route on the unified site, `/tasks/NN`; `LEGACY` keeps the standalone Task 01 and 02 addresses, used only by pages served from those deployments. |
+| `tasks.js` | The task manifest: one entry per task of the official map, 30 in all, in order (Tasks 20 and 21 are the x402 tasks, their official titles still to confirm). A built task's link is its route on the unified site, `/tasks/NN`; `LEGACY` keeps the standalone Task 01 and 02 addresses, used only by pages served from those deployments. |
 | `header.html`, `footer.html` | The shell markup, stamped into each page between `<!-- shell:header NN -->` markers. |
 | `fonts/` | Geist, Geist Mono and Departure Mono (SIL OFL 1.1). |
 
@@ -25,8 +25,10 @@ least the safe area; panels 16 px; 44 px targets.
 ## Navigation
 
 Moving between tasks happens in one place, the shell bar: the lab link, the arrows either side of
-`NN / 28`, and the counter itself, which opens the task switcher (a native popover listing every built
-task, the current one marked, then the lab). The footer is one line: the lab and its links.
+`NN / 30`, and the counter itself, which opens the task switcher (a native popover listing every built
+task, the current one marked, then the lab). The footer is one line: the lab and its links. The total
+is `LAB.total` in `tasks.js`; `header.html` carries the same number for a page before its script runs,
+and the shared tests fail if the two differ.
 
 ## Page models
 

@@ -25,7 +25,8 @@ describe("the landing page", () => {
     for (const [index, task] of TASKS.filter((entry) => entry.status === "built").entries()) {
       for (const part of [`<span class="row-n">${task.n}</span>`, `<a class="row-title" href="/tasks/${task.n}">${task.title}</a>`, `>${task.verb}</span>`, `>${task.purpose.replaceAll("'", "&#39;")}</span>`]) assert.ok(rows[index].includes(part), `${task.n}: ${part}`);
     }
-    assert.match(html, /<p class="lab-count"><b>4<\/b> \/ 28 built<\/p>/);
+    assert.match(html, /<p class="lab-count"><b>4<\/b> \/ 30 built<\/p>/);
+    assert.equal(LAB.total, 30);
   });
 
   test("every built row opens its page on this site, /tasks/NN, in place; never a dead link", () => {
@@ -48,9 +49,18 @@ describe("the landing page", () => {
     // Not hidden in the markup: without JavaScript the list is shown; landing.js collapses it.
     const planned = html.match(/<ol class="planned" id="planned-body">([\s\S]*?)<\/ol>/)[1];
     assert.match(read("public/assets/landing.css"), /\.js \.planned:not\(\[data-ready\]\) \{ display: none; \}/);
-    assert.equal(planned.match(/<li>/g).length, 24);
+    assert.equal(planned.match(/<li>/g).length, 26);
+    assert.match(html, /<span class="disclosure-meta">26 tasks, 05–30<\/span>/);
     assert.doesNotMatch(planned, /<a\b/);
     assert.doesNotMatch(planned, /Docs MCP Onboarding|Docs Onboarding/);
+  });
+
+  test("the planned list follows the official map: the x402 tasks at 20 and 21, then 22 to 30", () => {
+    const planned = html.match(/<ol class="planned" id="planned-body">([\s\S]*?)<\/ol>/)[1];
+    const rows = [...planned.matchAll(/<li><span class="row-n">(\d{2})<\/span><span>([^<]*)<\/span><\/li>/g)].map(([, n, title]) => [n, title]);
+    assert.deepEqual(rows, TASKS.filter((task) => task.status !== "built").map((task) => [task.n, task.title]));
+    assert.deepEqual(rows.slice(14, 18), [["19", "Invoice-to-Payment Agent"], ["20", "x402 task (title pending)"], ["21", "x402 task (title pending)"], ["22", "On-Chain Alert Bot"]]);
+    assert.deepEqual(rows.at(-1), ["30", "Multi-Protocol Aggregator"]);
   });
 
   test("every link that leaves the site opens a new tab with no opener and says so", () => {

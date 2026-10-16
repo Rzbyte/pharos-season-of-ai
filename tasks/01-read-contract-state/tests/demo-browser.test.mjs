@@ -387,7 +387,7 @@ describe("the Task 01 page in a browser", { skip }, () => {
     // once Task 02 has an address), then the toggle; Enter switches.
     await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
-    assert.equal(await page.evaluate(() => document.activeElement.textContent), "Task 01 / 28, switch task");
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), "Task 01 / 30, switch task");
     await page.keyboard.press("Tab");
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Next task: 02 Event Monitor");
     await page.keyboard.press("Tab");

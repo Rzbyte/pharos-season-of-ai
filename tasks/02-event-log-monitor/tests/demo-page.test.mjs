@@ -149,7 +149,7 @@ describe("static files", () => {
     assert.doesNotMatch(html, /<script[^>]+src="https?:/, "no third-party script");
     assert.match(html, /data-api="\/api\/events"/);
     assert.match(html, /<meta name="explorer" content="https:\/\/pharos\.socialscan\.io">/);
-    assert.match(html, /<span class="shell-count" data-task-count><span class="sr">Task <\/span><b>02<\/b> \/ 28<\/span>/);
+    assert.match(html, /<span class="shell-count" data-task-count><span class="sr">Task <\/span><b>02<\/b> \/ 30<\/span>/);
   });
 
   test("every element the script looks up exists", async () => {

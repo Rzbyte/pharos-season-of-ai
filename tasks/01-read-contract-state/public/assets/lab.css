@@ -196,8 +196,8 @@
     padding-left: max(var(--pad-x), env(safe-area-inset-left)); padding-right: max(var(--pad-x), env(safe-area-inset-right));
   }
 
-  /* Shell bar: the lab, where this task sits among the 28 (arrows either side of the counter, which
-     opens the task switcher), the theme. The only task navigation on a page. */
+  /* Shell bar: the lab, where this task sits among all the tasks (arrows either side of the counter,
+     which opens the task switcher), the theme. The only task navigation on a page. */
   .shell { border-bottom: 1px solid var(--line); }
   .shell-bar { display: flex; align-items: center; gap: var(--space-1); min-height: var(--shell-h); }
   .shell-home {

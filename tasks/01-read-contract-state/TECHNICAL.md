@@ -127,7 +127,7 @@ The page is plain HTML, CSS and ES modules: no framework, no bundler and no thir
 | `public/assets/inspect-input.js` | Input rules shared by the page and `/api/inspect` |
 | `public/assets/explain.js` | Explain this result: the button and the explanation; calls `/api/explain` |
 | `public/assets/explain-input.js` | The Explain request: built by the page, checked by `/api/explain` |
-| `public/assets/lab.css`, `lab.js`, `theme.js`, `tasks.js` | Shared by every task page: the design system, DOM and formatting helpers, the two themes, the 28-task manifest |
+| `public/assets/lab.css`, `lab.js`, `theme.js`, `tasks.js` | Shared by every task page: the design system, DOM and formatting helpers, the two themes, the task manifest |
 | `inspector/inspect.js` | The Inspector's MCP reads, reusing the CLI's client, decoders and error mapping |
 | `explain/explain.js` | Explain's server side: facts, instructions, provider call, answer checks, cache and limits |
 | `scripts/check-mcp-capabilities.mjs` | Lists the tools an MCP server offers, the fields of one real transaction, and the address tools (`get_code`, `get_balance`, `get_transaction_count`) at one block |

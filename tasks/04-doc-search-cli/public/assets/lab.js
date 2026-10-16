@@ -263,7 +263,7 @@ const make = (tag, className, text) => Object.assign(document.createElement(tag)
 
 /**
  * The shell's place among the tasks, from the manifest: the lab link, the arrows either side of the
- * "02 / 28" counter, and the counter itself, which opens the task switcher (taskMenu). On the unified
+ * "NN / total" counter, and the counter itself, which opens the task switcher (taskMenu). On the unified
  * site every link is a same-domain route ("/", "/tasks/NN"). A page served from a standalone deployment
  * cannot reach those routes, so there a task links to its own standalone deployment if it has one
  * (task.legacy), and the lab is not linked. A task without a link is shown as text, marked, and never

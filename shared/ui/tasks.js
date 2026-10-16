@@ -1,6 +1,7 @@
 // Pharos Agent Lab: the task manifest every page reads (the shell's task navigation and the lab index).
 //
-// Metadata only. A task is "built" (it has a page and committed proof) or "planned" (nothing yet).
+// Metadata only, one entry per task of the official map (30 tasks), in its order. A task is "built" (it
+// has a page and committed proof) or "planned" (nothing yet).
 //
 // The canonical site is one domain: the lab at "/", every task at "/tasks/NN" (route below). Tasks 01
 // and 02 also still have their earlier standalone deployments (LEGACY); a page served from one of those
@@ -16,7 +17,7 @@ export const LEGACY = Object.freeze({
   "02": "https://pharos-task-02.vercel.app",
 });
 
-export const LAB = Object.freeze({ name: "Pharos Agent Lab", short: "Agent Lab", home: "/", total: 28 });
+export const LAB = Object.freeze({ name: "Pharos Agent Lab", short: "Agent Lab", home: "/", total: 30 });
 
 const task = (n, title, { verb = null, purpose = null, status = "planned", tool = null, official = title } = {}) =>
   Object.freeze({ n, title, official, verb, purpose, status, tool, href: status === "built" ? route(n) : null, legacy: status === "built" ? (LEGACY[n] ?? null) : null });
@@ -41,15 +42,20 @@ export const TASKS = Object.freeze([
   task("17", "Natural-Language Payment Agent"),
   task("18", "Recurring Payment Agent"),
   task("19", "Invoice-to-Payment Agent"),
-  task("20", "On-Chain Alert Bot"),
-  task("21", "Whale-Watching Agent"),
-  task("22", "Gas Fee Optimizer"),
-  task("23", "Wallet Risk Checker"),
-  task("24", "Audit-Log Agent"),
-  task("25", "dApp Support Agent"),
-  task("26", "Weekly Digest Agent"),
-  task("27", "Doc-Grounded Builder Agent"),
-  task("28", "Multi-Protocol Aggregator", { tool: "Composition" }),
+  // 20 and 21 are the two x402 tasks the official map inserted here; the tasks that were 20 to 28 are now
+  // 22 to 30. Their official titles are not confirmed in this repository yet, so none is guessed:
+  // `official` is null and the title says so (PROGRAM_STATUS.md).
+  task("20", "x402 task (title pending)", { official: null }),
+  task("21", "x402 task (title pending)", { official: null }),
+  task("22", "On-Chain Alert Bot"),
+  task("23", "Whale-Watching Agent"),
+  task("24", "Gas Fee Optimizer"),
+  task("25", "Wallet Risk Checker"),
+  task("26", "Audit-Log Agent"),
+  task("27", "dApp Support Agent"),
+  task("28", "Weekly Digest Agent"),
+  task("29", "Doc-Grounded Builder Agent"),
+  task("30", "Multi-Protocol Aggregator", { tool: "Composition" }),
 ]);
 
 export const BUILT = TASKS.filter((entry) => entry.status === "built").length;

@@ -31,6 +31,8 @@ The same checks work from a shell: `curl -sG https://<production-domain>/api/sea
 If C comes back `answered`, that is a real regression. Keep that JSON, because the gate can only be
 fixed against the live wording. When all three pass, Task 04 is done.
 
+The same deploy also carries the 30-task map, so the lab at `/` should read "4 / 30 built".
+
 ## Tasks
 
 | Task | Route | Status | Proof |
@@ -43,7 +45,36 @@ fixed against the live wording. When all three pass, Task 04 is done.
 Every route is served by the one Vercel project built from the repository root ([site/](site)).
 Whether production is up to date can't be checked from this environment.
 
-## Next
+## Task map
 
-The task map moves from the legacy 28 tasks to the official 30. Tasks 20 and 21 are new x402 tasks,
-and the old Tasks 20 to 28 become 22 to 30.
+The manifest ([shared/ui/tasks.js](shared/ui/tasks.js)) follows the official map of 30 tasks. That map
+inserted two x402 tasks as 20 and 21, so the legacy Tasks 20 to 28 are now 22 to 30, titles unchanged.
+Tasks 01 to 04 keep their numbers, their routes (`/tasks/01` to `/tasks/04`) and their proof. Every
+page's counter reads `NN / 30`, and the lab reads "4 / 30 built".
+
+The shared tests ([shared/ui/tests/ui.test.mjs](shared/ui/tests/ui.test.mjs)) pin all of this: the
+numbering, the insertion, the built routes, each page's counter, and the neighbours around 04/05,
+19 to 22, and 30.
+
+The official titles of Tasks 20 and 21 aren't in this repository, and no reachable source gives them.
+So the manifest doesn't guess: their `official` is null, and the lab lists them as
+"x402 task (title pending)".
+
+## Needed to continue
+
+1. **The official brief for Task 05, Threshold Guardian**, the next task in order.
+   - Each brief so far came with its task (difficulty, tool, goal, requirements), as for Tasks 02 and 04.
+     For Tasks 05 to 30 this repository has only titles, and no public source lists the briefs.
+   - Building Task 05 from its title alone would mean guessing what it must do and which integration it
+     uses.
+2. **The official titles of Tasks 20 and 21** (x402). Each is a one-line change in `shared/ui/tasks.js`,
+   plus the two test lists that pin the titles.
+
+Integrations already verified in this repository:
+
+- **Pharos Chain MCP** at `https://mcp.pharos.xyz/mcp`, used by Tasks 01 and 02: `get_chain_info`,
+  `get_block_number`, `eth_call`, `get_logs`, `get_code`, `get_balance`, `get_transaction_count`,
+  `get_transaction` and `get_transaction_receipt`.
+- **The Pharos Developer Docs MCP** `askQuestion`, used by Task 04.
+
+SkillEngine and x402 are not verified from this environment yet.
