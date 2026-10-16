@@ -371,9 +371,8 @@ Only when every check passes does it write the examples and the proof status abo
 
 ```sh
 cd ~/pharos-season-of-ai
-git fetch origin fix-task-04-docs-mcp
-git checkout fix-task-04-docs-mcp
-git pull origin fix-task-04-docs-mcp
+git checkout main
+git pull origin main
 cd tasks/04-doc-search-cli
 npm ci
 node dist/src/cli.js "What is the Atlantic chain ID?" --no-cache
