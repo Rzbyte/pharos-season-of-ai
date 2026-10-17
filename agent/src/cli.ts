@@ -8,6 +8,7 @@
 //   pharos-agent alert [preset | bot.json] [--store FILE] [--webhook URL]
 //   pharos-agent whales [preset | watchlist.json] [--store FILE]
 //   pharos-agent gas [preset | plan.json] [--store FILE] [--execute]
+//   pharos-agent explain (0xHASH | [kind] --from --to --amount ...)
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -51,6 +52,8 @@ import { GAS_PRESETS } from "./gas/presets.js";
 import { runGasPlan, type GasRun } from "./gas/run.js";
 import { emptyGasStore, parseGasStore } from "./gas/store.js";
 import { gasHistoryCheck, verifyGasProof } from "./gas/verify.js";
+import { explain as explainTx, type Explanation } from "./support/explain.js";
+import { parseExplainRequest, verifyExplanationProof } from "./support/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -127,6 +130,13 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --store FILE         the observations kept between runs (default: gas-store.json)
       --execute            Atlantic only: send it, with those settings, when the decision is to send
       --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
+  pharos-agent explain (0xHASH | [kind] [options])          Task 27, dApp Support Agent
+      Why a transaction failed, in plain language, with each finding's source. By hash: its receipt,
+      its call replayed at the block before its own for the revert, decoded (Error, Panic, OpenZeppelin
+      errors), the target's code, the sender's token balance, and whether it ran out of gas. Described
+      instead (the kinds and options of dryrun): why it would fail if sent now.
+      --network ID, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist or gas plan, in run order,
@@ -814,10 +824,73 @@ async function gasPlan(flags: Flags): Promise<number> {
   }
 }
 
+function printExplanation(x: Explanation): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  out("Pharos dApp Support Agent");
+  out();
+  out(`  Network      ${x.network.name} (chain ${x.network.chainId})`);
+  out(`  Chain MCP    ${x.chainMcp.where}${x.chainMcp.server ? ` (${x.chainMcp.server})` : ""}`);
+  out(`  Asked        ${x.request.kind === "hash" ? `the transaction ${x.request.hash}` : "a transaction described, not sent"}`);
+  if (x.transaction) out(`  Transaction  ${x.transaction.summary} (from ${x.transaction.from})`);
+  if (x.block) out(`  Block        ${n(x.block.number)} · ${x.block.timestamp}`);
+  out(`  Status       ${{ succeeded: "SUCCEEDED", failed: "FAILED", pending: "PENDING", "not-found": "NOT FOUND", "would-succeed": "WOULD SUCCEED", "would-fail": "WOULD FAIL" }[x.status]}`);
+  out();
+  const width = Math.max(...x.findings.map((f) => f.check.length));
+  for (const f of x.findings) out(`  ${f.tone === "cause" ? "!" : " "} ${f.check.padEnd(width)}  ${f.seen}   [${f.tool}]`);
+  out();
+  if (x.cause) out(`  Why          ${x.cause.text}`);
+  if (x.cause?.error?.name) out(`  Error        ${x.cause.error.name}${Object.keys(x.cause.error.args).length ? ` (${Object.entries(x.cause.error.args).map(([k, v]) => `${k}: ${v}`).join(", ")})` : ""}`);
+  if (x.fix) out(`  Fix          ${x.fix}`);
+  if (!x.cause) out(`  ${x.headline}`);
+  out();
+  out(`  ${x.toolCalls} Chain MCP calls. Nothing was signed or sent.`);
+}
+
+async function explainCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  const first = flags.positional[1];
+  let input: Record<string, unknown>;
+  if (first?.startsWith("0x")) input = { kind: "hash", hash: first };
+  else {
+    const kind = first ?? "erc20-transfer";
+    const example = net.id === "pharos-mainnet";
+    const intent: Record<string, unknown> = { kind, from: v.from ?? (example ? EXAMPLE_PAYER : undefined), to: v.to ?? (example && kind !== "call" ? EXAMPLE_RECIPIENT : undefined), amount: v.amount ?? (kind === "native-transfer" ? "0.01" : "25") };
+    if (kind === "erc20-transfer" || kind === "erc20-approve") intent.token = tokenFor(net, v.token ?? "USDC");
+    if (kind === "erc20-approve") intent.spender = v.spender;
+    if (kind === "call") {
+      intent.signature = v.signature;
+      try {
+        intent.args = v.args ? (JSON.parse(v.args) as unknown) : [];
+      } catch {
+        throw new AgentError("usage", "--args must be a JSON list, like '[\"1000\"]'.");
+      }
+      intent.value = v.value ?? "0";
+    }
+    input = { kind: "intent", intent };
+  }
+  const request = parseExplainRequest(input, net.id);
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 40 });
+  try {
+    const result = await explainTx(request, { chain: new Chain(mcp, net) });
+    if (flags.proof) {
+      const proof = proofFile({ task: "27", capability: "dapp-support", about: "One dApp Support Agent answer: the transaction asked about (input), the explanation with every finding (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: request, result });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printExplanation(result);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -859,6 +932,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "alert") return alert(flags);
   if (command === "whales") return whales(flags);
   if (command === "gas") return gasPlan(flags);
+  if (command === "explain") return explainCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

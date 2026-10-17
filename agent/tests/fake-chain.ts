@@ -44,6 +44,8 @@ export interface FakeChainState {
   transfers: FakeTransfer[];
   /** JSON-RPC methods that fail with this error. */
   failures: Record<string, { code: number; message: string }>;
+  /** Contracts (lowercase address) every call to which reverts with this revert data. */
+  reverts?: Record<string, Hex>;
 }
 
 export interface FakeReceipt {
@@ -64,6 +66,8 @@ export interface FakeChain {
   state: FakeChainState;
   requests: { method: string; params: unknown[] }[];
   receipts: Map<string, FakeReceipt>;
+  /** Transactions by hash (lowercase), as eth_getTransactionByHash answers them: every one sent, and any a test adds. */
+  transactions: Map<string, Record<string, unknown>>;
   /** Called before each request is answered; tests use it to change the chain mid-run. */
   onRequest?: (method: string, params: unknown[], count: number) => void;
   close(): Promise<void>;
@@ -86,11 +90,14 @@ const word = (type: string, value: unknown): Hex => encodeAbiParameters([{ type 
 const lower = (value: unknown) => String(value).toLowerCase();
 
 class Revert extends Error {
-  constructor(readonly reason: string) {
-    super(`execution reverted: ${reason}`);
+  constructor(
+    readonly reason: string,
+    readonly raw: Hex | null = null,
+  ) {
+    super(`execution reverted${raw ? "" : `: ${reason}`}`);
   }
   get data(): Hex {
-    return encodeErrorResult({ abi: ERROR_ABI, errorName: "Error", args: [this.reason] });
+    return this.raw ?? encodeErrorResult({ abi: ERROR_ABI, errorName: "Error", args: [this.reason] });
   }
 }
 
@@ -110,6 +117,7 @@ export function defaultState(overrides: Partial<FakeChainState> = {}): FakeChain
 export async function startFakeChain(state: FakeChainState): Promise<FakeChain> {
   const requests: FakeChain["requests"] = [];
   const receipts = new Map<string, FakeReceipt>();
+  const transactions = new Map<string, Record<string, unknown>>();
   const blockOf = (tag: unknown): bigint => {
     if (tag === undefined || tag === "latest" || tag === "pending" || tag === "safe" || tag === "finalized") return state.head;
     if (tag === "earliest") return 0n;
@@ -177,6 +185,8 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     const value = tx.value === undefined ? 0n : BigInt(tx.value);
     const from = tx.from ? lower(tx.from) : undefined;
     if (value > 0n && from && (world.native[from] ?? 0n) < value) throw new RpcFailure(-32000, "insufficient funds for gas * price + value");
+    const reverts = state.reverts?.[to];
+    if (reverts) throw new Revert("custom", reverts);
     if (world.tokens[to] && tx.data && tx.data !== "0x") return tokenCall(world, to, tx.data, from, apply);
     if (apply && value > 0n && from) {
       world.native[from] = (world.native[from] ?? 0n) - value;
@@ -217,7 +227,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
         .filter((log) => (f.topics ?? []).every((want, i) => matches(log.topics[i], want)));
     },
     eth_getTransactionReceipt: ([hash]) => receipts.get(lower(hash)) ?? null,
-    eth_getTransactionByHash: () => null,
+    eth_getTransactionByHash: ([hash]) => transactions.get(lower(hash)) ?? null,
     eth_sendRawTransaction: async ([raw]) => {
       const serialized = raw as Hex;
       const tx = parseTransaction(serialized);
@@ -250,6 +260,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       state.headTime += 1n;
       for (const transfer of applied) state.transfers.push({ ...transfer, block: state.head });
       const hash = keccak256(serialized);
+      transactions.set(hash, { hash, from, to: lower(tx.to), input: tx.data ?? "0x", value: hex(tx.value ?? 0n), gas: hex(tx.gas ?? 0n), nonce: hex(BigInt(tx.nonce ?? 0)), blockNumber: hex(state.head), maxFeePerGas: hex(tx.maxFeePerGas ?? 0n), maxPriorityFeePerGas: hex(tx.maxPriorityFeePerGas ?? 0n), type: "0x2", chainId: hex(BigInt(state.chainId)) });
       receipts.set(hash, { transactionHash: hash, blockNumber: hex(state.head), status, gasUsed: hex(gasUsed), effectiveGasPrice: hex(state.baseFee ?? state.gasPrice), from: from as Hex, to: lower(tx.to) as Hex, logs, cumulativeGasUsed: hex(gasUsed), type: "0x2" });
       return hash;
     },
@@ -259,6 +270,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     state,
     requests,
     receipts,
+    transactions,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
   const server: Server = createServer((req, res) => {

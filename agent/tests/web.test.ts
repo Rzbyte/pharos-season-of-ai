@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22, 23 or 24\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22, 23, 24 or 27\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -288,6 +288,42 @@ describe("GET /api/agent?task=24", () => {
       ["task=24&waitingSince=soon", /waitingSince must be a block number/],
     ];
     for (const [query, error] of cases) {
+      const response = await get(query);
+      assert.equal(response.status, 400, query);
+      assert.match(message(response), error, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=27", () => {
+  type Body = { result: { schema: string; status: string; cause: { kind: string } | null; headline: string }; inputs: Record<string, string> };
+  const HASH = `0x${"b2".repeat(32)}`;
+
+  test("a failed transaction by its hash: explained, and cached for a while since it will not change", async () => {
+    const data = `0xa9059cbb${STRANGER.slice(2).padStart(64, "0")}${(5_000_000_000).toString(16).padStart(64, "0")}`;
+    fake.transactions.set(HASH, { hash: HASH, from: PAYER, to: USDC, input: data, value: "0x0", gas: "0x186a0", nonce: "0x1", blockNumber: "0x4c4b40", type: "0x2" });
+    fake.receipts.set(HASH, { transactionHash: HASH as `0x${string}`, blockNumber: "0x4c4b40", status: "0x0", gasUsed: "0x7918", effectiveGasPrice: "0x3b9aca00", from: PAYER as `0x${string}`, to: USDC as `0x${string}`, logs: [], cumulativeGasUsed: "0x7918", type: "0x2" });
+    const response = await get(`task=27&hash=${HASH}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 300);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.status, body.result.cause?.kind], ["pharos-agent/tx-explanation/1", "failed", "revert"]);
+    assert.deepEqual(body.inputs, { hash: HASH });
+    const unknown = await get(`task=27&hash=0x${"0".repeat(63)}1`);
+    assert.deepEqual([(unknown.body as Body).result.status, unknown.maxAge], ["not-found", 0], "an unknown hash may be found later");
+  });
+
+  test("a transaction described: why it would fail if sent now, never cached", async () => {
+    const response = await get("task=27&amount=5000");
+    const body = response.body as Body;
+    assert.deepEqual([body.result.status, body.result.cause?.kind, response.maxAge], ["would-fail", "revert", 0]);
+    assert.equal(body.inputs.amount, "5000");
+  });
+
+  test("a malformed hash or description is a 400, before any Chain MCP call", async () => {
+    const before = fake.requests.length;
+    for (const [query, error] of [["task=27&hash=0x12", /A transaction hash is 0x and 64 hex characters/], ["task=27&asset=DOGE", /asset must be PROS or one of/]] as const) {
       const response = await get(query);
       assert.equal(response.status, 400, query);
       assert.match(message(response), error, query);

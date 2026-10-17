@@ -55,6 +55,19 @@ export interface Receipt {
   logs: RawLog[];
 }
 
+/** A transaction as get_transaction returns it (eth_getTransactionByHash), the fields the agent uses. */
+export interface TransactionInfo {
+  hash: Hex;
+  from: Address;
+  to: Address | null;
+  input: Hex;
+  value: bigint;
+  gas: bigint;
+  nonce: bigint;
+  /** Null while it is pending. */
+  blockNumber: bigint | null;
+}
+
 export interface RawLog {
   address: Address;
   topics: Hex[];
@@ -199,6 +212,18 @@ export class Chain {
     const raw = await this.mcp.call("get_logs", { ...(filter.address ? { address: filter.address } : {}), ...(filter.topics ? { topics: filter.topics } : {}), fromBlock: blockTag(filter.fromBlock), toBlock: blockTag(filter.toBlock) });
     if (!Array.isArray(raw)) throw unexpected("get_logs result", raw);
     return raw as RawLog[];
+  }
+
+  /** get_transaction: the transaction, or null when the node does not know the hash. */
+  async transaction(hash: Hex): Promise<TransactionInfo | null> {
+    const raw = await this.mcp.call("get_transaction", { hash });
+    if (raw === null) return null;
+    const t = object(raw, "get_transaction");
+    if (!isAddress(t.from)) throw unexpected("transaction from", t.from);
+    if (t.to !== null && t.to !== undefined && !isAddress(t.to)) throw unexpected("transaction to", t.to);
+    const input = t.input ?? t.data ?? "0x";
+    if (!isHex(input)) throw unexpected("transaction input", input);
+    return { hash, from: t.from, to: (t.to as Address | null | undefined) ?? null, input, value: optionalQuantity(t.value, "value") ?? 0n, gas: quantity(t.gas, "transaction gas"), nonce: optionalQuantity(t.nonce, "nonce") ?? 0n, blockNumber: optionalQuantity(t.blockNumber, "transaction blockNumber") };
   }
 
   async receipt(hash: Hex): Promise<Receipt | null> {

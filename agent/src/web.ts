@@ -31,6 +31,7 @@ import { parseWhaleStore, watchlistKey } from "./whale/store.js";
 import { parseGasPlan } from "./gas/config.js";
 import { runGasPlan } from "./gas/run.js";
 import { parseGasStore, planKey } from "./gas/store.js";
+import { explain } from "./support/explain.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -330,6 +331,34 @@ async function gasOptimizer(params: URLSearchParams, options: WebOptions): Promi
   }
 }
 
+/** Task 27: why a mainnet transaction failed (by its hash), or why one described would fail if sent now. */
+async function supportAgent(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const hash = (params.get("hash") ?? "").trim();
+  let request;
+  let inputs: Record<string, string>;
+  if (hash) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) return usage("A transaction hash is 0x and 64 hex characters.");
+    request = { kind: "hash" as const, hash: hash.toLowerCase() as `0x${string}` };
+    inputs = { hash };
+  } else {
+    const parsed = requestFrom(params);
+    if ("status" in parsed) return parsed;
+    request = { kind: "intent" as const, intent: parsed.request.intent };
+    inputs = parsed.inputs;
+  }
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 30, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await explain(request, { chain: new Chain(mcp, net), now: options.now });
+    // A mined transaction's explanation does not change; one still pending, or a description, does.
+    const settled = result.status === "succeeded" || result.status === "failed";
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: settled ? 300 : 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -347,8 +376,10 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await whaleWatcher(url.searchParams, options);
       case "24":
         return await gasOptimizer(url.searchParams, options);
+      case "27":
+        return await supportAgent(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22, 23 or 24.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22, 23, 24 or 27.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

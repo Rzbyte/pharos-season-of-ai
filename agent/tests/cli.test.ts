@@ -475,3 +475,40 @@ describe("pharos-agent gas", () => {
   });
 });
 
+describe("pharos-agent explain", () => {
+  // Its own chain, with one failed transaction on it: 100 USDC sent by a holder of 50.
+  const RECIPIENT = "0xb2749bd12f19c24a2244176658f3df3e48e79553";
+  const HASH = `0x${"a1".repeat(32)}`;
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(defaultState({ native: { [PAYER]: 10n ** 18n }, tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: 50_000_000n } } } }));
+    const data = `0xa9059cbb${RECIPIENT.slice(2).padStart(64, "0")}${(100_000_000).toString(16).padStart(64, "0")}`;
+    chain.transactions.set(HASH, { hash: HASH, from: PAYER, to: USDC, input: data, value: "0x0", gas: "0x186a0", nonce: "0x7", blockNumber: "0x4c4b40", type: "0x2" });
+    chain.receipts.set(HASH, { transactionHash: HASH as `0x${string}`, blockNumber: "0x4c4b40", status: "0x0", gasUsed: "0x7918", effectiveGasPrice: "0x3b9aca00", from: PAYER as `0x${string}`, to: USDC as `0x${string}`, logs: [], cumulativeGasUsed: "0x7918", type: "0x2" });
+  });
+  after(() => chain.close());
+
+  test("a failed transaction by its hash: the cause, every finding with its source, the fix; the proof verifies", async () => {
+    const proof = join(dir, "explain.json");
+    const run = await cli(["explain", HASH, "--rpc", chain.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Transaction {2}Transfer 100 USDC to 0xB274…9553 \(from 0x912c9aDe24D44d8922f0866D8Dcb079f1363f647\)\n {2}Block {8}5,000,000 · .*\n {2}Status {7}FAILED\n/);
+    assert.match(run.stdout, /\n {2}! Replayed before its block {2}reverts at block 4,999,999: Error {3}\[eth_call\]\n/);
+    assert.match(run.stdout, /\n {2}! Sender's balance {11}0x912c…f647 held 50 USDC, and it sends 100 USDC {3}\[eth_call\]\n/);
+    assert.match(run.stdout, /\n {2}Why {10}It stopped with the message "ERC20: transfer amount exceeds balance"\. The sender did not hold enough\.\n {2}Error {8}Error \(message: ERC20: transfer amount exceeds balance\)\n {2}Fix {10}Send no more than the sender holds, or fund it first\.\n/);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}one pinned block: every state read before execution is at block 4999999\n/);
+  });
+
+  test("a transaction described: why it would fail if sent now; a malformed hash is refused before anything runs", async () => {
+    const run = await cli(["explain", "--amount", "5000", "--rpc", chain.url]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Asked {8}a transaction described, not sent\n/);
+    assert.match(run.stdout, /\n {2}Status {7}WOULD FAIL\n/);
+    const bad = await cli(["explain", "0x12", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /A transaction hash is 0x and 64 hex characters/);
+  });
+});
+
