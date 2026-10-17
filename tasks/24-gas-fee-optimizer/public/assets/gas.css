@@ -1,0 +1,19 @@
+/* Task 24 workspace: the gas fee optimizer. The run panel, form and proof are shared by the agent pages
+   (agent.css); this adds the observed fees, newest first: a row each (block and time, a bar against the
+   highest, the fee), the ones at or under the target marked. */
+@layer task {
+  .fee-range { color: var(--text-2); font-size: var(--fs-meta); }
+  .fees { border-top: 1px solid var(--line); }
+  /* Every row's columns line up: the bars start together, the fees end together. */
+  .fee { display: grid; grid-template-columns: minmax(0, 1fr) minmax(3rem, 6rem) 7rem; gap: var(--space-3); align-items: center; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+  .fee[data-below="true"] { border-left-color: var(--success); }
+  .fee-when { min-width: 0; color: var(--text-2); font-size: var(--fs-small); }
+  .fee-tag { margin-left: var(--space-2); padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 99px; font-size: var(--fs-label); color: var(--text-2); white-space: nowrap; }
+  .fee-bar { display: block; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .fee-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--text-3); }
+  .fee[data-below="true"] .fee-bar > span { background: var(--success); }
+  .fee-value { font-family: var(--mono); font-size: var(--fs-small); font-weight: 600; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #main .fee-value { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+  /* Narrow screens keep the block, its time and the fee; the bar goes. */
+  @media (max-width: 479px) { .fee { grid-template-columns: minmax(0, 1fr) 6.5rem; } .fee-bar { display: none; } }
+}

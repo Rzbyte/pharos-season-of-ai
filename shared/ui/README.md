@@ -48,4 +48,4 @@ Pick the one the interaction needs; they share the shell, tokens and primitives.
   stays in view.
 - **Agent run** (a document page with `agent.css`): the run panel first (status, block, the result,
   and a side column once there is room), then "Change the …" with the inputs, then Proof & technical
-  details. Tasks 05, 08, 09, 11, 22 and 23.
+  details. Tasks 05, 08, 09, 11 and 22 to 24.

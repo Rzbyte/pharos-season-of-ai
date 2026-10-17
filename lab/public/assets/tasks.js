@@ -48,7 +48,7 @@ export const TASKS = Object.freeze([
   task("21", "X402 Agent Buyer"),
   task("22", "On-Chain Alert Bot", { verb: "Alert", tool: "Chain MCP", status: "built", purpose: "Large transfers and on-chain conditions watched run after run, each alerted once." }),
   task("23", "Whale-Watching Agent", { verb: "Track", tool: "Chain MCP", status: "built", purpose: "Chosen addresses followed run after run: holdings, changes and the significant moves." }),
-  task("24", "Gas Fee Optimizer"),
+  task("24", "Gas Fee Optimizer", { verb: "Time", tool: "Chain MCP", status: "built", purpose: "The fee watched block by block, and one transaction sent now or held for a cheaper one." }),
   task("25", "Wallet Risk Checker"),
   task("26", "Audit-Log Agent"),
   task("27", "dApp Support Agent"),

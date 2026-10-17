@@ -27,6 +27,7 @@ export const TARGETS = [
   "tasks/11-policy-gatekeeper/public",
   "tasks/22-on-chain-alert-bot/public",
   "tasks/23-whale-watching-agent/public",
+  "tasks/24-gas-fee-optimizer/public",
 ];
 export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];
 /** The agent pages (Task 05 onward) also share the run layer: agent.js and agent.css. */

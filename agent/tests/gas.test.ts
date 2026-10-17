@@ -169,6 +169,21 @@ describe("timing a transaction", () => {
   });
 });
 
+describe("a chain without base fees", () => {
+  test("the gas price is the observation, nothing is read back, and the priority fee is not added on top", async () => {
+    const fake = await startFakeChain(defaultState({ baseFee: null, gasPrice: gwei(12), priorityFee: gwei(1), native: { [lower(PAYER)]: 10n ** 18n }, tokens: { [lower(USDC)]: { decimals: 6, balances: { [lower(PAYER)]: 1_000_000_000n } } } }));
+    try {
+      const { result, calls } = await run(fake, emptyGasStore(plan()));
+      assert.deepEqual([result.fee.source, result.observed.length, calls.filter((c) => c.name === "get_block").length], ["gas-price", 1, 2], "the head and the dry run's latest, no earlier blocks");
+      assert.deepEqual([result.decision, result.reason], ["send", "The gas price, 1.2 gwei, is at or below the target, 1.2 gwei (the 25th percentile of the last 12 observations)."]);
+      assert.deepEqual(result.settings?.shown, { maxFeePerGas: "1.2 gwei", maxPriorityFeePerGas: "0.1 gwei" });
+      assert.equal(result.costs?.now, (51_234n * gwei(12)).toString());
+    } finally {
+      await fake.close();
+    }
+  });
+});
+
 describe("sending on Atlantic", () => {
   const signer = signerFromEnv({ PRIVATE_KEY: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" }); // Hardhat/Anvil public test key #1
   const TUSDC = NETWORKS["atlantic-testnet"].tokens[0]!.address;
