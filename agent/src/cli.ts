@@ -11,6 +11,7 @@
 //   pharos-agent explain (0xHASH | [kind] --from --to --amount ...)
 //   pharos-agent risk [kind] --from --to --amount ... [--blocks N]
 //   pharos-agent audit [address] [--hours N | --since TIME [--until TIME] | --from-block N --to-block N]
+//   pharos-agent digest [token | address] [--every hour|day|week] [--periods N] [--store FILE] [--so-far]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -61,6 +62,10 @@ import { verifyRiskProof } from "./risk/verify.js";
 import { parsePeriod } from "./audit/period.js";
 import { auditAddress, MAX_BLOCKS as MAX_AUDIT_BLOCKS, parseAuditAddress, type AuditReport } from "./audit/report.js";
 import { verifyAuditProof } from "./audit/verify.js";
+import { parseEvery, parseSubject, subjectName } from "./digest/config.js";
+import { MAX_PERIODS, MAX_RUN_BLOCKS, runDigest, type DigestRun, type PeriodDigest } from "./digest/run.js";
+import { digestKey, emptyDigestStore, parseDigestStore } from "./digest/store.js";
+import { digestHistoryCheck, verifyDigestProof } from "./digest/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -167,6 +172,20 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       endpoint's 120 a minute, so a long period takes minutes.
       --network ID, --block (as the newest), --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent digest [token | address] [options]          Task 28, Weekly Digest Agent
+      A periodic summary, in plain language, of a protocol (an official token: every transfer of it,
+      its volume, senders and recipients, the largest, who sent and received the most, mints, burns)
+      or a wallet (its transfers and approvals over every official token), period by period: UTC
+      hours, days, or weeks from Monday. Each period is compared with the one before, and its busiest
+      part named (a week's day, a day's hour). Only logs and block times are read in the past. Default:
+      usdc, the last complete week.
+      --every hour|day|week   the period (default week)
+      --periods N          without a store, the last N complete periods (1 to 10, default 1)
+      --store FILE         digest each period completed since the last run, once: for a schedule
+      --so-far             also sum up the period still open
+      A week of a protocol is about 480 get_logs calls: minutes, paced under the hosted endpoint's 120 a
+      minute, and a proof of tens of megabytes. --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist or gas plan, in run order,
                               are also checked as one history
@@ -187,17 +206,19 @@ interface Flags {
   submit: boolean;
   store?: string;
   webhook?: string;
+  soFar: boolean;
   values: Record<string, string>;
 }
 
 function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { positional: [], help: false, json: false, execute: false, verbose: false, submit: false, values: {} };
+  const flags: Flags = { positional: [], help: false, json: false, execute: false, verbose: false, submit: false, soFar: false, values: {} };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
     if (arg === "--help" || arg === "-h") flags.help = true;
     else if (arg === "--json") flags.json = true;
     else if (arg === "--submit") flags.submit = true;
-    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block"].includes(arg)) {
+    else if (arg === "--so-far") flags.soFar = true;
+    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods"].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new AgentError("usage", `${arg} needs a value.`);
       flags.values[arg.slice(2)] = value;
@@ -1022,10 +1043,92 @@ async function auditCommand(flags: Flags): Promise<number> {
   }
 }
 
+function printDigest(r: DigestRun, storePath: string | undefined): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  out("Pharos Weekly Digest Agent");
+  out();
+  out(`  Network       ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP     ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Subject       ${r.subject.kind === "token" ? `${r.subject.label} (${r.subject.address}), the token` : `${r.subject.address}, a wallet`}, every ${r.every}`);
+  out(`  Newest block  ${n(r.head.number)} · ${r.head.timestamp}`);
+  const show = (d: PeriodDigest) => {
+    out();
+    out(`  ${d.label.charAt(0).toUpperCase()}${d.label.slice(1)}${d.complete ? "" : ", so far"}${d.blocks ? ` (blocks ${n(d.blocks.from)}–${n(d.blocks.to)})` : ""}`);
+    for (const line of d.sentences) out(`    ${line}`);
+  };
+  for (const d of r.digests) show(d);
+  if (r.current) show(r.current);
+  if (!r.digests.length && !r.current) {
+    out();
+    out(`  ${r.headline}`);
+  }
+  out();
+  if (r.now.supplyShown !== null) out(`  Now: a total supply of ${r.now.supplyShown} ${r.subject.label}.`);
+  else out(`  Now it holds ${r.now.holdings.length ? r.now.holdings.map((h) => `${h.shown} ${h.symbol}`).join(", ") : "nothing of PROS or the official tokens"}.`);
+  if (r.behind) out(`  ${r.behind} more ${r.behind === 1 ? "period has" : "periods have"} ended; the next run digests ${r.behind === 1 ? "it" : "them"}.`);
+  if (r.cut) out(`  The oldest ${r.cut === 1 ? "period" : `${r.cut} periods`} asked for did not fit in the blocks one run reads, and ${r.cut === 1 ? "is" : "are"} left out.`);
+  out(`  ${r.toolCalls} Chain MCP calls${r.scanned ? `, ${r.scanned.pages} of them get_logs` : ""}. Nothing was signed or sent.`);
+  if (storePath) out(`  Store: ${storePath} (${r.store.digested ? `the last digest ended at ${r.store.digested}` : "nothing digested yet"}).`);
+}
+
+async function digestCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  const subject = parseSubject(flags.positional[1] ?? "usdc", net);
+  const every = parseEvery(v.every ?? "week");
+  let periods: number | undefined;
+  if (v.periods !== undefined) {
+    if (!/^\d+$/.test(v.periods) || Number(v.periods) < 1 || Number(v.periods) > MAX_PERIODS) throw new AgentError("usage", `--periods must be a whole number from 1 to ${MAX_PERIODS}.`);
+    if (flags.store) throw new AgentError("usage", "--periods is for a run without a store; with one, each period completed since the last run is digested.");
+    periods = Number(v.periods);
+  }
+  const key = digestKey(net.id, subjectName(subject), every);
+  let store = emptyDigestStore(key);
+  let input: unknown = null;
+  if (flags.store) {
+    let saved: string | null = null;
+    try {
+      saved = await readFile(flags.store, "utf8");
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw new AgentError("usage", `The store ${flags.store} cannot be read: ${errorMessage(error)}`);
+    }
+    if (saved !== null) {
+      try {
+        input = JSON.parse(saved);
+      } catch (error) {
+        throw new AgentError("usage", `The store ${flags.store} is not valid JSON: ${errorMessage(error)}`);
+      }
+      store = parseDigestStore(input, key);
+    }
+  }
+  const endpoint = endpointFor(net, flags);
+  const started = new Date();
+  // Pacing waits are said even without --verbose: a week of a protocol takes minutes at the hosted endpoint's rate.
+  const trace = (line: string) => (flags.verbose || line.startsWith("pacing:")) && process.stderr.write(`  ${line}\n`);
+  const mcp = await ChainMcp.connect(endpoint, { trace, budget: (MAX_RUN_BLOCKS / 1000) * 2 + 400, pace: endpoint.kind === "hosted" ? { calls: 100 } : undefined });
+  try {
+    const run = await runDigest(subject, every, store, { chain: new Chain(mcp, net), periods, soFar: flags.soFar, block: flags.block });
+    if (flags.store) {
+      await writeFile(`${flags.store}.tmp`, `${JSON.stringify(run.store, null, 2)}\n`);
+      await rename(`${flags.store}.tmp`, flags.store);
+    }
+    if (flags.proof) {
+      const proof = proofFile({ task: "28", capability: "digest", about: "One Weekly Digest Agent run: the subject, the cadence and the store it started from (input), the digests with their figures and sentences and the store it left (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>, or several in run order.", mcp, network: net, startedAt: started, input: { subject: subjectName(subject), every, periods, soFar: flags.soFar, store: flags.store ? store : null }, result: run });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(run, null, 2));
+    else printDigest(run, flags.store);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1041,7 +1144,7 @@ async function verify(flags: Flags): Promise<number> {
     proofs.push(proof);
   }
   // Several runs of one watcher or bot, in order: one history, each run from the store the last one left.
-  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck, "whale-watcher": whaleHistoryCheck, "gas-optimizer": gasHistoryCheck };
+  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck, "whale-watcher": whaleHistoryCheck, "gas-optimizer": gasHistoryCheck, digest: digestHistoryCheck };
   const historyOf = histories[proofs[0]?.capability ?? ""];
   if (proofs.length > 1 && historyOf && proofs.every((p) => p.capability === proofs[0]!.capability)) {
     const history = historyOf(proofs);
@@ -1070,6 +1173,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "explain") return explainCommand(flags);
   if (command === "risk") return riskCommand(flags);
   if (command === "audit") return auditCommand(flags);
+  if (command === "digest") return digestCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

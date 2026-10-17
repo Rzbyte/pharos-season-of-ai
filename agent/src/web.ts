@@ -36,6 +36,9 @@ import { checkRisk, DEFAULT_BLOCKS } from "./risk/check.js";
 import { parsePeriod } from "./audit/period.js";
 import { auditAddress, parseAuditAddress } from "./audit/report.js";
 import { EXAMPLE_PAYER } from "./guardian/presets.js";
+import { parseSubject, subjectName } from "./digest/config.js";
+import { runDigest } from "./digest/run.js";
+import { digestKey, emptyDigestStore } from "./digest/store.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -409,6 +412,40 @@ async function auditLog(params: URLSearchParams, options: WebOptions): Promise<W
   }
 }
 
+/** Hours one page digest covers at most, besides the hour so far; and the blocks it may read. */
+export const WEB_DIGEST_HOURS = 5;
+export const WEB_DIGEST_BLOCKS = 20_000;
+
+/**
+ * Task 28: a token's or a wallet's activity, hour by hour: the last complete hours (3 by default) and
+ * the hour so far. A day's or a week's digest reads more blocks than one request may; the CLI makes those.
+ */
+async function digest(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  let subject;
+  let periods;
+  try {
+    subject = parseSubject(params.get("subject") ?? "usdc", net);
+    const hours = params.get("hours") ?? "3";
+    if (!/^\d$/.test(hours) || Number(hours) < 1 || Number(hours) > WEB_DIGEST_HOURS) throw new AgentError("usage", `hours must be a whole number from 1 to ${WEB_DIGEST_HOURS}.`);
+    periods = Number(hours);
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const inputs = { subject: subject.kind === "token" ? subject.token.symbol : subject.address, hours: String(periods) };
+  const recorder = new Recorder();
+  // 40 get_logs at most (a wallet's two queries a page), about 20 block reads, 6 reads at the newest block.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 110, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const store = emptyDigestStore(digestKey(net.id, subjectName(subject), "hour"));
+    const result = await runDigest(subject, "hour", store, { chain: new Chain(mcp, net), periods, soFar: true, maxBlocks: WEB_DIGEST_BLOCKS, now: options.now });
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -432,8 +469,10 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await auditLog(url.searchParams, options);
       case "27":
         return await supportAgent(url.searchParams, options);
+      case "28":
+        return await digest(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22 to 27.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22 to 28.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

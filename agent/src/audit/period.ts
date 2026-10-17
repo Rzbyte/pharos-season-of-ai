@@ -82,7 +82,8 @@ export function utcSpan(start: bigint, end: bigint): string {
  */
 export class BlockClock {
   private readonly seen = new Map<bigint, bigint>();
-  private searches = 0;
+  /** Block reads in the current search. */
+  private reads = 0;
 
   constructor(
     private readonly chain: Chain,
@@ -94,21 +95,34 @@ export class BlockClock {
   async time(n: bigint): Promise<bigint> {
     const known = this.seen.get(n);
     if (known !== undefined) return known;
-    if ((this.searches += 1) > MAX_SEARCH) throw new AgentError("unexpected", `Placing the period took more than ${MAX_SEARCH} block reads; the chain's block times are too irregular to search.`);
+    if ((this.reads += 1) > MAX_SEARCH) throw new AgentError("unexpected", `Placing a time took more than ${MAX_SEARCH} block reads; the chain's block times are too irregular to search.`);
     const t = (await this.chain.block(n)).timestamp;
     this.seen.set(n, t);
     return t;
   }
 
+  /** The first block at or after a time (Unix seconds); the newest block's number plus one when none is. */
+  firstAtOrAfter(target: bigint): Promise<bigint> {
+    return this.firstAfter(target - 1n);
+  }
+
   async firstAfter(target: bigint): Promise<bigint> {
+    this.reads = 0;
+    if (this.head.timestamp <= target) return this.head.number + 1n;
+    // Start from the tightest bracket the blocks already read give: the latest at or before the target and
+    // the earliest after it. Placing times in order, each search starts where the last one ended.
+    let lo = -1n; // none yet
+    let tLo = 0n;
     let hi = this.head.number;
     let tHi = this.head.timestamp;
-    if (tHi <= target) return hi + 1n;
-    // Step back until a block at or before the target: 1,000 blocks first, then as far as the pace seen says.
-    let lo: bigint;
-    let tLo: bigint;
+    for (const [n, t] of this.seen) {
+      if (t <= target) {
+        if (n > lo) [lo, tLo] = [n, t];
+      } else if (n < hi) [hi, tHi] = [n, t];
+    }
+    // Else step back until a block at or before the target: 1,000 blocks first, then as far as the pace seen says.
     let span = 1000n;
-    for (;;) {
+    while (lo < 0n) {
       const probe = hi - span > 0n ? hi - span : 0n;
       const t = await this.time(probe);
       if (t <= target) {

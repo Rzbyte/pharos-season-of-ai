@@ -583,3 +583,47 @@ describe("pharos-agent audit", () => {
     assert.match(both.stderr, /Give the period one way/);
   });
 });
+
+describe("pharos-agent digest", () => {
+  // Its own chain: USDC moving over the last hours, a block a second; the newest is Monday 21 Sep 2026, 14:13:20 UTC.
+  const TRADER = "0x1f3546a29eec2102c8d52e21a45114124014c85c";
+  const BUSY = "0x936564245b69f5a293b42cbd752e0ee3bb68b470";
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(
+      defaultState({
+        tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: 1_300_000_000n, [TRADER]: 5_000_000_000n } } },
+        transfers: [{ token: USDC, from: TRADER, to: BUSY, amount: 10_000_000n, block: 4_992_100n }, { token: USDC, from: TRADER, to: BUSY, amount: 20_000_000n, block: 4_993_000n }, { token: USDC, from: BUSY, to: PAYER, amount: 7_000_000n, block: 4_996_000n }],
+      }),
+    );
+  });
+  after(() => chain.close());
+
+  test("USDC hour by hour, with the hour so far; the proof verifies", async () => {
+    const proof = join(dir, "digest.json");
+    const run = await cli(["digest", "usdc", "--every", "hour", "--periods", "2", "--so-far", "--rpc", chain.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Subject {7}USDC \(0xC879C018dB60520F4355C26eD1a6D572cdAC1815\), the token, every hour\n/);
+    assert.match(run.stdout, /\n {2}21 Sep 2026, 12:00 to 13:00 UTC \(blocks 4,992,000–4,995,599\)\n {4}USDC, 21 Sep 2026, 12:00 to 13:00 UTC: 2 transfers moved 30 USDC between 1 sender and 1 recipient\.\n/);
+    assert.match(run.stdout, /\n {4}Against the hour before: 50% fewer transfers and 77% less volume\.\n/);
+    assert.match(run.stdout, /\n {2}21 Sep 2026, 14:00 to 15:00 UTC, so far \(blocks 4,999,200–5,000,000\)\n {4}USDC, 21 Sep 2026, 14:00 to 15:00 UTC, so far: no USDC moved between holders\.\n/);
+    assert.match(run.stdout, /\n {2}Now: a total supply of 6,300 USDC\.\n/);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+  });
+
+  test("on a schedule, with a store: each hour digested once, the proofs one history; --periods with a store is refused", async () => {
+    const store = join(dir, "digest-store.json");
+    const [first, second] = [join(dir, "digest-1.json"), join(dir, "digest-2.json")];
+    const one = await cli(["digest", "usdc", "--every", "hour", "--store", store, "--rpc", chain.url, "--proof", first]);
+    assert.equal(one.code, 0, one.stderr);
+    assert.match(one.stdout, /\n {2}Store: .*digest-store\.json \(the last digest ended at 2026-09-21T14:00:00\.000Z\)\.\n/);
+    const two = await cli(["digest", "usdc", "--every", "hour", "--store", store, "--rpc", chain.url, "--proof", second]);
+    assert.match(two.stdout, /\n {2}USDC: no hour has ended since the last digest; the next ends at 2026-09-21T15:00:00\.000Z\.\n/);
+    const verified = await cli(["verify", first, second]);
+    assert.match(verified.stdout, /\n {2}PASS {2}one history: 2 runs, each from the store the last one left; 1 period digested, each once\n/);
+    const both = await cli(["digest", "--store", store, "--periods", "2", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(both.code, 2);
+    assert.match(both.stderr, /--periods is for a run without a store/);
+  });
+});

@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22 to 27\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22 to 28\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -385,6 +385,36 @@ describe("GET /api/agent?task=26", () => {
       ["task=26&hours=0", /hours must be a whole number from 1 to 168/],
       ["task=26&hours=1&since=2026-10-17T09:00Z", /Give the period one way/],
       ["task=26&since=2026-02-30", /since is not a real date and time/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=28", () => {
+  type Body = { result: { schema: string; every: string; subject: { kind: string }; digests: { label: string }[]; current: { complete: boolean } | null; cut: number }; inputs: Record<string, string> };
+
+  test("USDC hour by hour by default: the last 3 hours and the hour so far; never cached", async () => {
+    const response = await get("task=28");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 0);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.every, body.result.subject.kind, body.result.cut], ["pharos-agent/digest-run/1", "hour", "token", 0]);
+    assert.deepEqual(body.result.digests.map((d) => d.label), ["21 Sep 2026, 11:00 to 12:00 UTC", "21 Sep 2026, 12:00 to 13:00 UTC", "21 Sep 2026, 13:00 to 14:00 UTC"]);
+    assert.equal(body.result.current?.complete, false);
+    assert.deepEqual(body.inputs, { subject: "USDC", hours: "3" });
+  });
+
+  test("a wallet's digest; bad input is a 400 before any Chain MCP call", async () => {
+    const body = (await get(`task=28&subject=${PAYER}&hours=1`)).body as Body;
+    assert.deepEqual([body.result.subject.kind, body.result.digests.length, body.inputs], ["wallet", 1, { subject: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", hours: "1" }]);
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      ["task=28&hours=6", /hours must be a whole number from 1 to 5/],
+      ["task=28&subject=pepe", /A digest is of an official token/],
     ] as const) {
       const bad = await get(query);
       assert.equal(bad.status, 400, query);
