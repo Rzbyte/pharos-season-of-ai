@@ -49,7 +49,7 @@ export interface AlertRun {
   skipped: { from: string; to: string } | null;
   rules: RuleReport[];
   alerts: Alert[];
-  /** Matching transfers beyond the most one run reports. */
+  /** Matching transfers beyond the most one run reports (MAX_ALERTS). */
   truncated: number;
   store: AlertStore;
   headline: string;
@@ -62,7 +62,7 @@ export interface AlertOptions {
   now?: () => Date;
 }
 
-/** The most alerts one run reports, and the most a store keeps waiting for delivery. */
+/** The most transfers one run reports (a condition's alerts are never cut), and the most alerts a store keeps waiting for delivery. */
 export const MAX_ALERTS = 100;
 export const MAX_PENDING = 500;
 
@@ -124,6 +124,7 @@ export async function runAlerts(bot: AlertBot, store: AlertStore, options: Alert
 
   const reports: RuleReport[] = [];
   let found: Alert[] = [];
+  const changes: Alert[] = [];
   let pages = 0;
   const states = { ...store.states };
   const stateRules = bot.rules.filter((r) => r.kind === "state");
@@ -146,11 +147,12 @@ export async function runAlerts(bot: AlertBot, store: AlertStore, options: Alert
     reports.push({ id: rule.id, label: rule.label, kind: "state", state: o.passed === null ? "unreadable" : o.passed ? "holds" : "clear", observed: o.observed, threshold: `${o.op} ${o.threshold}`, tool: o.tool, error: o.error, matches: null });
     if (o.passed === null) continue;
     states[rule.id] = o.passed;
-    if (o.passed && before !== true) found.push({ id: `${rule.id}:${pinned.number}:triggered`, rule: rule.id, label: rule.label, kind: "triggered", block: pinned.number.toString(), message: `${o.observed} at block ${at}`, transfer: null, observed: o.observed });
-    else if (!o.passed && before === true) found.push({ id: `${rule.id}:${pinned.number}:resolved`, rule: rule.id, label: rule.label, kind: "resolved", block: pinned.number.toString(), message: `no longer holds: ${o.observed} at block ${at}`, transfer: null, observed: o.observed });
+    if (o.passed && before !== true) changes.push({ id: `${rule.id}:${pinned.number}:triggered`, rule: rule.id, label: rule.label, kind: "triggered", block: pinned.number.toString(), message: `${o.observed} at block ${at}`, transfer: null, observed: o.observed });
+    else if (!o.passed && before === true) changes.push({ id: `${rule.id}:${pinned.number}:resolved`, rule: rule.id, label: rule.label, kind: "resolved", block: pinned.number.toString(), message: `no longer holds: ${o.observed} at block ${at}`, transfer: null, observed: o.observed });
   }
 
-  const alerts = found.slice(0, MAX_ALERTS);
+  // At most MAX_ALERTS transfers, the oldest first; every change of a condition, whose new state is stored either way.
+  const alerts = [...found.slice(0, MAX_ALERTS), ...changes];
   const after: AlertStore = { ...store, cursor: to > BigInt(store.cursor ?? -1) ? to.toString() : store.cursor, states, pending: [...store.pending, ...alerts].slice(-MAX_PENDING) };
   const headline = alerts.length
     ? `${alerts.length} new ${alerts.length === 1 ? "alert" : "alerts"} at block ${at}: ${alerts[0]!.label}: ${alerts[0]!.message}${alerts.length > 1 ? " …" : "."}`
@@ -166,7 +168,7 @@ export async function runAlerts(bot: AlertBot, store: AlertStore, options: Alert
     skipped,
     rules: reports,
     alerts,
-    truncated: found.length - alerts.length,
+    truncated: Math.max(0, found.length - MAX_ALERTS),
     store: after,
     headline,
     toolCalls: chain.mcp.toolCalls,

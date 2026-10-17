@@ -46,7 +46,7 @@ export const TASKS = Object.freeze([
   // 22 to 30.
   task("20", "X402 Paywalled API"),
   task("21", "X402 Agent Buyer"),
-  task("22", "On-Chain Alert Bot"),
+  task("22", "On-Chain Alert Bot", { verb: "Alert", tool: "Chain MCP", status: "built", purpose: "Large transfers and on-chain conditions watched run after run, each alerted once." }),
   task("23", "Whale-Watching Agent"),
   task("24", "Gas Fee Optimizer"),
   task("25", "Wallet Risk Checker"),

@@ -147,7 +147,7 @@ describe("watching for alerts", () => {
     }
   });
 
-  test("a value that cannot be read changes nothing; one run reports at most 100 transfers", async () => {
+  test("a value that cannot be read changes nothing; one run reports at most 100 transfers, and every change of a condition", async () => {
     const many = Array.from({ length: 105 }, (_, i) => ({ token: USDC, from: OTHER, to: PAYER, amount: 500_000_000n, block: HEAD - BigInt(i % 90) }));
     const fake = await mainnet(many);
     try {
@@ -157,7 +157,8 @@ describe("watching for alerts", () => {
       const gas = result.rules.find((r) => r.id === "gas-high")!;
       assert.deepEqual([gas.state, result.store.states["gas-high"]], ["unreadable", true], "the last known state is kept");
       assert.ok(!result.alerts.some((a) => a.rule === "gas-high"));
-      assert.deepEqual([result.alerts.length, result.truncated], [100, 6], "105 transfers and the low-balance trigger: the first 100 reported");
+      assert.deepEqual([result.alerts.length, result.truncated], [101, 5], "105 transfers and the low-balance trigger: the first 100 transfers, and the trigger");
+      assert.deepEqual(result.alerts.at(-1)!.kind, "triggered");
     } finally {
       await fake.close();
     }
@@ -200,6 +201,19 @@ describe("delivering alerts", () => {
     assert.equal((posts[0] as { text: string }).text, "Bot: A USDC transfer of 500 or more: message a");
     const store = { ...emptyAlertStore(bot()), pending: [alert("a"), alert("b")] };
     assert.deepEqual(afterDelivery(store, delivery.delivered).pending.map((a) => a.id), ["b"]);
+  });
+
+  test("a webhook that does not answer is not tried again in the same run: the rest wait for the next", async () => {
+    const tried: string[] = [];
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      const { alert: sent } = JSON.parse(String(init.body)) as { alert: { id: string } };
+      tried.push(sent.id);
+      if (sent.id === "b") throw new TypeError("fetch failed");
+      return new Response(null, { status: 200 });
+    }) as typeof fetch;
+    const delivery = await deliver("Bot", [alert("a"), alert("b"), alert("c")], "https://hooks.example/x", fetchImpl);
+    assert.deepEqual(tried, ["a", "b"]);
+    assert.deepEqual(delivery, { channel: "webhook", delivered: ["a"], failed: [{ id: "b", error: "fetch failed" }, { id: "c", error: "not tried: the webhook did not answer the alert before it" }] });
   });
 
   test("a recorded delivery is checked against the run's alerts", async () => {

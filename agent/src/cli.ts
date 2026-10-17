@@ -36,7 +36,7 @@ import { historyCheck, verifyTrendProof } from "./trend/verify.js";
 import { parseAlertBot } from "./alert/config.js";
 import { deliver } from "./alert/deliver.js";
 import { ALERT_PRESETS } from "./alert/presets.js";
-import { runAlerts } from "./alert/run.js";
+import { MAX_ALERTS, runAlerts } from "./alert/run.js";
 import { afterDelivery, emptyAlertStore, parseAlertStore } from "./alert/store.js";
 import { alertHistoryCheck, verifyAlertProof, type RecordedAlertRun } from "./alert/verify.js";
 
@@ -538,7 +538,7 @@ function printAlerts(run: RecordedAlertRun, storePath: string): void {
   out();
   if (!run.alerts.length) out("  Alerts      none new");
   for (const [index, a] of run.alerts.entries()) out(`  ${index === 0 ? "Alerts  " : "        "}    ${a.kind === "transfer" ? "" : `${a.kind.toUpperCase()} `}${a.label}: ${a.message}`);
-  if (run.truncated) out(`              and ${run.truncated} more matching transfers, beyond the ${run.alerts.length} one run reports`);
+  if (run.truncated) out(`              and ${run.truncated} more matching transfers, beyond the ${MAX_ALERTS} one run reports`);
   const d = run.delivery;
   if (d) out(`  Delivered   ${d.delivered.length} ${d.channel === "webhook" ? "to the webhook" : "here"}${d.failed.length ? `; ${d.failed.length} kept to retry (${d.failed[0]!.error})` : ""}`);
   out();
@@ -588,12 +588,13 @@ async function alert(flags: Flags): Promise<number> {
     // Every pending alert, new or kept from a failed delivery, goes out now.
     const delivery = await deliver(bot.name, run.store.pending, flags.webhook ?? null);
     const recorded: RecordedAlertRun = { ...run, delivery };
+    // The store first: once alerts are delivered, what the bot remembers must say so.
+    await writeFile(`${storePath}.tmp`, `${JSON.stringify(afterDelivery(run.store, delivery.delivered), null, 2)}\n`);
+    await rename(`${storePath}.tmp`, storePath);
     if (flags.proof) {
       const proof = proofFile({ task: "22", capability: "alert-bot", about: "One On-Chain Alert Bot run: the bot and the store it started from (input), the run with its alerts, the store it left and the delivery (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>, or several in run order.", mcp, network: net, startedAt: started, input: { bot: json, store }, result: recorded });
       await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
     }
-    await writeFile(`${storePath}.tmp`, `${JSON.stringify(afterDelivery(run.store, delivery.delivered), null, 2)}\n`);
-    await rename(`${storePath}.tmp`, storePath);
     if (flags.json) out(JSON.stringify(recorded, null, 2));
     else printAlerts(recorded, storePath);
     if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);

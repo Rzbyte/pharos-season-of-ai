@@ -85,7 +85,7 @@ export function renderChecks(list, rows) {
   );
 }
 
-/** One Chain MCP call, after its tool name: the call's target, sender and data, and the block it names. */
+/** One Chain MCP call, after its tool name: the call's target, sender and data, and the block or blocks it names. */
 export function describeCall(call) {
   const parts = [];
   const args = call.args ?? {};
@@ -98,6 +98,9 @@ export function describeCall(call) {
   }
   if (args.address) parts.push(short(args.address));
   if (typeof args.block === "string") parts.push(/^0x[0-9a-f]+$/i.test(args.block) ? `@ ${group(BigInt(args.block).toString())}` : `@ ${args.block}`);
+  // A get_logs page: the blocks it covers.
+  const number = (tag) => (/^0x[0-9a-f]+$/i.test(tag) ? group(BigInt(tag).toString()) : tag);
+  if (typeof args.fromBlock === "string" && typeof args.toBlock === "string") parts.push(`blocks ${number(args.fromBlock)}–${number(args.toBlock)}`);
   return parts.join(" ");
 }
 
