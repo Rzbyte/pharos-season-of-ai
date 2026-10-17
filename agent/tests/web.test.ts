@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22, 23, 24 or 27\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22, 23, 24, 25 or 27\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -328,6 +328,31 @@ describe("GET /api/agent?task=27", () => {
       assert.equal(response.status, 400, query);
       assert.match(message(response), error, query);
     }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=25", () => {
+  type Body = { result: { schema: string; level: string; verdict: string; signals: { id: string }[]; history: { from: string; pages: number } | null; counterparty: { code: string } }; inputs: Record<string, string> };
+
+  test("Task 08's example transfer: the recipient read, 2,000 blocks of history, the level and verdict; never cached", async () => {
+    const response = await get("task=25");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 0);
+    const body = response.body as Body;
+    assert.equal(body.result.schema, "pharos-agent/risk-check/1");
+    assert.deepEqual([body.result.history?.from, body.result.history?.pages], ["4998001", 4]);
+    assert.deepEqual([body.result.counterparty.code, body.result.signals.map((s) => s.id), body.result.level, body.result.verdict], ["none", ["never-used"], "medium", "check-first"]);
+    assert.deepEqual(body.inputs, { action: "transfer", asset: "USDC", from: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", to: "0xB2749BD12f19C24a2244176658F3dF3e48e79553", amount: "25" });
+  });
+
+  test("an unlimited approval to a wallet is high risk; bad input is a 400 before any Chain MCP call", async () => {
+    const body = (await get(`task=25&action=approve&to=${STRANGER}&amount=max`)).body as Body;
+    assert.deepEqual([body.result.signals.slice(0, 1).map((s) => s.id), body.result.verdict], [["approve-wallet"], "do-not-send"]);
+    const before = fake.requests.length;
+    const bad = await get("task=25&to=0x12");
+    assert.equal(bad.status, 400);
+    assert.match(message(bad), /The recipient must be a 0x address/);
     assert.equal(fake.requests.length, before, "nothing reached the chain");
   });
 });

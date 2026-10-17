@@ -512,3 +512,33 @@ describe("pharos-agent explain", () => {
   });
 });
 
+describe("pharos-agent risk", () => {
+  // Its own chain: the example sender trades with one address; a made-up lookalike copies its ends.
+  const TRADER = "0x1f3546a29eec2102c8d52e21a45114124014c85c";
+  const LOOKALIKE = `0x1f35${"0".repeat(32)}c85c`;
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(defaultState({ native: { [PAYER]: 10n ** 18n, [TRADER]: 10n ** 17n }, nonces: { [TRADER]: 3n }, tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: 1_000_000_000n } } }, transfers: [{ token: USDC, from: PAYER, to: TRADER, amount: 58_410_000n, block: 4_999_900n }, { token: USDC, from: TRADER, to: PAYER, amount: 58_400_000n, block: 4_999_950n }] }));
+  });
+  after(() => chain.close());
+
+  test("a lookalike recipient: every signal with its source, high risk; the proof verifies", async () => {
+    const proof = join(dir, "risk.json");
+    const run = await cli(["risk", "--to", LOOKALIKE, "--rpc", chain.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Counterparty {2}0x1f3500000000000000000000000000000000c85c \(the recipient\): no code, nonce 0, 0 PROS\n {2}History {7}blocks 4,998,001–5,000,000, USDC: 2 transfers by either, 0 between them, 0 of nothing\n/);
+    assert.match(run.stdout, /\n {2}HIGH {4}Looks like an address the sender uses: 0x1f35…c85c starts and ends like 0x1F35…c85C, which the sender dealt with 2 times/);
+    assert.match(run.stdout, /\n {2}MEDIUM {2}Never used: /);
+    assert.match(run.stdout, /\n {2}Risk {10}HIGH: do not send\n/);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}scanned blocks: 4 get_logs calls within blocks 4,998,001–5,000,000\n/);
+  });
+
+  test("--blocks is bounded, before anything runs", async () => {
+    const bad = await cli(["risk", "--blocks", "20000", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /--blocks must be a whole number from 1 to 10,000/);
+  });
+});
+

@@ -32,6 +32,7 @@ import { parseGasPlan } from "./gas/config.js";
 import { runGasPlan } from "./gas/run.js";
 import { parseGasStore, planKey } from "./gas/store.js";
 import { explain } from "./support/explain.js";
+import { checkRisk, DEFAULT_BLOCKS } from "./risk/check.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -359,6 +360,22 @@ async function supportAgent(params: URLSearchParams, options: WebOptions): Promi
   }
 }
 
+/** Task 25: the risks of a planned transfer or approval, from the counterparty's history (the default 2,000 blocks). */
+async function riskChecker(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const parsed = requestFrom(params);
+  if ("status" in parsed) return parsed;
+  const { inputs, request } = parsed;
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await checkRisk(request.intent, { chain: new Chain(mcp, net), blocks: DEFAULT_BLOCKS, now: options.now });
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -376,10 +393,12 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await whaleWatcher(url.searchParams, options);
       case "24":
         return await gasOptimizer(url.searchParams, options);
+      case "25":
+        return await riskChecker(url.searchParams, options);
       case "27":
         return await supportAgent(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22, 23, 24 or 27.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22, 23, 24, 25 or 27.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

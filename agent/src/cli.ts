@@ -9,6 +9,7 @@
 //   pharos-agent whales [preset | watchlist.json] [--store FILE]
 //   pharos-agent gas [preset | plan.json] [--store FILE] [--execute]
 //   pharos-agent explain (0xHASH | [kind] --from --to --amount ...)
+//   pharos-agent risk [kind] --from --to --amount ... [--blocks N]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -54,6 +55,8 @@ import { emptyGasStore, parseGasStore } from "./gas/store.js";
 import { gasHistoryCheck, verifyGasProof } from "./gas/verify.js";
 import { explain as explainTx, type Explanation } from "./support/explain.js";
 import { parseExplainRequest, verifyExplanationProof } from "./support/verify.js";
+import { checkRisk, DEFAULT_BLOCKS, MAX_BLOCKS, type RiskReport } from "./risk/check.js";
+import { verifyRiskProof } from "./risk/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -138,6 +141,16 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       instead (the kinds and options of dryrun): why it would fail if sent now.
       --network ID, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent risk [kind] [options]                       Task 25, Wallet Risk Checker
+      Before a transaction, what the history of the address it goes to says: its code (a wallet, a
+      contract, or a delegated account), nonce and balance; its recent token transfers with the sender,
+      zero-value ones, and whether it only looks like an address the sender uses (address poisoning);
+      an approval to a wallet or an unlimited one; tokens sent to a token contract; and the dry run.
+      A risk level from the worst signal: do not send, check first, or it looks fine. The kinds and
+      options of dryrun (the recipient, or with erc20-approve the spender, is the address checked).
+      --blocks N           blocks of history to read (default 2,000, at most 10,000)
+      --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist or gas plan, in run order,
                               are also checked as one history
@@ -168,7 +181,7 @@ function parseFlags(argv: string[]): Flags {
     if (arg === "--help" || arg === "-h") flags.help = true;
     else if (arg === "--json") flags.json = true;
     else if (arg === "--submit") flags.submit = true;
-    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network"].includes(arg)) {
+    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks"].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new AgentError("usage", `${arg} needs a value.`);
       flags.values[arg.slice(2)] = value;
@@ -887,10 +900,69 @@ async function explainCommand(flags: Flags): Promise<number> {
   }
 }
 
+function printRisk(r: RiskReport): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  const c = r.counterparty;
+  out("Pharos Wallet Risk Checker");
+  out();
+  out(`  Network       ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP     ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Block         ${n(r.block.number)} · ${r.block.timestamp}`);
+  out(`  Transaction   ${r.transaction.summary}`);
+  out(`  Counterparty  ${c.address} (the ${r.transaction.role}): ${c.code === "none" ? "no code" : c.code === "delegated" ? `delegated to ${c.delegate}` : `a contract${c.token ? ` (${c.token})` : ""}`}, nonce ${n(c.nonce)}, ${c.balanceShown}`);
+  if (r.history) out(`  History       blocks ${n(r.history.from)}–${n(r.history.to)}, ${r.history.token}: ${r.history.transfers} ${r.history.transfers === 1 ? "transfer" : "transfers"} by either, ${r.history.withSender} between them, ${r.history.zeroValue} of nothing`);
+  out();
+  if (!r.signals.length) out("  No signals.");
+  for (const s of r.signals) out(`  ${s.severity.toUpperCase().padEnd(6)}  ${s.title}: ${s.detail}   [${s.tool}]`);
+  out();
+  out(`  Risk          ${r.level.toUpperCase()}: ${{ "do-not-send": "do not send", "check-first": "check first", "looks-fine": "nothing suspicious found" }[r.verdict]}`);
+  out(`  ${r.toolCalls} Chain MCP calls. Nothing was signed or sent.`);
+}
+
+async function riskCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  const kind = flags.positional[1] ?? "erc20-transfer";
+  const example = net.id === "pharos-mainnet";
+  const intent: Record<string, unknown> = { kind, from: v.from ?? (example ? EXAMPLE_PAYER : undefined), to: v.to ?? (example && kind !== "call" ? EXAMPLE_RECIPIENT : undefined), amount: v.amount ?? (kind === "native-transfer" ? "0.01" : "25") };
+  if (kind === "erc20-transfer" || kind === "erc20-approve") intent.token = tokenFor(net, v.token ?? "USDC");
+  if (kind === "erc20-approve") intent.spender = v.spender;
+  if (kind === "call") {
+    intent.signature = v.signature;
+    try {
+      intent.args = v.args ? (JSON.parse(v.args) as unknown) : [];
+    } catch {
+      throw new AgentError("usage", "--args must be a JSON list, like '[\"1000\"]'.");
+    }
+    intent.value = v.value ?? "0";
+  }
+  const request = parseDryRun({ network: net.id, intent });
+  let blocks = DEFAULT_BLOCKS;
+  if (v.blocks !== undefined) {
+    if (!/^\d+$/.test(v.blocks) || Number(v.blocks) < 1 || Number(v.blocks) > MAX_BLOCKS) throw new AgentError("usage", `--blocks must be a whole number from 1 to ${MAX_BLOCKS.toLocaleString("en-US")}.`);
+    blocks = Number(v.blocks);
+  }
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 80 });
+  try {
+    const report = await checkRisk(request.intent, { chain: new Chain(mcp, net), blocks, block: flags.block });
+    if (flags.proof) {
+      const proof = proofFile({ task: "25", capability: "risk-checker", about: "One Wallet Risk Checker run: the planned transaction and the blocks of history read (input), the signals, the risk level and the verdict (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { intent: request.intent, blocks }, result: report });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(report, null, 2));
+    else printRisk(report);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -933,6 +1005,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "whales") return whales(flags);
   if (command === "gas") return gasPlan(flags);
   if (command === "explain") return explainCommand(flags);
+  if (command === "risk") return riskCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }
