@@ -122,7 +122,9 @@ function renderCalls(calls) {
  * the panel marked busy and "again" disabled meanwhile; "again" repeats the last run. `params` is the
  * query, or a function that makes it when the run starts (for a page whose query changes between runs). An answer that holds
  * a result shows its block, calls and JSON, then goes to `render(body)`; anything else shows the error
- * note, with the API's own message where it gave one, and calls `onFail()`.
+ * note, with the API's own message where it gave one, and calls `onFail()`. An answer the API lets be
+ * shared for a few seconds may sit in the browser's cache, which may show it again while it asks behind
+ * it; "again" means read again, so it never takes the browser's copy without asking.
  */
 export function agentRunner({ task, panel, running, failed, render, onFail }) {
   const api = $("main").dataset.api;
@@ -155,7 +157,7 @@ export function agentRunner({ task, panel, running, failed, render, onFail }) {
     $("json").textContent = JSON.stringify(body, null, 2);
     render(body);
   };
-  async function run(params) {
+  async function run(params, { fresh = false } = {}) {
     last = params;
     inFlight?.abort();
     const controller = new AbortController();
@@ -164,7 +166,7 @@ export function agentRunner({ task, panel, running, failed, render, onFail }) {
     setStatus("active", ...running);
     try {
       const query = typeof params === "function" ? params() : params;
-      const response = await fetch(`${api}?${new URLSearchParams({ task, ...query })}`, { headers: { accept: "application/json" }, signal: controller.signal });
+      const response = await fetch(`${api}?${new URLSearchParams({ task, ...query })}`, { headers: { accept: "application/json" }, cache: fresh ? "no-cache" : "default", signal: controller.signal });
       const body = await response.json().catch(() => null);
       if (controller !== inFlight) return;
       if (!response.ok || !body?.result) fail(body?.error ? [body.error.message, body.error.hint].filter(Boolean).join(" ") : `The agent answered HTTP ${response.status}.`);
@@ -180,7 +182,7 @@ export function agentRunner({ task, panel, running, failed, render, onFail }) {
     }
   }
   again.addEventListener("click", () => {
-    if (again.getAttribute("aria-disabled") !== "true" && last) run(last);
+    if (again.getAttribute("aria-disabled") !== "true" && last) run(last, { fresh: true });
   });
   wireToggle($("json-toggle"), (open) => ($("json-toggle").textContent = open ? "Hide the JSON" : "Show the result as JSON"));
   return run;
