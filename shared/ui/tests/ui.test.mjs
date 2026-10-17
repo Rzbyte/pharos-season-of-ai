@@ -37,9 +37,9 @@ describe("helpers", () => {
     assert.equal(neighbours(TASKS, "99").index, -1);
   });
 
-  test("the manifest: 01 to 05, 08, 09, 11, 13 and 22 to 28 built at /tasks/NN, legacy addresses only as fallbacks", () => {
+  test("the manifest: 01 to 05, 08, 09, 11, 13 and 22 to 29 built at /tasks/NN, legacy addresses only as fallbacks", () => {
     assert.equal(TASKS.length, LAB.total);
-    assert.equal(BUILT, 16);
+    assert.equal(BUILT, 17);
     assert.equal(LAB.home, "/");
     for (const task of TASKS) {
       assert.equal(task.href, task.status === "built" ? route(task.n) : null, task.n);
@@ -90,8 +90,9 @@ describe("the official task map", () => {
       ["26", "Audit-Log Agent", "/tasks/26", null],
       ["27", "dApp Support Agent", "/tasks/27", null],
       ["28", "Weekly Digest Agent", "/tasks/28", null],
+      ["29", "Doc-Grounded Builder Agent", "/tasks/29", null],
     ]);
-    for (const task of TASKS.filter((entry) => !["01", "02", "03", "04", "05", "08", "09", "11", "13", "22", "23", "24", "25", "26", "27", "28"].includes(entry.n))) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
+    for (const task of TASKS.filter((entry) => !["01", "02", "03", "04", "05", "08", "09", "11", "13", "22", "23", "24", "25", "26", "27", "28", "29"].includes(entry.n))) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
   });
 
   test("moving through the map: 04 then 05, 19 then the x402 tasks then 22, and 30 is the last", () => {
@@ -145,7 +146,7 @@ describe("sync", () => {
   });
 
   test("the agent page layer goes to the agent pages (05 onward) only; the lab and Tasks 01 to 04 do without it", () => {
-    assert.deepEqual(AGENT_TARGETS, ["tasks/05-threshold-guardian/public", "tasks/08-dry-run-executor/public", "tasks/09-trend-watcher/public", "tasks/11-policy-gatekeeper/public", "tasks/13-docs-chain-agent/public", "tasks/22-on-chain-alert-bot/public", "tasks/23-whale-watching-agent/public", "tasks/24-gas-fee-optimizer/public", "tasks/25-wallet-risk-checker/public", "tasks/26-audit-log-agent/public", "tasks/27-dapp-support-agent/public", "tasks/28-weekly-digest-agent/public"]);
+    assert.deepEqual(AGENT_TARGETS, ["tasks/05-threshold-guardian/public", "tasks/08-dry-run-executor/public", "tasks/09-trend-watcher/public", "tasks/11-policy-gatekeeper/public", "tasks/13-docs-chain-agent/public", "tasks/22-on-chain-alert-bot/public", "tasks/23-whale-watching-agent/public", "tasks/24-gas-fee-optimizer/public", "tasks/25-wallet-risk-checker/public", "tasks/26-audit-log-agent/public", "tasks/27-dapp-support-agent/public", "tasks/28-weekly-digest-agent/public", "tasks/29-doc-grounded-builder/public"]);
     for (const target of TARGETS) {
       const has = (name) => {
         try {
@@ -237,6 +238,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["26 Audit-Log Agent Report", "/tasks/26", null],
         ["27 dApp Support Agent Explain", "/tasks/27", null],
         ["28 Weekly Digest Agent Digest", "/tasks/28", null],
+        ["29 Doc-Grounded Builder Agent Build", "/tasks/29", null],
         ["All 30 tasks", "/", null],
       ],
       footer: 0,
@@ -271,6 +273,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["26 Audit-Log Agent Report, not linked from here", null, null],
         ["27 dApp Support Agent Explain, not linked from here", null, null],
         ["28 Weekly Digest Agent Digest, not linked from here", null, null],
+        ["29 Doc-Grounded Builder Agent Build, not linked from here", null, null],
       ],
       footer: 0,
     });
@@ -301,11 +304,13 @@ describe("task navigation in a browser", { skip }, () => {
     assert.deepEqual([audit.previous, audit.next], [["A", "/tasks/25", "Previous task: 25 Wallet Risk Checker"], ["A", "/tasks/27", null, 0]]);
     const support = await render("/tasks/27", "27");
     assert.deepEqual([support.previous, support.next], [["A", "/tasks/26", "Previous task: 26 Audit-Log Agent"], ["A", "/tasks/28", null, 0]]);
+    const digest = await render("/tasks/28", "28");
+    assert.deepEqual([digest.previous, digest.next], [["A", "/tasks/27", "Previous task: 27 dApp Support Agent"], ["A", "/tasks/29", null, 0]]);
     // The last built task has no next arrow to follow; the switcher still ends with the lab and the total.
-    const last = await render("/tasks/28", "28");
+    const last = await render("/tasks/29", "29");
     assert.deepEqual([last.count[1], last.previous, last.next], [
-      "Task 28 / 30, switch task",
-      ["A", "/tasks/27", "Previous task: 27 dApp Support Agent"],
+      "Task 29 / 30, switch task",
+      ["A", "/tasks/28", "Previous task: 28 Weekly Digest Agent"],
       ["SPAN", null, "true", -1],
     ]);
     assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "No next built task");

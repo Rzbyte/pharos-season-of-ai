@@ -1,0 +1,80 @@
+/* Task 29 workspace: the Doc-Grounded Builder Agent. The run panel and proof are shared by the agent
+   pages (agent.css); this adds the question box above them, the docs' answer with the pages it cites,
+   what it prepares and where each value came from, its pieces beside the Skill Engine's, the dry run,
+   the Skill Engine's commands with a Copy button each, and the trail of steps, each with its source. */
+@layer task {
+  .ask { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); max-width: 46rem; }
+  .ask .field-hint { margin-top: 0; }
+  .ask .field-label:not(:first-child) { margin: var(--space-2) 0 0; }
+  /* A question reads as prose; an address stays in mono. */
+  .ask #f-q { font-family: var(--sans); }
+  .ask #f-from { width: 100%; }
+  .optional { margin-left: var(--space-1); color: var(--text-3); font-weight: 400; }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .examples-label { margin-right: var(--space-1); }
+
+  /* The docs' answer, its line breaks kept, and the pages it cites (those read marked). */
+  .docs-answer { max-width: 68ch; white-space: pre-line; color: var(--text); font-size: var(--fs-small); overflow-wrap: anywhere; }
+  .cited { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); font-size: var(--fs-meta); }
+  .cited:empty { display: none; }
+  .cite { display: inline-flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+  .cite-link { color: var(--text-2); overflow-wrap: anywhere; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  a.cite-link:hover { color: var(--text); text-decoration-color: var(--text-3); }
+  .cite-read { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+
+  /* Each part of the answer below the docs. */
+  .block { display: grid; gap: var(--space-2); margin-top: var(--space-3); min-width: 0; }
+  .action-summary { color: var(--text); font-size: var(--fs-small); font-weight: 600; overflow-wrap: anywhere; }
+  .run-main .rows > div { grid-template-columns: 6.5rem minmax(0, 1fr); }
+  .run-main .rows dd { font-variant-numeric: tabular-nums; }
+
+  /* The pieces beside the Skill Engine: a mark (same, differs, not said), the piece, what the docs say. */
+  .ground { border-top: 1px solid var(--line); }
+  .ground-row { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+  .ground-mark { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; color: var(--on-brand); background: var(--tone, var(--text-3)); }
+  .ground-mark svg { width: 12px; height: 12px; }
+  .ground-row[data-state="same"] { --tone: var(--success); }
+  .ground-row[data-state="differs"] { --tone: var(--error); }
+  .ground-main { display: grid; gap: 2px; min-width: 0; }
+  .ground-label { font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .ground-uses { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); font-family: var(--mono); font-size: var(--fs-label); color: var(--text); overflow-wrap: anywhere; }
+  .ground-from { font-family: var(--sans); font-size: var(--fs-meta); color: var(--text-3); }
+  .ground-docs { font-size: var(--fs-meta); color: var(--text-2); overflow-wrap: anywhere; }
+  .ground-row[data-state="differs"] .ground-docs { color: var(--text); }
+
+  /* The balances the transaction changes: who, then before → after. */
+  .outcome { border-top: 1px solid var(--line); }
+  .outcome:empty { display: none; }
+  .change { display: grid; gap: 2px; padding: var(--space-2) 0; border-bottom: 1px solid var(--line); font-size: var(--fs-small); }
+  .change-who { color: var(--text-2); overflow-wrap: anywhere; }
+  .change-span { font-family: var(--mono); font-size: var(--fs-label); color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .warnings { display: grid; gap: var(--space-1); }
+
+  /* The Skill Engine's commands: what each does and its reference, the command, a Copy button. */
+  .skill-meta, .skill-fee { max-width: 68ch; color: var(--text-2); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  .skill-commands { display: grid; gap: var(--space-3); }
+  .skill-cmd { display: grid; gap: var(--space-1); min-width: 0; justify-items: start; }
+  .skill-cmd .cmd { justify-self: stretch; }
+  .skill-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .skill-ref { font-family: var(--mono); font-size: var(--fs-label); font-weight: 400; color: var(--text-3); overflow-wrap: anywhere; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  a.skill-ref:hover { color: var(--text-2); }
+
+  /* The trail, in a fold: open beside the answer on a wide screen, closed under it on a phone. */
+  .trail-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--target); cursor: pointer; list-style: none; }
+  .trail-summary::-webkit-details-marker { display: none; }
+  .trail-summary:hover .chev { color: var(--text); }
+  .trail-box[open] .trail-summary .chev svg { transform: rotate(180deg); }
+  .trail-box:not([open]) { border-bottom: 1px solid var(--line); }
+
+  /* The trail: each step's text, then its source, numbered. */
+  .trail { border-top: 1px solid var(--line); counter-reset: step; }
+  .trail-step { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: 2px var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); counter-increment: step; }
+  .trail-step::before { content: counter(step); grid-row: 1 / span 2; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); line-height: 1.7; text-align: right; font-variant-numeric: tabular-nums; }
+  .trail-text, .trail-source { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+  .trail-text { font-size: var(--fs-small); color: var(--text-2); }
+  .trail-source { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  #main :is(.trail-source, .ground-uses, .change-span, .skill-ref) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+
+  /* Two call lists in one proof column: the docs calls, then the chain calls. */
+  .proof-col .calls + .sub-title { margin-top: var(--space-4); }
+}

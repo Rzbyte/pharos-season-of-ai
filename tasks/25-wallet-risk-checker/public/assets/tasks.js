@@ -53,7 +53,7 @@ export const TASKS = Object.freeze([
   task("26", "Audit-Log Agent", { verb: "Report", tool: "Chain MCP", status: "built", purpose: "What an address did over a period: read from the chain, written as plain sentences." }),
   task("27", "dApp Support Agent", { verb: "Explain", tool: "Chain MCP", status: "built", purpose: "Why a transaction failed, on request: the revert decoded, each finding with its source." }),
   task("28", "Weekly Digest Agent", { verb: "Digest", tool: "Chain MCP", status: "built", purpose: "A token's or a wallet's activity period by period, each against the one before." }),
-  task("29", "Doc-Grounded Builder Agent"),
+  task("29", "Doc-Grounded Builder Agent", { verb: "Build", tool: "Docs + Skill Engine", status: "built", purpose: "A how-to answered from the docs, then prepared: dry-run, with the Skill Engine's commands." }),
   task("30", "Multi-Protocol Aggregator", { tool: "Composition" }),
 ]);
 
