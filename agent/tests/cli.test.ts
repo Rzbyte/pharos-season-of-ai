@@ -169,3 +169,72 @@ describe("pharos-agent dryrun", () => {
   });
 });
 
+
+describe("pharos-agent gate", () => {
+  // A chain at a fixed time (Monday 14:13 UTC, inside the treasury's hours), so the result does not
+  // depend on when the tests run; reached with --rpc through the official server run over stdio.
+  const RECIPIENT = "0xb2749bd12f19c24a2244176658f3df3e48e79553";
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(defaultState({ headTime: 1_790_000_000n, native: { [PAYER]: 10n ** 18n }, tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: 1_000_000_000n } } }, transfers: [{ token: USDC, from: PAYER, to: RECIPIENT, amount: 1_200_000_000n, block: 4_999_900n }] }));
+  });
+  after(() => chain.close());
+
+  test("the treasury policy: every rule with its value and source, then the decision; nothing is signed", async () => {
+    const { code, stdout, stderr } = await cli(["gate", "--rpc", chain.url]);
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /^Pharos Policy Gatekeeper · Treasury payouts\n/);
+    assert.match(stdout, /\n {2}Request {5}Send 25 USDC from 0x912c…f647 to 0xB274…9553\n/);
+    assert.equal((stdout.match(/^ {2}pass {2}/gm) ?? []).length, 7);
+    assert.match(stdout, /\n {2}pass {2}At most 5,000 USDC sent in 1,000 blocks +1,225 USDC +≤ 5,000 USDC +\[get_logs\]\n +1,200 USDC sent in 1 transfer over blocks 4,999,001–5,000,000 \(17 min\), plus 25 USDC now\.\n/);
+    assert.match(stdout, /\n {2}pass {2}Between 06:00 and 22:00 UTC, every day +Mon 14:13 UTC +every day, 06:00–22:00 +\[get_block\]\n/);
+    assert.match(stdout, /\n {2}Decision {4}ALLOWED: 7 of 7 rules hold\n/);
+    assert.match(stdout, /\n {2}Dry run {5}would succeed; gas 51,234 \(limit 61,480\), about 0\.00005635 PROS\n/);
+    assert.match(stdout, /Chain MCP calls\. Nothing was signed or sent\.\n$/);
+  });
+
+  test("denied: exit code 9, every failing rule listed; the proof verifies by replay", async () => {
+    const proofPath = join(dir, "gate.json");
+    const { code, stdout, stderr } = await cli(["gate", "treasury", "--to", "0x1111111111111111111111111111111111111111", "--amount", "150", "--rpc", chain.url, "--proof", proofPath]);
+    assert.equal(code, 9, stderr);
+    assert.match(stdout, /\n {2}FAIL {2}The recipient is one of 3 allowed addresses +0x1111…1111 +3 allowed +\[request\]\n +The recipient is not on the list\.\n/);
+    assert.match(stdout, /\n {2}Decision {4}DENIED: 5 of 7 rules hold; failing: counterparties, per-action\n/);
+    assert.match(stdout, /\n {2}Sent {8}no: denied\n/);
+    const verified = await cli(["verify", proofPath]);
+    // Run through a local server with --rpc, so only the hosted-endpoint check differs from a hosted run.
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /PASS {2}spend window: 1 get_logs page, 1,000 blocks ending at block 5,000,000/);
+    assert.match(verified.stdout, /PASS {2}result recomputed from the recorded responses: \d+ calls replayed; every rule and the decision identical/);
+  });
+
+  test("--execute on Atlantic: allowed, sent through the official server, the receipt matched; the proof fully verifies", async () => {
+    const token = "0xe0be08c77f415f577a1b3a9ad7a1df1479564ec8";
+    const atlantic = await startFakeChain(defaultState({ chainId: 688689, native: { [KEY_ADDRESS]: 10n ** 18n }, tokens: { [token]: { decimals: 6, balances: { [KEY_ADDRESS]: 3_000_000n } } } }));
+    try {
+      const proofPath = join(dir, "gate-executed.json");
+      const { code, stdout, stderr } = await cli(["gate", "atlantic-treasury", "--execute", "--rpc", atlantic.url, "--proof", proofPath], { PRIVATE_KEY: KEY });
+      assert.equal(code, 0, stderr);
+      assert.match(stdout, /\n {2}Request {5}Send 1 USDC from 0x7099…79C8 to 0xB274…9553\n/);
+      assert.match(stdout, /\n {2}Decision {4}ALLOWED: 7 of 7 rules hold\n/);
+      assert.match(stdout, /\n {2}Sent {8}0x[0-9a-f]{64} \(nonce 0\): success in block 5,000,001\n/);
+      assert.ok(!/^ {4}DIFF/m.test(stdout), stdout);
+      const verified = await cli(["verify", proofPath]);
+      assert.equal(verified.code, 0, verified.stdout);
+      assert.match(verified.stdout, /PASS {2}signed transaction: chain 688689, signed by 0x70997970C51812dc3A010C7d01b50e0d17dc79C8, exactly the prepared gated transaction/);
+    } finally {
+      await atlantic.close();
+    }
+  });
+
+  test("refusals before anything runs: --execute on mainnet, a missing policy, a preset that needs a key", async () => {
+    const mainnet = await cli(["gate", "--execute"], { PRIVATE_KEY: KEY });
+    assert.equal(mainnet.code, 2);
+    assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
+    const missing = await cli(["gate", "no-such-policy.json"]);
+    assert.equal(missing.code, 2);
+    assert.match(missing.stderr, /No policy preset or file "no-such-policy\.json"\./);
+    const keyless = await cli(["gate", "atlantic-treasury"]);
+    assert.equal(keyless.code, 2);
+    assert.match(keyless.stderr, /"atlantic-treasury" uses your own wallet \(\$SIGNER\), so it needs PRIVATE_KEY/);
+  });
+});

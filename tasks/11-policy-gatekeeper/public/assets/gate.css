@@ -1,0 +1,10 @@
+/* Task 11 workspace: the gatekeeper. The run panel, the request in words, the check rows, the form and
+   the proof are shared by the agent pages (agent.css); the policy's rules are check rows, with what the
+   request would do beside them. This adds the allowed hours as one pair of fields. */
+@layer task {
+  .inputs-group { margin: 0; padding: 0; border: 0; min-width: 0; }
+  .inputs-group > legend { padding: 0; }
+  .inputs-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .inputs-pair .input { width: 100%; }
+  .run-side .rows dd .sub { margin-top: 2px; }
+}

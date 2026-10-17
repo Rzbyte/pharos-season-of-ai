@@ -9,7 +9,7 @@ deployment (each task deploys from its own folder, so it cannot load files from 
 | `lab.js` | DOM-free helpers (digits, hex, explorer links, `pageOf`, `neighbours`, `taskLink`) and small DOM helpers (`renderHex`, `wireCopy`, `linkExplorer`, `renderTaskNav`, `taskMenu`, `wireToggle`). |
 | `theme.js` | Light and dark, following the system until the reader chooses. |
 | `tasks.js` | The task manifest: one entry per task of the official map, 30 in all, in order (Tasks 20 and 21 are the x402 tasks). A built task's link is its route on the unified site, `/tasks/NN`; `LEGACY` keeps the standalone Task 01 and 02 addresses, used only by pages served from those deployments. |
-| `agent.css`, `agent.js` | The agent pages' layer (Task 05 onward; copied only into those): the run panel with its status line and "again" button, the block it read, the error note, the form whose problems show in place of each field's hint, and the proof's Chain MCP call list and JSON toggle. `agentRunner` runs one request to `/api/agent?task=NN` at a time; each page renders its own result. |
+| `agent.css`, `agent.js` | The agent pages' layer (Task 05 onward; copied only into those): the run panel with its status line and "again" button, the block it read, the request in words, check rows (a guardian's conditions, a gatekeeper's rules), the error note, the form whose problems show in place of each field's hint, and the proof's Chain MCP call list and JSON toggle. `agentRunner` runs one request to `/api/agent?task=NN` at a time; each page renders its own result. |
 | `header.html`, `footer.html` | The shell markup, stamped into each page between `<!-- shell:header NN -->` markers. |
 | `fonts/` | Geist, Geist Mono and Departure Mono (SIL OFL 1.1). |
 
@@ -48,4 +48,4 @@ Pick the one the interaction needs; they share the shell, tokens and primitives.
   stays in view.
 - **Agent run** (a document page with `agent.css`): the run panel first (status, block, the result,
   and a side column once there is room), then "Change the …" with the inputs, then Proof & technical
-  details. Tasks 05 and 08.
+  details. Tasks 05, 08 and 11.

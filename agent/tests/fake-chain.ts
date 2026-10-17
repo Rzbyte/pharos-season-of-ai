@@ -1,6 +1,7 @@
 // A deterministic JSON-RPC chain for tests: the upstream the official Chain MCP server talks to. It holds
-// native balances, nonces, contract code and ERC-20 tokens (balanceOf, decimals, paused, totalSupply,
-// transfer), answers the JSON-RPC methods the server uses, and applies signed transactions it is sent.
+// native balances, nonces, contract code, ERC-20 tokens (balanceOf, decimals, paused, totalSupply,
+// transfer) and their past transfers (as eth_getLogs answers them), answers the JSON-RPC methods the
+// server uses, and applies signed transactions it is sent.
 // Every value is made up; nothing here is or claims to be Pharos data.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -16,6 +17,15 @@ export interface FakeToken {
   allowances?: Record<string, Record<string, bigint>>;
 }
 
+/** A token transfer already on the chain, at `block`: eth_getLogs answers it as a Transfer log. */
+export interface FakeTransfer {
+  token: string;
+  from: string;
+  to: string;
+  amount: bigint;
+  block: bigint;
+}
+
 export interface FakeChainState {
   chainId: number;
   head: bigint;
@@ -28,6 +38,8 @@ export interface FakeChainState {
   nonces: Record<string, bigint>;
   code: Record<string, Hex>;
   tokens: Record<string, FakeToken>;
+  /** Past token transfers; a transfer the chain applies is added. */
+  transfers: FakeTransfer[];
   /** JSON-RPC methods that fail with this error. */
   failures: Record<string, { code: number; message: string }>;
 }
@@ -90,7 +102,7 @@ class RpcFailure extends Error {
 }
 
 export function defaultState(overrides: Partial<FakeChainState> = {}): FakeChainState {
-  return { chainId: 1672, head: 5_000_000n, headTime: 1_790_000_000n, baseFee: 1_000_000_000n, gasPrice: 1_200_000_000n, priorityFee: 100_000_000n, native: {}, nonces: {}, code: {}, tokens: {}, failures: {}, ...overrides };
+  return { chainId: 1672, head: 5_000_000n, headTime: 1_790_000_000n, baseFee: 1_000_000_000n, gasPrice: 1_200_000_000n, priorityFee: 100_000_000n, native: {}, nonces: {}, code: {}, tokens: {}, transfers: [], failures: {}, ...overrides };
 }
 
 export async function startFakeChain(state: FakeChainState): Promise<FakeChain> {
@@ -191,7 +203,17 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       execute(state, t, false);
       return state.tokens[lower(t.to)] ? hex(t.data?.startsWith("0x095ea7b3") ? 46_500n : 51_234n) : hex(21_000n);
     },
-    eth_getLogs: () => [],
+    eth_getLogs: ([filter]) => {
+      const f = (filter ?? {}) as { address?: string | string[]; topics?: (string | string[] | null)[]; fromBlock?: string; toBlock?: string };
+      const [from, to] = [blockOf(f.fromBlock ?? "latest"), blockOf(f.toBlock ?? "latest")];
+      const addresses = f.address === undefined ? null : (Array.isArray(f.address) ? f.address : [f.address]).map(lower);
+      // A topic position matches when it is null or absent, equal to the wanted topic, or one of a list.
+      const matches = (topic: string | undefined, want: string | string[] | null | undefined) => want === null || want === undefined || (topic !== undefined && (Array.isArray(want) ? want : [want]).map(lower).includes(lower(topic)));
+      return state.transfers
+        .map((t, index) => ({ address: lower(t.token), topics: [TRANSFER_TOPIC, word("address", lower(t.from)), word("address", lower(t.to))], data: word("uint256", t.amount), blockNumber: hex(t.block), transactionHash: keccak256(word("uint256", BigInt(index + 1))), logIndex: "0x0", removed: false }))
+        .filter((log) => BigInt(log.blockNumber) >= from && BigInt(log.blockNumber) <= to && (addresses === null || addresses.includes(log.address)))
+        .filter((log) => (f.topics ?? []).every((want, i) => matches(log.topics[i], want)));
+    },
     eth_getTransactionReceipt: ([hash]) => receipts.get(lower(hash)) ?? null,
     eth_getTransactionByHash: () => null,
     eth_sendRawTransaction: async ([raw]) => {
@@ -204,6 +226,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       const fee = gasUsed * (state.baseFee ?? state.gasPrice);
       let status: "0x1" | "0x0" = "0x1";
       const logs: unknown[] = [];
+      const applied: Omit<FakeTransfer, "block">[] = [];
       history.set(state.head, structuredClone({ native: state.native, nonces: state.nonces, tokens: state.tokens }));
       try {
         execute(state, { from, to: tx.to ?? undefined, data: tx.data, value: tx.value }, true);
@@ -212,6 +235,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
           if (decoded.functionName === "transfer") {
             const [recipient, amount] = decoded.args as [string, bigint];
             logs.push({ address: lower(tx.to), topics: [TRANSFER_TOPIC, word("address", from), word("address", recipient)], data: word("uint256", amount), logIndex: "0x0" });
+            applied.push({ token: lower(tx.to), from, to: lower(recipient), amount });
           }
         }
       } catch (error) {
@@ -222,6 +246,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       state.nonces[from] = (state.nonces[from] ?? 0n) + 1n;
       state.head += 1n;
       state.headTime += 1n;
+      for (const transfer of applied) state.transfers.push({ ...transfer, block: state.head });
       const hash = keccak256(serialized);
       receipts.set(hash, { transactionHash: hash, blockNumber: hex(state.head), status, gasUsed: hex(gasUsed), effectiveGasPrice: hex(state.baseFee ?? state.gasPrice), from: from as Hex, to: lower(tx.to) as Hex, logs, cumulativeGasUsed: hex(gasUsed), type: "0x2" });
       return hash;

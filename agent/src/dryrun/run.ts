@@ -15,7 +15,7 @@ import { formatAmount, formatGwei } from "../core/amounts.js";
 import type { Address, BlockHeader, Chain, Hex } from "../core/chain.js";
 import { AgentError, errorMessage } from "../core/errors.js";
 import { signAndSend, type Signer } from "../core/execute.js";
-import { knownToken } from "../core/networks.js";
+import { knownToken, type Network } from "../core/networks.js";
 import { quoteGas, simulate, type GasQuote, type Simulation } from "../core/simulate.js";
 import { encodeIntent, parseCallSignature, type Intent } from "./intent.js";
 
@@ -88,6 +88,8 @@ export interface DryRun {
 export interface DryRunOptions {
   chain: Chain;
   block?: bigint;
+  /** A block the caller already pinned, on a chain it already checked: the dry run reads there and asks for neither again. */
+  at?: { header: BlockHeader; source: "latest" | "requested" };
   /** Present only to submit, on Atlantic: its address must be the sender. */
   signer?: Signer;
   wait?: { polls?: number; pollMs?: number };
@@ -181,8 +183,8 @@ async function readState(chain: Chain, intent: Intent, decimals: number | null, 
 export async function runDryRun(intent: Intent, options: DryRunOptions): Promise<DryRun> {
   const { chain } = options;
   const net = chain.network;
-  await chain.expectChain();
-  const pinned: BlockHeader = await chain.block(options.block ?? (await chain.blockNumber()));
+  if (!options.at) await chain.expectChain();
+  const pinned: BlockHeader = options.at?.header ?? (await chain.block(options.block ?? (await chain.blockNumber())));
   const decimals = intent.kind === "erc20-transfer" || intent.kind === "erc20-approve" ? await tokenDecimals(chain, intent.token, pinned.number) : null;
   const tx = encodeIntent(intent, decimals);
   const { sender, values, warnings } = await readState(chain, intent, decimals, pinned.number);
@@ -247,20 +249,20 @@ export async function runDryRun(intent: Intent, options: DryRunOptions): Promise
   const nativeOut = self && intent.kind === "native-transfer" ? 0n : tx.value;
   outcome.push(line("sender", intent.from, null, net.nativeSymbol, 18, sender, succeeds ? sender - nativeOut - expectedCost : null, succeeds));
 
-  const summary = describe(intent, chain);
+  const summary = describeIntent(intent, net);
   const verdictWord = verdict === "would-succeed" ? "Would succeed" : verdict === "would-revert" ? "Would revert" : "Cannot pay";
   let submission: Submission | null = null;
   if (options.signer) {
     if (net.id !== "atlantic-testnet") throw new AgentError("execution", "Submitting is limited to the Atlantic testnet; on mainnet the dry run is the whole job.");
     if (options.signer.address.toLowerCase() !== intent.from.toLowerCase()) throw new AgentError("execution", `The key's address ${options.signer.address} is not the sender ${intent.from}.`);
-    if (verdict === "would-succeed" && gas) submission = await submit(chain, options, tx, gas, outcome, nativeOut);
+    if (verdict === "would-succeed" && gas) submission = await submit(chain, options.signer, options.wait, tx, gas, outcome, nativeOut);
   }
   const headline = `${verdictWord}: ${summary}${reason ? `. ${reason}` : gas ? `, for about ${formatAmount(expectedCost, 18, 8)} ${net.nativeSymbol} in gas.` : "."}`;
   return {
     schema: "pharos-agent/dry-run/1",
     network: { id: net.id, name: net.name, chainId: net.chainId },
     chainMcp: { where: chain.mcp.where, server: chain.mcp.server ? `${chain.mcp.server.name} ${chain.mcp.server.version}` : null },
-    block: { number: pinned.number.toString(), hash: pinned.hash, timestamp: new Date(Number(pinned.timestamp) * 1000).toISOString(), source: options.block === undefined ? "latest" : "requested" },
+    block: { number: pinned.number.toString(), hash: pinned.hash, timestamp: new Date(Number(pinned.timestamp) * 1000).toISOString(), source: options.at?.source ?? (options.block === undefined ? "latest" : "requested") },
     intent,
     summary,
     tx: { from: tx.from, to: tx.to, data: tx.data, value: tx.value.toString() },
@@ -280,8 +282,21 @@ export async function runDryRun(intent: Intent, options: DryRunOptions): Promise
 
 const selfTransfer = (intent: Intent) => (intent.kind === "erc20-transfer" || intent.kind === "native-transfer") && intent.to.toLowerCase() === intent.from.toLowerCase();
 
-function describe(intent: Intent, chain: Chain): string {
-  const net = chain.network;
+/**
+ * Send the transaction a dry run prepared, exactly as it was simulated, then compare the receipt with its
+ * prediction (Atlantic only). For a caller that decides between the dry run and the send, such as the
+ * policy gatekeeper.
+ */
+export async function submitDryRun(chain: Chain, run: DryRun, signer: Signer, wait?: DryRunOptions["wait"]): Promise<Submission> {
+  if (chain.network.id !== "atlantic-testnet") throw new AgentError("execution", "Submitting is limited to the Atlantic testnet; on mainnet the dry run is the whole job.");
+  if (signer.address.toLowerCase() !== run.tx.from.toLowerCase()) throw new AgentError("execution", `The key's address ${signer.address} is not the sender ${run.tx.from}.`);
+  if (run.verdict !== "would-succeed" || !run.gas) throw new AgentError("execution", `Only a transaction that would succeed is sent; this one ${run.verdict === "cannot-pay" ? "cannot pay its fee" : "would revert"}.`);
+  const nativeOut = selfTransfer(run.intent) && run.intent.kind === "native-transfer" ? 0n : BigInt(run.tx.value);
+  return submit(chain, signer, wait, { to: run.tx.to, data: run.tx.data, value: BigInt(run.tx.value) }, run.gas, run.outcome, nativeOut);
+}
+
+/** A transaction in words: "Send 25 USDC from 0x912c…f647 to 0xB274…9553". */
+export function describeIntent(intent: Intent, net: Network): string {
   switch (intent.kind) {
     case "native-transfer":
       return `Send ${intent.amount} ${net.nativeSymbol} from ${short(intent.from)} to ${short(intent.to)}`;
@@ -300,8 +315,8 @@ function describe(intent: Intent, chain: Chain): string {
  * predicted amount, an allowance must be exactly the approved one, and the sender's native balance
  * must drop by exactly the value plus the fee the receipt reports.
  */
-async function submit(chain: Chain, options: DryRunOptions, tx: ReturnType<typeof encodeIntent>, gas: GasQuote, outcome: Line[], nativeOut: bigint): Promise<Submission> {
-  const sent = await signAndSend(chain, options.signer!, { to: tx.to, data: tx.data === "0x" ? undefined : tx.data, value: tx.value, gasEstimate: BigInt(gas.gas) }, options.wait);
+async function submit(chain: Chain, signer: Signer, wait: DryRunOptions["wait"], tx: { to: Address; data: Hex; value: bigint }, gas: GasQuote, outcome: Line[], nativeOut: bigint): Promise<Submission> {
+  const sent = await signAndSend(chain, signer, { to: tx.to, data: tx.data === "0x" ? undefined : tx.data, value: tx.value, gasEstimate: BigInt(gas.gas) }, wait);
   const base: Submission = { txHash: sent.hash, nonce: sent.nonce, status: "pending", blockNumber: null, gasUsed: null, effectiveGasPrice: null, cost: null, comparisons: [], matched: false };
   const receipt = sent.receipt;
   if (!receipt) return base;

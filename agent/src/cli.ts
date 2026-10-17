@@ -2,6 +2,8 @@
 // pharos-agent: the Pharos Agent Lab's agent, one capability per task.
 //
 //   pharos-agent guardian [preset | config.json] [--block N] [--json] [--proof FILE] [--execute] [--verbose]
+//   pharos-agent dryrun [kind] [--token --from --to --amount ...] [--submit]
+//   pharos-agent gate [policy] [kind] [--token --from --to --amount ...] [--execute]
 //   pharos-agent verify FILE
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -20,6 +22,10 @@ import { parseDryRun } from "./dryrun/intent.js";
 import { runDryRun, type DryRun } from "./dryrun/run.js";
 import { verifyDryRunProof } from "./dryrun/verify.js";
 import { EXAMPLE_PAYER, EXAMPLE_RECIPIENT } from "./guardian/presets.js";
+import { runGate, type GateRun } from "./policy/check.js";
+import { parsePolicy } from "./policy/config.js";
+import { POLICY_PRESETS } from "./policy/presets.js";
+import { verifyGateProof } from "./policy/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -49,6 +55,16 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --network ID         pharos-mainnet (default) or atlantic-testnet
       --submit             Atlantic only: send it (signed with PRIVATE_KEY; --from defaults to its
                            address), then compare the prediction with the receipt
+      --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
+  pharos-agent gate [policy] [kind] [options]              Task 11, Policy Gatekeeper
+      Checks one requested transfer or approval against a policy at one block, every rule, before
+      anything is signed: allowlists, a per-action limit, a window limit from the sender's own
+      Transfer logs, a time window at the block's time, a gas cap and a dry run. Policies: treasury
+      (Pharos Mainnet, default), atlantic-treasury, or a policy JSON file. Kinds: erc20-transfer
+      (default), native-transfer, erc20-approve. Exits with 9 when the request is denied.
+      --token, --from, --to, --spender, --amount   the request, as for dryrun (a preset fills in its own)
+      --execute            Atlantic only: when allowed and the dry run succeeds, send it (PRIVATE_KEY)
       --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
   pharos-agent verify FILE    check a proof offline by replaying its recorded responses
@@ -290,11 +306,95 @@ async function dryrun(flags: Flags): Promise<number> {
   }
 }
 
+function printGate(run: GateRun): void {
+  const mark = (passed: boolean | null) => (passed === true ? "pass" : passed === false ? "FAIL" : "n/a ");
+  const shown = (value: string) => (/^0x[0-9a-fA-F]{40}$/.test(value) ? `${value.slice(0, 6)}…${value.slice(-4)}` : value);
+  out(`Pharos Policy Gatekeeper · ${run.policy.name}`);
+  out();
+  out(`  Network     ${run.network.name} (chain ${run.network.chainId})`);
+  out(`  Chain MCP   ${run.chainMcp.where}${run.chainMcp.server ? ` (${run.chainMcp.server})` : ""}`);
+  out(`  Block       ${BigInt(run.block.number).toLocaleString("en-US")} · ${run.block.timestamp}`);
+  out(`  Request     ${run.summary}`);
+  out();
+  const seen = (r: GateRun["rules"][number]) => (r.passed === null ? `unreadable (${r.error})` : r.observed === null ? "does not apply" : shown(r.observed));
+  const [width, seenWidth, limitWidth] = [(r: GateRun["rules"][number]) => r.label, seen, (r: GateRun["rules"][number]) => r.limit].map((column) => Math.max(...run.rules.map((r) => column(r).length)));
+  for (const r of run.rules) {
+    out(`  ${mark(r.passed)}  ${r.label.padEnd(width!)}  ${seen(r).padEnd(seenWidth!)}  ${r.limit.padEnd(limitWidth!)}  [${r.tool}]`);
+    if (r.note) out(`        ${"".padEnd(width!)}  ${r.note}`);
+  }
+  out();
+  const { decision: d } = run;
+  out(`  Decision    ${d.allowed ? "ALLOWED" : "DENIED"}: ${d.passed} of ${d.total} rules hold${d.failed.length ? `; failing: ${d.failed.join(", ")}` : ""}${d.unreadable.length ? `; unreadable: ${d.unreadable.join(", ")}` : ""}`);
+  const dry = run.dryRun;
+  if (dry) out(`  Dry run     ${dry.verdict.replace("-", " ")}${dry.gas ? `; gas ${BigInt(dry.gas.gas).toLocaleString("en-US")} (limit ${BigInt(dry.gas.gasLimit).toLocaleString("en-US")}), about ${formatAmount(BigInt(dry.gas.expectedCost), 18, 8)} ${network(run.network.id).nativeSymbol}` : ""}${dry.reason ? `: ${dry.reason}` : ""}`);
+  const e = run.execution;
+  if (e) {
+    out(`  Sent        ${e.txHash} (nonce ${e.nonce}): ${e.status}${e.blockNumber ? ` in block ${BigInt(e.blockNumber).toLocaleString("en-US")}` : ""}`);
+    for (const c of e.comparisons) out(`    ${c.match ? "match" : "DIFF "}  ${c.what.padEnd(18)} predicted ${c.predicted}; actual ${c.actual}`);
+  } else if (run.notSent) out(`  Not sent    ${run.notSent}`);
+  else out(`  Sent        no${d.allowed ? (run.network.chainId === 1672 ? ": the hosted Chain MCP is read-only; --execute runs on Atlantic" : "") : ": denied"}`);
+  out();
+  out(`  ${run.toolCalls} Chain MCP calls.${e ? "" : " Nothing was signed or sent."}`);
+}
+
+async function gate(flags: Flags): Promise<number> {
+  const v = flags.values;
+  let key: Signer | undefined;
+  const keySigner = () => (key ??= signerFromEnv());
+  const name = flags.positional[1] ?? "treasury";
+  const preset = POLICY_PRESETS[name];
+  let text: string;
+  if (preset) text = JSON.stringify(preset.policy());
+  else {
+    try {
+      text = await readFile(name, "utf8");
+    } catch {
+      throw new AgentError("usage", `No policy preset or file "${name}".`, "Presets: treasury (mainnet), atlantic-treasury (testnet, from PRIVATE_KEY's address). Or pass a path to a policy JSON file.");
+    }
+  }
+  // "$SIGNER" stands for the address of PRIVATE_KEY, in the policy and in the request.
+  const needsKey = () => {
+    if (!process.env.PRIVATE_KEY) throw new AgentError("usage", `"${name}" uses your own wallet ($SIGNER), so it needs PRIVATE_KEY (an Atlantic testnet key) for the address.`, "export PRIVATE_KEY=0x... (never commit it)");
+    return keySigner().address;
+  };
+  if (text.includes("$SIGNER")) text = text.replaceAll("$SIGNER", needsKey());
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new AgentError("usage", `${name} is not valid JSON: ${errorMessage(error)}`);
+  }
+  const policy = parsePolicy(json);
+  const net = network(policy.network);
+  const kind = flags.positional[2] ?? "erc20-transfer";
+  const defaults: Record<string, string> = preset?.request ?? {};
+  const fill = (value: string | undefined) => (value === "$SIGNER" ? needsKey() : value);
+  const intent: Record<string, unknown> = { kind, from: fill(v.from ?? defaults.from ?? (flags.execute ? "$SIGNER" : undefined)), to: fill(v.to ?? defaults.to), amount: v.amount ?? defaults.amount ?? "1" };
+  if (kind === "erc20-transfer" || kind === "erc20-approve") intent.token = v.token ? tokenFor(net, v.token) : (defaults.token ?? tokenFor(net, "USDC"));
+  if (kind === "erc20-approve") intent.spender = fill(v.spender);
+  const request = parseDryRun({ network: net.id, intent });
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 80 });
+  try {
+    const run = await runGate(policy, request.intent, { chain: new Chain(mcp, net), block: flags.block, signer: flags.execute ? keySigner() : undefined });
+    if (flags.proof) {
+      const proof = proofFile({ task: "11", capability: "policy-gatekeeper", about: "One Policy Gatekeeper run: the policy and the request (input), the decision (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { policy: json, request }, result: run });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(run, null, 2));
+    else printGate(run);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return run.outcome === "denied" ? 9 : run.execution && !run.execution.matched ? 8 : 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const path = flags.positional[1];
   if (!path) throw new AgentError("usage", "verify needs a proof file.");
   const proof = JSON.parse(await readFile(path, "utf8")) as ProofFile;
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof };
   const verifier = verifiers[proof.capability];
   if (!verifier) throw new AgentError("usage", `No verifier for "${proof.capability}".`);
   const checks = await verifier(proof);
@@ -313,6 +413,7 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "guardian") return guardian(flags);
   if (command === "dryrun") return dryrun(flags);
+  if (command === "gate") return gate(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

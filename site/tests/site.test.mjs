@@ -17,7 +17,7 @@ import { createSiteServer } from "../serve.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const at = (path) => pathToFileURL(join(REPO, path)).href;
-const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor" };
+const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/11": "11 · Policy Gatekeeper" };
 
 let out;
 let site;
@@ -57,7 +57,8 @@ before(async () => {
   const official = await new Promise((resolve, reject) => {
     const probe = createNetServer().listen(0, "127.0.0.1", () => {
       const { port } = probe.address();
-      probe.close(() => startHttpServer(loadConfig({ MCP_TRANSPORT: "http", MCP_PORT: String(port), PHAROS_RPC_URL: chain05.url, PHAROS_CHAIN_ID: "1672" })).then((server) => resolve({ server, url: `http://127.0.0.1:${port}/mcp` }), reject));
+      // No rate limit: the agent pages and APIs here make more calls in a minute than the hosted endpoint allows one IP.
+      probe.close(() => startHttpServer(loadConfig({ MCP_TRANSPORT: "http", MCP_PORT: String(port), PHAROS_RPC_URL: chain05.url, PHAROS_CHAIN_ID: "1672", RATE_LIMIT_PER_MINUTE: "0" })).then((server) => resolve({ server, url: `http://127.0.0.1:${port}/mcp` }), reject));
     });
   });
   fakes.push(chain01, ai, chain02, docs, chain05, { close: () => new Promise((resolve) => (official.server.closeAllConnections?.(), official.server.close(resolve))) });
@@ -162,7 +163,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 31, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 33, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
@@ -172,11 +173,11 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/11"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
-    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08"]);
+    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/11"]);
   });
 });
 
@@ -234,6 +235,19 @@ describe("APIs on the one domain", () => {
     assert.equal(bad.status, 400);
     assert.match((await bad.json()).error.message, /action must be transfer or approve/);
   });
+
+  test("Task 11: /api/agent?task=11 checks a request against the treasury policy through Chain MCP; bad hours are a 400", async () => {
+    const response = await get("/api/agent?task=11");
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.result.schema, "pharos-agent/policy-check/1");
+    // This chain runs on the wall clock, so the hours rule may hold or not; every other rule holds.
+    assert.deepEqual(body.result.rules.filter((rule) => rule.id !== "hours").map((rule) => [rule.id, rule.passed]), [["assets", true], ["counterparties", true], ["per-action", true], ["rolling", true], ["gas", true], ["simulates", true]]);
+    assert.equal(body.result.execution, null, "nothing is sent from the site");
+    const bad = await get("/api/agent?task=11&hoursFrom=noon");
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error.message, /allowed hours start at a time like 06:00/);
+  });
 });
 
 let chromium = null;
@@ -285,7 +299,7 @@ describe("the site in a browser", { skip }, () => {
       menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/11", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
@@ -307,7 +321,9 @@ describe("the site in a browser", { skip }, () => {
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/08`);
     assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/05");
-    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "nothing built after 08 yet");
+    await page.click('[data-task-step="next"]');
+    await page.waitForURL(`${base}/tasks/11`);
+    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "nothing built after 11 yet");
     assert.deepEqual(problems, []);
     await page.context().close();
   });
@@ -340,12 +356,12 @@ describe("the site in a browser", { skip }, () => {
     await page.context().close();
   });
 
-  test("Tasks 05 and 08 at /tasks/NN run the agent through /api/agent on this domain", async () => {
-    for (const [path, panel, word] of [["/tasks/05", "guard", "Fire"], ["/tasks/08", "run", "Would succeed"]]) {
+  test("Tasks 05, 08 and 11 at /tasks/NN run the agent through /api/agent on this domain", async () => {
+    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/]]) {
       const before = apiHits.filter((name) => name === "agent").length;
       const { page, problems } = await open(path);
       await page.waitForFunction((id) => document.getElementById(id).getAttribute("aria-busy") === "false", panel, { timeout: 15_000 });
-      assert.equal(await page.textContent("#status-word"), word, path);
+      assert.match(await page.textContent("#status-word"), word, path);
       assert.equal(apiHits.filter((name) => name === "agent").length, before + 1, path);
       assert.deepEqual(problems, [], path);
       await page.context().close();

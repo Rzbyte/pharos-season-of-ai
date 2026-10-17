@@ -1,11 +1,11 @@
 /* The agent pages (Task 05 onward), on top of lab.css: one panel holds the run (its status and the one
    control, the block it read, the result, and a side column once there is room), a form in a disclosure
-   changes it, and the proof disclosure lists the Chain MCP calls, the JSON and the CLI. A page adds its
-   own result styles in the task layer. */
+   changes it, and the proof disclosure lists the Chain MCP calls, the JSON and the CLI. Check rows show
+   a guardian's conditions and a gatekeeper's rules. A page adds its own result styles in the task layer. */
 @layer primitives {
   /* Geist Mono's contextual alternates join a space and "--" ("verify --proof" reads "verify--proof"):
      off for code, commands and call lists. */
-  #main :is(pre, code, .calls) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+  #main :is(pre, code, .calls, .check-evidence) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
 
   .run { display: grid; gap: var(--space-3); }
   .run-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
@@ -13,6 +13,8 @@
   .run-head .status-word { font-size: var(--fs-h2); }
   .run-head .btn { flex: none; }
   .run .note { margin-top: 0; }
+  /* The request in words, under the status: "Send 25 USDC from 0x912c…f647 to 0xB274…9553". */
+  .tx { color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
   .run a.short { color: var(--text); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
   .run a.short:hover { text-decoration-color: var(--text-3); }
   /* Narrow panels keep the control beside the status; the detail drops to its own line. */
@@ -35,6 +37,24 @@
     .run-body:has(> .run-side:not([hidden])) > .run-side { padding-top: 0; }
     .run-body:not(:has(> .run-side:not([hidden]))) > .run-main { max-width: 46rem; }
   }
+
+  /* Check rows: a mark, then the label, then what was seen against what is needed, and its source. */
+  .checks { border-top: 1px solid var(--line); }
+  .checks:empty { display: none; }
+  .check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+  .check-mark { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; color: var(--on-brand); background: var(--tone, var(--text-3)); }
+  .check-mark svg { width: 12px; height: 12px; }
+  .check[data-state="pass"] { --tone: var(--success); }
+  .check[data-state="fail"] { --tone: var(--error); }
+  .check[data-state="unknown"] { --tone: var(--warning); }
+  .check-main { display: grid; gap: 2px; min-width: 0; }
+  .check-label { font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .check-evidence { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); font-size: var(--fs-meta); color: var(--text-3); }
+  .check-seen { font-family: var(--mono); font-size: var(--fs-label); color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .check[data-state="fail"] .check-seen { color: var(--error); font-weight: 600; }
+  .check-need { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-2); }
+  .check-tool { margin-left: auto; font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  .check-note, .check-error { flex-basis: 100%; color: var(--text-2); overflow-wrap: anywhere; }
 
   /* The form: full-width fields, short ones two to a row. */
   .inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-3); max-width: 46rem; }

@@ -2,16 +2,14 @@
 // address bar), and again on demand; every evaluation is GET /api/agent?task=05, which reads Pharos
 // Mainnet through the hosted Chain MCP and returns the decision, the conditions and the simulated
 // payout. Everything is set as text, never as markup.
-import { $, addressLink, ADDRESS, agentRunner, el, group, gwei, queryInputs, setStatus, wireForm } from "./agent.js";
-import { renderTaskNav, svgIcon } from "./lab.js";
+import { $, addressLink, ADDRESS, agentRunner, el, group, gwei, queryInputs, renderChecks, setStatus, wireForm } from "./agent.js";
+import { renderTaskNav } from "./lab.js";
 import { LAB, TASKS } from "./tasks.js";
 
 renderTaskNav(TASKS, "05", LAB);
 
 const EXAMPLE = Object.freeze({ payer: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", recipient: "0xB2749BD12f19C24a2244176658F3dF3e48e79553", amount: "25", maxGasGwei: "10" });
 const FIELDS = { payer: $("f-payer"), recipient: $("f-recipient"), amount: $("f-amount"), maxGasGwei: $("f-gas") };
-const MARK = { pass: "M3.5 8.5l3 3 6-7", fail: "M4.5 4.5l7 7M11.5 4.5l-7 7", unknown: "M4 8h8" };
-const SAYS = { pass: "holds", fail: "fails", unknown: "could not be read" };
 const OPS = { "<": "<", "<=": "≤", ">": ">", ">=": "≥", "==": "=", "!=": "≠" };
 
 /** The payout from the address bar where it is complete and well formed, else the example. */
@@ -33,31 +31,14 @@ function problems(inputs) {
   return out;
 }
 
-function renderChecks(conditions) {
-  const list = $("checks");
-  list.replaceChildren(
-    ...conditions.map((condition) => {
-      const state = condition.passed === true ? "pass" : condition.passed === false ? "fail" : "unknown";
-      const row = el("li", "check");
-      row.dataset.state = state;
-      row.dataset.id = condition.id;
-      const mark = el("span", "check-mark");
-      mark.setAttribute("aria-hidden", "true");
-      mark.append(svgIcon(MARK[state]));
-      const body = el("span", "check-main");
-      const label = el("span", "check-label", condition.label);
-      label.append(el("span", "sr", `: ${SAYS[state]}.`));
-      const evidence = el("span", "check-evidence");
-      // A comparison shows the value against its threshold; an equality only shows what it needed when it failed.
+/** The conditions as check rows: a comparison shows the value against its threshold; an equality only shows what it needed when it failed. */
+function renderConditions(conditions) {
+  renderChecks(
+    $("checks"),
+    conditions.map((condition) => {
       const numeric = ["<", "<=", ">", ">="].includes(condition.op);
-      if (condition.observed !== null) evidence.append(el("span", "check-seen", condition.observed));
-      if (numeric) evidence.append(el("span", "check-need", `${condition.observed === null ? "needs " : ""}${OPS[condition.op]} ${condition.threshold}`));
-      else if (state !== "pass") evidence.append(el("span", "check-need", `${condition.op === "!=" ? "must not be" : "needs"} ${condition.threshold}`));
-      evidence.append(el("span", "check-tool", condition.tool));
-      if (condition.error) evidence.append(el("span", "check-error", condition.error));
-      body.append(label, evidence);
-      row.append(mark, body);
-      return row;
+      const need = numeric ? `${condition.observed === null ? "needs " : ""}${OPS[condition.op]} ${condition.threshold}` : condition.passed === true ? null : `${condition.op === "!=" ? "must not be" : "needs"} ${condition.threshold}`;
+      return { id: condition.id, label: condition.label, passed: condition.passed, seen: condition.observed, need, tool: condition.tool, error: condition.error };
     }),
   );
 }
@@ -89,7 +70,7 @@ function render({ result, inputs }) {
   const why = $("why");
   why.hidden = outcome !== "blocked";
   why.textContent = outcome === "blocked" ? `${result.action.reason} Nothing was sent.` : "";
-  renderChecks(result.conditions);
+  renderConditions(result.conditions);
   const rule = $("rule");
   rule.hidden = outcome !== "hold";
   rule.textContent = outcome === "hold" ? `Fires only when all ${decision.total} hold, so nothing was prepared or sent.` : "";

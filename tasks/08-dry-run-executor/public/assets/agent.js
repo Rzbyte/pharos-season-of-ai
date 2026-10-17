@@ -1,10 +1,11 @@
 // The agent pages (Task 05 onward) share one shape: a run of the agent (GET /api/agent?task=NN&...) that
 // fills the page, a status line above it, a form that changes the run, and the proof below it: the block
-// the run read, the Chain MCP calls it made and the result as JSON. This is that shared part; each page
-// renders its own result. It relies on these ids: status, status-word, status-detail, again, pin,
+// the run read, the Chain MCP calls it made and the result as JSON. This is that shared part, with the
+// check rows a guardian's conditions and a gatekeeper's rules are shown as; each page renders its own
+// result. It relies on these ids: status, status-word, status-detail, again, pin,
 // pin-block, pin-time, pin-calls, error, calls, json-toggle and json. Everything is set as text, never as
 // markup.
-import { clockTime, linkExplorer, wireToggle } from "./lab.js";
+import { clockTime, linkExplorer, svgIcon, wireToggle } from "./lab.js";
 
 export const $ = (id) => document.getElementById(id);
 export const el = (tag, className, text) => Object.assign(document.createElement(tag), className ? { className } : {}, text === undefined ? {} : { textContent: text });
@@ -44,6 +45,44 @@ export function setStatus(tone, word, detail) {
   $("status").dataset.tone = tone;
   $("status-word").textContent = word;
   $("status-detail").textContent = detail;
+}
+
+const MARK = { pass: "M3.5 8.5l3 3 6-7", fail: "M4.5 4.5l7 7M11.5 4.5l-7 7", unknown: "M4 8h8" };
+const SAYS = { pass: "holds", fail: "fails", unknown: "could not be read" };
+
+/**
+ * Rows of checks into `list`: a mark, the label, then what was seen against what is needed, the source
+ * (a Chain MCP tool), a note and any error. Each row is { id, label, passed (true, false, or null when
+ * it could not be read), seen (text or a node), need, tool, note, error }.
+ */
+export function renderChecks(list, rows) {
+  list.replaceChildren(
+    ...rows.map((row) => {
+      const state = row.passed === true ? "pass" : row.passed === false ? "fail" : "unknown";
+      const item = el("li", "check");
+      item.dataset.state = state;
+      item.dataset.id = row.id;
+      const mark = el("span", "check-mark");
+      mark.setAttribute("aria-hidden", "true");
+      mark.append(svgIcon(MARK[state]));
+      const label = el("span", "check-label", row.label);
+      label.append(el("span", "sr", `: ${SAYS[state]}.`));
+      const evidence = el("span", "check-evidence");
+      if (row.seen !== null && row.seen !== undefined) {
+        const seen = el("span", "check-seen");
+        seen.append(row.seen);
+        evidence.append(seen);
+      }
+      if (row.need) evidence.append(el("span", "check-need", row.need));
+      evidence.append(el("span", "check-tool", row.tool));
+      if (row.note) evidence.append(el("span", "check-note", row.note));
+      if (row.error) evidence.append(el("span", "check-error", row.error));
+      const body = el("span", "check-main");
+      body.append(label, evidence);
+      item.append(mark, body);
+      return item;
+    }),
+  );
 }
 
 /** One Chain MCP call, after its tool name: the call's target, sender and data, and the block it names. */
@@ -169,6 +208,15 @@ export function wireForm({ form, fields, problems, submit, result }) {
     result.heading.focus({ preventScroll: true });
     result.panel.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   });
+}
+
+/** An amount as typed, its whole part grouped; "max" is an unlimited approval. */
+export const amountText = (amount) => (amount === "max" ? "unlimited" : amount.replace(/^\d+/, (whole) => group(whole)));
+
+/** A transfer or approval request (action, asset, from, to, amount) in words, its addresses linked. */
+export function describeRequest(inputs) {
+  if (inputs.action === "approve") return ["Approve ", addressLink(inputs.to, "the spender"), ` to spend ${amountText(inputs.amount)} ${inputs.asset} of `, addressLink(inputs.from, "the sender")];
+  return [`Send ${amountText(inputs.amount)} ${inputs.asset} from `, addressLink(inputs.from, "the sender"), " to ", addressLink(inputs.to, "the recipient")];
 }
 
 /** Inputs from the address bar, where every key is present; null otherwise. */

@@ -11,8 +11,11 @@ import { HOSTED_CHAIN_MCP, NETWORKS } from "./core/networks.js";
 import { parseGuardianConfig } from "./guardian/config.js";
 import { PAYOUT_DEFAULTS, payoutGuardian } from "./guardian/presets.js";
 import { runGuardian } from "./guardian/run.js";
-import { parseDryRun } from "./dryrun/intent.js";
+import { parseDryRun, type DryRunRequest } from "./dryrun/intent.js";
 import { runDryRun } from "./dryrun/run.js";
+import { runGate } from "./policy/check.js";
+import { minutesOf, parsePolicy } from "./policy/config.js";
+import { TREASURY_HOURS, treasuryPolicy } from "./policy/presets.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -79,8 +82,12 @@ async function guardian(params: URLSearchParams, options: WebOptions): Promise<W
   }
 }
 
-/** Task 08: a dry run on mainnet of a transfer (an official token or PROS) or a token approval. */
-async function dryRun(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+/**
+ * A mainnet transfer (an official token or PROS) or token approval from a page's inputs: action, asset,
+ * from, to (the spender of an approval) and amount ("max" for an unlimited approval). The inputs echo
+ * back to the page; a WebResponse is a 400 for the page to show.
+ */
+function requestFrom(params: URLSearchParams): { inputs: Record<string, string>; request: DryRunRequest } | WebResponse {
   const net = NETWORKS["pharos-mainnet"];
   const get = (key: string, fallback: string) => (params.get(key) ?? fallback).trim();
   const inputs = { action: get("action", "transfer"), asset: get("asset", "USDC"), from: get("from", PAYOUT_DEFAULTS.payer), to: get("to", PAYOUT_DEFAULTS.recipient), amount: get("amount", "25") };
@@ -101,12 +108,40 @@ async function dryRun(params: URLSearchParams, options: WebOptions): Promise<Web
   } catch (error) {
     return usage(errorMessage(error).replace(/^from /, "The sender ").replace(/^(to|spender) /, (word) => (word.trim() === "to" ? "The recipient " : "The spender ")));
   }
-  if (inputs.amount !== "max" && Number(inputs.amount) > 1e12) return usage("The amount is too large to dry-run here.");
+  if (inputs.amount !== "max" && Number(inputs.amount) > 1e12) return usage("The amount is too large to check here.");
+  return { inputs, request };
+}
+
+/** Task 08: a dry run on mainnet of a transfer (an official token or PROS) or a token approval. */
+async function dryRun(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const parsed = requestFrom(params);
+  if ("status" in parsed) return parsed;
+  const { inputs, request } = parsed;
   const recorder = new Recorder();
   const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 30, timeoutMs: options.timeoutMs ?? 20_000 });
   try {
     const result = await runDryRun(request.intent, { chain: new Chain(mcp, net) });
     return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
+/** Task 11: a mainnet transfer or approval checked against the treasury policy, with the page's allowed hours. */
+async function gatekeeper(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const parsed = requestFrom(params);
+  if ("status" in parsed) return parsed;
+  const hours = { from: (params.get("hoursFrom") ?? TREASURY_HOURS.from).trim(), to: (params.get("hoursTo") ?? TREASURY_HOURS.to).trim() };
+  for (const [key, value] of Object.entries(hours)) if (Number.isNaN(minutesOf(value))) return usage(`The allowed hours ${key === "from" ? "start" : "end"} at a time like 06:00 (24:00 is the end of the day).`);
+  if (minutesOf(hours.from) === minutesOf(hours.to)) return usage("The allowed hours must start and end at different times.");
+  const policy = parsePolicy(treasuryPolicy(hours));
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runGate(policy, parsed.request.intent, { chain: new Chain(mcp, net) });
+    return { status: 200, body: { result, inputs: { ...parsed.inputs, hoursFrom: hours.from, hoursTo: hours.to }, policy, calls: callLines(recorder.messages) }, maxAge: 15 };
   } finally {
     await mcp.close();
   }
@@ -119,8 +154,10 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await guardian(url.searchParams, options);
       case "08":
         return await dryRun(url.searchParams, options);
+      case "11":
+        return await gatekeeper(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05 or ?task=08.");
+        return usage("Unknown task. Use ?task=05, 08 or 11.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

@@ -1,26 +1,6 @@
-/* Task 05 workspace: the guardian. The run panel, form and proof are shared by the agent pages
-   (agent.css); this adds the six conditions as rows (a mark, the condition, then the value seen against
-   the threshold and the Chain MCP tool that read it) and the payout beside them when it fires. */
+/* Task 05 workspace: the guardian. The run panel, check rows, form and proof are shared by the agent
+   pages (agent.css); the six conditions are check rows, with the payout beside them when it fires. This
+   adds the line that says why nothing was prepared. */
 @layer task {
-  #main .check-evidence { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
-
-  /* Conditions: one row each, a mark then two lines. */
-  .checks { border-top: 1px solid var(--line); }
-  .checks:empty { display: none; }
-  .check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
-  .check-mark { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; color: var(--on-brand); background: var(--tone, var(--text-3)); }
-  .check-mark svg { width: 12px; height: 12px; }
-  .check[data-state="pass"] { --tone: var(--success); }
-  .check[data-state="fail"] { --tone: var(--error); }
-  .check[data-state="unknown"] { --tone: var(--warning); }
-  .check-main { display: grid; gap: 2px; min-width: 0; }
-  .check-label { font-size: var(--fs-small); font-weight: 600; color: var(--text); }
-  .check-evidence { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); font-size: var(--fs-meta); color: var(--text-3); }
-  .check-seen { font-family: var(--mono); font-size: var(--fs-label); color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-  .check[data-state="fail"] .check-seen { color: var(--error); font-weight: 600; }
-  .check-need { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-2); }
-  .check-tool { margin-left: auto; font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
-  .check-error { flex-basis: 100%; color: var(--text-2); overflow-wrap: anywhere; }
   .rule { color: var(--text-2); font-size: var(--fs-small); }
-
 }

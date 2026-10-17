@@ -2,7 +2,7 @@
 // address bar), and again on demand; every run is GET /api/agent?task=08, which reads Pharos Mainnet
 // through the hosted Chain MCP and returns the verdict, the predicted outcome and the cost. Nothing is
 // signed or sent. Everything is set as text, never as markup.
-import { $, addressLink, ADDRESS, agentRunner, el, group, gwei, queryInputs, setStatus, units, wireForm } from "./agent.js";
+import { $, addressLink, ADDRESS, agentRunner, amountText, describeRequest, el, group, gwei, queryInputs, setStatus, units, wireForm } from "./agent.js";
 import { renderTaskNav } from "./lab.js";
 import { LAB, TASKS } from "./tasks.js";
 
@@ -55,14 +55,6 @@ function adapt() {
     hint.dataset.hint = text;
     if (!hint.classList.contains("invalid")) hint.textContent = text;
   }
-}
-
-const amountText = (amount) => (amount === "max" ? "unlimited" : amount.replace(/^\d+/, (whole) => group(whole)));
-
-/** The transaction in words, with its addresses linked. */
-function describe(inputs) {
-  if (inputs.action === "approve") return ["Approve ", addressLink(inputs.to, "the spender"), ` to spend ${amountText(inputs.amount)} ${inputs.asset} of `, addressLink(inputs.from, "the sender")];
-  return [`Send ${amountText(inputs.amount)} ${inputs.asset} from `, addressLink(inputs.from, "the sender"), " to ", addressLink(inputs.to, "the recipient")];
 }
 
 function renderOutcome(result) {
@@ -122,7 +114,7 @@ function render({ result, inputs }) {
   else setStatus("error", "Can't pay", `the sender is short of ${NATIVE}`);
   const tx = $("tx");
   tx.hidden = false;
-  tx.replaceChildren(...describe(inputs));
+  tx.replaceChildren(...describeRequest(inputs));
   const why = $("why");
   why.hidden = verdict === "would-succeed";
   why.textContent = verdict === "would-succeed" ? "" : `${result.reason} Nothing was sent.`;

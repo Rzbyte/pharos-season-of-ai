@@ -10,11 +10,11 @@ commit on `main`.
 
 ## Next action
 
-Task 11, Policy Gatekeeper, on branch `task-11-policy-gatekeeper`. Official statement: *"Checks
-requested actions against rules such as spend limits, allowlists, and time windows."* It builds on
-Task 08's intents and dry run (`agent/src/dryrun/`), the guardian's rule evaluation
-(`agent/src/guardian/evaluate.ts`) and the agent page layer (`shared/ui/agent.js`). After that,
-follow the [build order](#build-order).
+Task 09, Trend Watcher, on branch `task-09-trend-watcher`. Official statement: *"Persists
+observations across runs and acts only when a multi-observation trend condition is satisfied."* It
+builds on the guardian's reads and conditions (`agent/src/guardian/`), the dry run for its action
+(`agent/src/dryrun/`) and the agent page layer (`shared/ui/agent.js`, check rows included). After
+that, follow the [build order](#build-order).
 
 ## User actions required
 
@@ -34,8 +34,8 @@ follow the [build order](#build-order).
    - All three report `meta.transport` `docs-mcp`.
 
    If C comes back `answered`, keep that JSON: it is a real regression. The lab at `/` should read
-   "6 / 30 built". `/tasks/05` should open with a guardian decision, and `/tasks/08` with a dry-run
-   verdict.
+   "7 / 30 built". `/tasks/05` should open with a guardian decision, `/tasks/08` with a dry-run
+   verdict, and `/tasks/11` with a gatekeeper decision.
 2. **Optional, speeds up everything: network access for Claude sessions.** In the cloud
    environment's settings (Network access, Allowed domains), add:
    - `mcp.pharos.xyz`
@@ -57,19 +57,24 @@ follow the [build order](#build-order).
    # Task 08 (mainnet, read-only, no key):
    node dist/src/cli.js dryrun --proof ../tasks/08-dry-run-executor/proof/transfer-mainnet.json
    node dist/src/cli.js verify ../tasks/08-dry-run-executor/proof/transfer-mainnet.json
-   cd .. && git add tasks/*/proof && git commit -m "Live proofs: Tasks 05 and 08" && git push origin main
+   # Task 11 (mainnet, read-only, no key; exit code 9 means denied, and its proof is just as valid):
+   node dist/src/cli.js gate treasury --proof ../tasks/11-policy-gatekeeper/proof/treasury-mainnet.json
+   node dist/src/cli.js verify ../tasks/11-policy-gatekeeper/proof/treasury-mainnet.json
+   cd .. && git add tasks/*/proof && git commit -m "Live proofs: Tasks 05, 08 and 11" && git push origin main
    ```
 
-   Optionally, Tasks 05 and 08 can also send on Atlantic. Use a testnet key holding at least 2 USDC
+   Optionally, Tasks 05, 08 and 11 can also send on Atlantic. Use a testnet key holding at least 3 USDC
    and some PHRS, from the Atlantic faucet:
 
    ```sh
    PRIVATE_KEY=0x... node dist/src/cli.js guardian atlantic-payout --execute --proof ../tasks/05-threshold-guardian/proof/atlantic-executed.json
    PRIVATE_KEY=0x... node dist/src/cli.js dryrun --network atlantic-testnet --to 0xRECIPIENT --amount 1 --submit --proof ../tasks/08-dry-run-executor/proof/atlantic-submitted.json
+   PRIVATE_KEY=0x... node dist/src/cli.js gate atlantic-treasury --execute --proof ../tasks/11-policy-gatekeeper/proof/atlantic-executed.json
    ```
 
    The second sends 1 testnet USDC to any address you choose and checks the receipt against the
-   prediction.
+   prediction. The third sends 1 testnet USDC to the example recipient, the only address its policy
+   allows.
 
 ## Environment facts (verified; don't re-check)
 
@@ -125,13 +130,13 @@ Pharos protocol addresses not yet verified.
 | 02 | Event / Log Monitor | DONE | `get_logs` monitor, dedup | `305daf4` | pass | live, verified, 2026-10-14 | on site (not checkable here) | [ready](tasks/02-event-log-monitor/SUBMISSION.md); submitted | none |
 | 03 | Docs MCP Onboarding | DONE | onboarding evidence page | `305daf4` | pass | Drive proof + video | on site (not checkable here) | [ready](tasks/03-docs-mcp-onboarding/SUBMISSION.md); submitted | none |
 | 04 | Doc-Search CLI | DONE | Docs MCP `askQuestion` + source gate (EN/ID) | `26c64fe` | pass | live, verified, 2026-10-15 | main not deployed yet | [ready](tasks/04-doc-search-cli/SUBMISSION.md) | user action 1 |
-| 05 | Threshold Guardian | BLOCKED | six conditions at one block, rule, simulated action; Atlantic execution with re-check (`agent/src/guardian`); page on the shared agent layer | main, "Task 05:" | pass: agent 44 (shared); page 6, browser 8 | pending the first live run | in main, not deployed yet | [ready](tasks/05-threshold-guardian/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 05 | Threshold Guardian | BLOCKED | six conditions at one block, rule, simulated action; Atlantic execution with re-check (`agent/src/guardian`); page on the shared agent layer | main, "Task 05:" | pass: agent 66 (shared); page 6, browser 8 | pending the first live run | in main, not deployed yet | [ready](tasks/05-threshold-guardian/SUBMISSION.md) | user action 3 (live proof), then DONE |
 | 06 | Saga Executor | NOT STARTED | dependent steps with retry and rollback | | | | | | |
 | 07 | Arbitrage Scanner | NOT STARTED | two-source rates net of fees | | | | | | needs verified Pharos DEX sources |
-| 08 | Dry-Run Executor | BLOCKED | a transfer, approval or call: state read at one block, `eth_call` from the sender, `estimate_gas` and fee cap, before → after per balance, warnings; Atlantic `--submit` diffed against the receipt (`agent/src/dryrun`) | main, "Task 08:" | pass: agent 44 (shared); page 7, browser 11; site 20 | pending the first live run | in main, not deployed yet | [ready](tasks/08-dry-run-executor/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 09 | Trend Watcher | NOT STARTED | persisted observations, trend condition | | | | | | |
+| 08 | Dry-Run Executor | BLOCKED | a transfer, approval or call: state read at one block, `eth_call` from the sender, `estimate_gas` and fee cap, before → after per balance, warnings; Atlantic `--submit` diffed against the receipt (`agent/src/dryrun`) | main, "Task 08:" | pass: agent 66 (shared); page 7, browser 11 | pending the first live run | in main, not deployed yet | [ready](tasks/08-dry-run-executor/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 09 | Trend Watcher | NOT STARTED | persisted observations, trend condition | | | | | | next action |
 | 10 | Batch Executor | NOT STARTED | bundle independent actions | | | | | | |
-| 11 | Policy Gatekeeper | NOT STARTED | spend limits, allowlists, time windows | | | | | | next action |
+| 11 | Policy Gatekeeper | BLOCKED | a transfer or approval against a policy at one block: asset and counterparty allowlists, per-action and window limits (window from the sender's Transfer logs via `get_logs`), hours at the block's time, gas cap, Task 08 dry run; fail-closed; Atlantic `--execute` (`agent/src/policy`) | main, "Task 11:" | pass: agent 66 (shared); page 8, browser 9; site 21 | pending the first live run | in main, not deployed yet | [ready](tasks/11-policy-gatekeeper/SUBMISSION.md) | user action 3 (live proof), then DONE |
 | 12 | Skill + Chain MCP Flow | NOT STARTED | Skill Engine skill + Chain MCP | | | | | | |
 | 13 | Docs MCP + Chain MCP Agent | NOT STARTED | understand via docs, then call | | | | | | |
 | 14 | Portfolio Assistant | NOT STARTED | balances, positions, yields Q&A | | | | | | needs verified protocol sources |

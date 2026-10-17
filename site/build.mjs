@@ -29,6 +29,7 @@ export const TASK_DIRS = Object.freeze({
   "04": "tasks/04-doc-search-cli",
   "05": "tasks/05-threshold-guardian",
   "08": "tasks/08-dry-run-executor",
+  "11": "tasks/11-policy-gatekeeper",
 });
 
 /**

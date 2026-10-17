@@ -23,6 +23,7 @@ export const TARGETS = [
   "tasks/04-doc-search-cli/public",
   "tasks/05-threshold-guardian/public",
   "tasks/08-dry-run-executor/public",
+  "tasks/11-policy-gatekeeper/public",
 ];
 export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];
 /** The agent pages (Task 05 onward) also share the run layer: agent.js and agent.css. */

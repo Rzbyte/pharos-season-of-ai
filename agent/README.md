@@ -9,6 +9,7 @@ npm ci                                   # installs and compiles to dist/
 node dist/src/cli.js --help
 node dist/src/cli.js guardian payout     # Task 05 on Pharos Mainnet, through the hosted Chain MCP
 node dist/src/cli.js dryrun              # Task 08: a USDC transfer, dry-run on Pharos Mainnet
+node dist/src/cli.js gate                # Task 11: a payment checked against the treasury policy
 npm test                                 # every test, offline
 ```
 
@@ -25,6 +26,7 @@ npm test                                 # every test, offline
 | `src/core/proof.ts` | The proof format (`pharos-agent-proof/1`) and its replay: recorded answers are fed back through the same code, which must make exactly the recorded calls and produce exactly the recorded result. |
 | `src/guardian/` | Task 05, Threshold Guardian: config, deciding, the run, presets, the proof verifier. |
 | `src/dryrun/` | Task 08, Dry-Run Executor: intents, the dry run (state, simulation, cost, predicted outcome, warnings), Atlantic submission compared with the receipt, the proof verifier. |
+| `src/policy/` | Task 11, Policy Gatekeeper: policies (allowlists, per-action and window limits, hours, gas cap, dry run), the check of one request at one block, presets, the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |
 
