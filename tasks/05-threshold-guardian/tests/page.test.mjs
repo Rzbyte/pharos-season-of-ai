@@ -9,18 +9,19 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 const shared = (name) => readFileSync(new URL(`../../../shared/ui/${name}`, import.meta.url), "utf8");
 const html = read("public/index.html");
 const script = read("public/assets/guardian.js");
+const runner = shared("agent.js");
 
 describe("the Task 05 page", () => {
-  test("carries the shared shell, stamped for 05, and an exact copy of the shared UI", () => {
+  test("carries the shared shell, stamped for 05, and an exact copy of the shared UI and the agent page layer", () => {
     assert.ok(html.includes(`<!-- shell:header 05 -->\n${shellPart(shared("header.html"), "05")}\n<!-- /shell:header -->`), "header");
     assert.ok(html.includes(`<!-- shell:footer 05 -->\n${shellPart(shared("footer.html"), "05")}\n<!-- /shell:footer -->`), "footer");
-    for (const name of ["lab.css", "lab.js", "theme.js", "tasks.js"]) assert.equal(read(`public/assets/${name}`), shared(name), name);
+    for (const name of ["lab.css", "lab.js", "theme.js", "tasks.js", "agent.css", "agent.js"]) assert.equal(read(`public/assets/${name}`), shared(name), name);
     assert.match(script, /renderTaskNav\(TASKS, "05", LAB\);/);
   });
 
   test("loads only its own files: no inline script, nothing third-party", () => {
     const refs = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((match) => match[1]).sort();
-    assert.deepEqual(refs, ["/assets/fonts/Geist-SemiBold.woff2", "/assets/guardian.css", "/assets/guardian.js", "/assets/lab.css", "/assets/theme.js"]);
+    assert.deepEqual(refs, ["/assets/agent.css", "/assets/fonts/Geist-SemiBold.woff2", "/assets/guardian.css", "/assets/guardian.js", "/assets/lab.css", "/assets/theme.js"]);
     for (const ref of refs) read(`public${ref}`);
     assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/);
     assert.doesNotMatch(html, /<script[^>]+src="https?:/);
@@ -28,17 +29,17 @@ describe("the Task 05 page", () => {
     assert.match(html, /<meta name="explorer" content="https:\/\/pharos\.socialscan\.io">/);
   });
 
-  test("every element the script looks up exists, and every field has a label and a hint", () => {
+  test("every element the scripts look up exists, and every field has a label and a hint", () => {
     const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
-    for (const [, id] of script.matchAll(/\$\("([^"]+)"\)/g)) assert.ok(ids.has(id), `#${id} missing`);
+    for (const source of [script, runner]) for (const [, id] of source.matchAll(/\$\("([^"]+)"\)/g)) assert.ok(ids.has(id), `#${id} missing`);
     for (const [, id] of html.matchAll(/<input class="input" id="([^"]+)"/g)) {
       assert.match(html, new RegExp(`<label class="field-label" for="${id}">`), id);
       assert.match(html, new RegExp(`id="${id}"[^>]*aria-describedby="h-${id.slice(2)}"`), id);
     }
   });
 
-  test("the result is set as text: the script never writes markup", () => {
-    assert.doesNotMatch(script, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
+  test("the result is set as text: the scripts never write markup", () => {
+    for (const source of [script, runner]) assert.doesNotMatch(source, /innerHTML|outerHTML|insertAdjacentHTML|document\.write/);
   });
 
   test("every link that leaves the site opens a new tab with no opener and says so", () => {

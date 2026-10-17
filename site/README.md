@@ -10,6 +10,7 @@ One Vercel project, one domain: the repository root (`vercel.json`, `package.jso
 | `/tasks/03` | `tasks/03-docs-mcp-onboarding/public/index.html` |
 | `/tasks/04` | `tasks/04-doc-search-cli/public/index.html` |
 | `/tasks/05` | `tasks/05-threshold-guardian/public/index.html` |
+| `/tasks/08` | `tasks/08-dry-run-executor/public/index.html` |
 | `/assets/*` | every deployment's `public/assets/`, merged |
 | `/api/state`, `/api/inspect`, `/api/explain` | Task 01's handlers |
 | `/api/events` | Task 02's handler |

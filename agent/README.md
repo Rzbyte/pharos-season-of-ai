@@ -8,6 +8,7 @@ cd agent
 npm ci                                   # installs and compiles to dist/
 node dist/src/cli.js --help
 node dist/src/cli.js guardian payout     # Task 05 on Pharos Mainnet, through the hosted Chain MCP
+node dist/src/cli.js dryrun              # Task 08: a USDC transfer, dry-run on Pharos Mainnet
 npm test                                 # every test, offline
 ```
 
@@ -20,8 +21,10 @@ npm test                                 # every test, offline
 | `src/core/networks.ts` | Pharos Mainnet and Atlantic: RPCs, chain IDs, explorers and token addresses from the [Pharos Skill Engine](https://github.com/PharosNetwork/pharos-skill-engine) (`a873387`), and the hosted Chain MCP. |
 | `src/core/abi.ts`, `amounts.ts` | Calls by signature (`"paused() returns (bool)"`) through viem; exact amounts in human units, with no floats. |
 | `src/core/execute.ts` | Signing and broadcasting, apart from everything else. The key comes from `PRIVATE_KEY`, signs, and goes nowhere: only the signed transaction leaves, through Chain MCP `send_raw_transaction`. Atlantic only. |
+| `src/core/simulate.ts` | A transaction simulated with `eth_call` at a pinned block (a revert is a result, with its reason), and priced with `estimate_gas` and the fee market by the formula `execute.ts` signs with. |
 | `src/core/proof.ts` | The proof format (`pharos-agent-proof/1`) and its replay: recorded answers are fed back through the same code, which must make exactly the recorded calls and produce exactly the recorded result. |
 | `src/guardian/` | Task 05, Threshold Guardian: config, deciding, the run, presets, the proof verifier. |
+| `src/dryrun/` | Task 08, Dry-Run Executor: intents, the dry run (state, simulation, cost, predicted outcome, warnings), Atlantic submission compared with the receipt, the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |
 

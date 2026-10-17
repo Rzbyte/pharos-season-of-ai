@@ -22,8 +22,12 @@ export const TARGETS = [
   "tasks/03-docs-mcp-onboarding/public",
   "tasks/04-doc-search-cli/public",
   "tasks/05-threshold-guardian/public",
+  "tasks/08-dry-run-executor/public",
 ];
 export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];
+/** The agent pages (Task 05 onward) also share the run layer: agent.js and agent.css. */
+export const AGENT_TARGETS = TARGETS.filter((target) => Number(target.match(/^tasks\/(\d{2})-/)?.[1] ?? 0) >= 5);
+export const AGENT_ASSETS = ["agent.css", "agent.js"];
 
 /** The header or footer for one page: task number filled in; no task navigation on the landing page. */
 export function shellPart(template, n) {
@@ -51,7 +55,8 @@ async function run(check) {
   const drift = [];
   for (const target of TARGETS) {
     const root = join(REPO, target);
-    const files = [...ASSETS.map((name) => [join(SHARED, name), join(root, "assets", name)]), ...fonts.map((name) => [join(SHARED, "fonts", name), join(root, "assets", "fonts", name)])];
+    const names = [...ASSETS, ...(AGENT_TARGETS.includes(target) ? AGENT_ASSETS : [])];
+    const files = [...names.map((name) => [join(SHARED, name), join(root, "assets", name)]), ...fonts.map((name) => [join(SHARED, "fonts", name), join(root, "assets", "fonts", name)])];
     for (const [from, to] of files) {
       const want = await readFile(from);
       const have = await readFile(to).catch(() => null);

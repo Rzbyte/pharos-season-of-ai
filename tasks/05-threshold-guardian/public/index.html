@@ -13,6 +13,7 @@
 <script src="/assets/theme.js"></script>
 <link rel="preload" href="/assets/fonts/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/lab.css">
+<link rel="stylesheet" href="/assets/agent.css">
 <link rel="stylesheet" href="/assets/guardian.css">
 <script type="module" src="/assets/guardian.js"></script>
 </head>
@@ -45,9 +46,9 @@
     <p class="task-via">Six on-chain conditions at one block via <strong class="nowrap">Pharos Chain MCP</strong>, then one payout, simulated</p>
   </header>
 
-  <section class="panel guard" id="guard" aria-labelledby="decision-h">
+  <section class="panel run" id="guard" aria-labelledby="decision-h">
     <div class="beacon" aria-hidden="true"></div>
-    <div class="guard-head">
+    <div class="run-head">
       <h2 class="sr" id="decision-h" tabindex="-1">Decision</h2>
       <p class="status" id="status" role="status" data-tone="active"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="status-word">Evaluating</span><span class="status-detail" id="status-detail">reading Pharos Mainnet</span></p>
       <button class="btn" id="again" type="button" aria-disabled="true"><span class="swap"><span>Evaluate again</span><span>Evaluating…</span></span></button>
@@ -57,12 +58,12 @@
     <p class="note" id="error" data-tone="error" hidden></p>
     <noscript><p class="note">The guardian runs from this page with JavaScript. The same result is at /api/agent?task=05 as JSON.</p></noscript>
 
-    <div class="guard-body">
-      <div class="guard-main">
+    <div class="run-body">
+      <div class="run-main">
         <ol class="checks" id="checks" aria-label="Conditions"></ol>
         <p class="rule" id="rule" hidden></p>
       </div>
-      <div class="act" id="act" hidden>
+      <div class="run-side" id="act" hidden>
         <h3 class="sub-title" id="act-h">Action</h3>
         <dl class="rows" aria-labelledby="act-h">
           <div><dt>Payout</dt><dd id="act-what">—</dd></div>
@@ -75,35 +76,35 @@
   </section>
 
   <details class="disclosure" id="change">
-    <summary><h2 class="disclosure-title">Change the payout</h2><span class="disclosure-meta" id="change-meta">25 USDC · gas cap 10 gwei</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
+    <summary><h2 class="disclosure-title">Change the payout</h2><span class="disclosure-meta change-meta" id="change-meta">25 USDC · gas cap 10 gwei</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
     <div class="disclosure-body">
-      <form class="payout" id="payout" novalidate>
-        <div class="payout-field">
+      <form class="inputs" id="payout" novalidate>
+        <div class="inputs-field">
           <label class="field-label" for="f-payer">Payer</label>
           <input class="input" id="f-payer" name="payer" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" required aria-describedby="h-payer">
           <p class="field-hint" id="h-payer">Pays the USDC and the gas.</p>
         </div>
-        <div class="payout-field">
+        <div class="inputs-field">
           <label class="field-label" for="f-recipient">Recipient</label>
           <input class="input" id="f-recipient" name="recipient" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text" required aria-describedby="h-recipient">
           <p class="field-hint" id="h-recipient">Must be a wallet: a contract fails the check.</p>
         </div>
-        <div class="payout-field payout-short">
+        <div class="inputs-field inputs-short">
           <label class="field-label" for="f-amount">Amount, USDC</label>
           <input class="input" id="f-amount" name="amount" inputmode="decimal" autocomplete="off" required aria-describedby="h-amount">
           <p class="field-hint" id="h-amount">Up to 6 decimals.</p>
         </div>
-        <div class="payout-field payout-short">
+        <div class="inputs-field inputs-short">
           <label class="field-label" for="f-gas">Gas cap, gwei</label>
           <input class="input" id="f-gas" name="maxGasGwei" inputmode="decimal" autocomplete="off" required aria-describedby="h-gas">
           <p class="field-hint" id="h-gas">Holds above this price.</p>
         </div>
-        <div class="payout-go">
+        <div class="inputs-go">
           <button class="btn btn-primary" type="submit">Evaluate this payout</button>
           <button class="btn-quiet" id="reset" type="button">Example addresses</button>
         </div>
       </form>
-      <p class="prose payout-note">The example payer and recipient are public addresses seen moving USDC on Pharos Mainnet in Task 02's live proof. Nothing is signed or sent from this page.</p>
+      <p class="prose inputs-note">The example payer and recipient are public addresses seen moving USDC on Pharos Mainnet in Task 02's live proof. Nothing is signed or sent from this page.</p>
     </div>
   </details>
 

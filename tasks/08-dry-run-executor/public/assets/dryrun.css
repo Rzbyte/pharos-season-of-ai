@@ -1,0 +1,23 @@
+/* Task 08 workspace: the dry run. The run panel, form and proof are shared by the agent pages
+   (agent.css); this adds the transaction in words under the status, the outcome as one row per value
+   it changes (who, then the change, then before → after), its warnings, and the cost beside them. */
+@layer task {
+  .tx { color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+
+  /* Outcome: who on the left, the change on the right; before → after below. */
+  .changes { border-top: 1px solid var(--line); }
+  .change { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+  .change-who { min-width: 0; color: var(--text-2); font-size: var(--fs-small); }
+  .change-delta { margin-left: auto; font-family: var(--mono); font-size: var(--fs-small); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .change[data-dir="up"] .change-delta { color: var(--success); }
+  /* An approval is a permission, not money received: never green. */
+  .change[data-role="allowance"] .change-delta { color: var(--text); }
+  .change[data-dir="none"] .change-delta, .change[data-dir="same"] .change-delta { font-weight: 400; color: var(--text-2); }
+  .change-span { flex-basis: 100%; font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .change-gas { font-family: var(--sans); }
+  .change-gas::before { content: " · "; }
+  #main .change-span { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+
+  .warnings { display: grid; gap: var(--space-2); }
+  .warnings .note { margin-top: 0; }
+}

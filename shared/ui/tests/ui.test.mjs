@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, test } from "node:test";
 import { neighbours, onUnifiedSite, pageOf } from "../lab.js";
-import { shellPart, stampShell, TARGETS } from "../sync.mjs";
+import { AGENT_ASSETS, AGENT_TARGETS, ASSETS, shellPart, stampShell, TARGETS } from "../sync.mjs";
 import { BUILT, LAB, LEGACY, route, TASKS } from "../tasks.js";
 
 const read = (name) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8");
@@ -37,9 +37,9 @@ describe("helpers", () => {
     assert.equal(neighbours(TASKS, "99").index, -1);
   });
 
-  test("the manifest: 01 to 05 built at /tasks/NN, legacy addresses only as fallbacks", () => {
+  test("the manifest: 01 to 05 and 08 built at /tasks/NN, legacy addresses only as fallbacks", () => {
     assert.equal(TASKS.length, LAB.total);
-    assert.equal(BUILT, 5);
+    assert.equal(BUILT, 6);
     assert.equal(LAB.home, "/");
     for (const task of TASKS) {
       assert.equal(task.href, task.status === "built" ? route(task.n) : null, task.n);
@@ -79,8 +79,9 @@ describe("the official task map", () => {
       ["03", "Docs MCP Onboarding", "/tasks/03", null],
       ["04", "Doc-Search CLI", "/tasks/04", null],
       ["05", "Threshold Guardian", "/tasks/05", null],
+      ["08", "Dry-Run Executor", "/tasks/08", null],
     ]);
-    for (const task of TASKS.slice(5)) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
+    for (const task of TASKS.filter((entry) => !["01", "02", "03", "04", "05", "08"].includes(entry.n))) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
   });
 
   test("moving through the map: 04 then 05, 19 then the x402 tasks then 22, and 30 is the last", () => {
@@ -131,6 +132,22 @@ describe("stylesheet", () => {
 describe("sync", () => {
   test("every deployment ships an exact copy of the shared UI and the shell markup", () => {
     execFileSync(process.execPath, [new URL("../sync.mjs", import.meta.url).pathname, "--check"]);
+  });
+
+  test("the agent page layer goes to the agent pages (05 onward) only; the lab and Tasks 01 to 04 do without it", () => {
+    assert.deepEqual(AGENT_TARGETS, ["tasks/05-threshold-guardian/public", "tasks/08-dry-run-executor/public"]);
+    for (const target of TARGETS) {
+      const has = (name) => {
+        try {
+          readFileSync(new URL(`../../../${target}/assets/${name}`, import.meta.url));
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      assert.deepEqual(ASSETS.map(has), ASSETS.map(() => true), target);
+      assert.deepEqual(AGENT_ASSETS.map(has), AGENT_ASSETS.map(() => AGENT_TARGETS.includes(target)), target);
+    }
   });
 
   test("stamping fills both markers; the landing page has no task navigation", () => {
@@ -199,6 +216,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["03 Docs Onboarding Audit", "/tasks/03", null],
         ["04 Docs Search Query", "/tasks/04", null],
         ["05 Threshold Guardian Guard", "/tasks/05", null],
+        ["08 Dry-Run Executor Simulate", "/tasks/08", null],
         ["All 30 tasks", "/", null],
       ],
       footer: 0,
@@ -222,18 +240,22 @@ describe("task navigation in a browser", { skip }, () => {
         ["03 Docs Onboarding Audit, not linked from here", null, null],
         ["04 Docs Search Query, not linked from here", null, null],
         ["05 Threshold Guardian Guard, not linked from here", null, null],
+        ["08 Dry-Run Executor Simulate, not linked from here", null, null],
       ],
       footer: 0,
     });
-    // The last built task: its next arrow names Task 06, planned and so not linked; the switcher still
-    // ends with the lab and the full total.
-    const last = await render("/tasks/05", "05");
+    // The arrows step between built tasks, so 06 and 07, still planned, are skipped: 05 leads to 08.
+    const guardian = await render("/tasks/05", "05");
+    assert.deepEqual([guardian.previous, guardian.next], [["A", "/tasks/04", "Previous task: 04 Docs Search"], ["A", "/tasks/08", null, 0]]);
+    assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 08 Dry-Run Executor");
+    // The last built task has no next arrow to follow; the switcher still ends with the lab and the total.
+    const last = await render("/tasks/08", "08");
     assert.deepEqual([last.count[1], last.previous, last.next], [
-      "Task 05 / 30, switch task",
-      ["A", "/tasks/04", "Previous task: 04 Docs Search"],
+      "Task 08 / 30, switch task",
+      ["A", "/tasks/05", "Previous task: 05 Threshold Guardian"],
       ["SPAN", null, "true", -1],
     ]);
-    assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 06 Saga Executor, not linked");
+    assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "No next built task");
     assert.deepEqual(last.menu.at(-1), ["All 30 tasks", "/", null]);
   });
 });

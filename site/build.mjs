@@ -28,6 +28,7 @@ export const TASK_DIRS = Object.freeze({
   "03": "tasks/03-docs-mcp-onboarding",
   "04": "tasks/04-doc-search-cli",
   "05": "tasks/05-threshold-guardian",
+  "08": "tasks/08-dry-run-executor",
 });
 
 /**

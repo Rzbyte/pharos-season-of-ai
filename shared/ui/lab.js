@@ -263,15 +263,17 @@ const make = (tag, className, text) => Object.assign(document.createElement(tag)
 
 /**
  * The shell's place among the tasks, from the manifest: the lab link, the arrows either side of the
- * "NN / total" counter, and the counter itself, which opens the task switcher (taskMenu). On the unified
- * site every link is a same-domain route ("/", "/tasks/NN"). A page served from a standalone deployment
- * cannot reach those routes, so there a task links to its own standalone deployment if it has one
- * (task.legacy), and the lab is not linked. A task without a link is shown as text, marked, and never
- * focusable. Where the browser has no popover support the counter stays plain text.
+ * "NN / total" counter, and the counter itself, which opens the task switcher (taskMenu). The arrows step
+ * between built tasks: the program is not built in number order, so the next number is often still
+ * planned. On the unified site every link is a same-domain route ("/", "/tasks/NN"). A page served from
+ * a standalone deployment cannot reach those routes, so there a task links to its own standalone
+ * deployment if it has one (task.legacy), and the lab is not linked. A task without a link is shown as
+ * text, marked, and never focusable. Where the browser has no popover support the counter stays plain
+ * text.
  */
 export function renderTaskNav(tasks, current, lab, root = document, unified = onUnifiedSite()) {
-  const { index, previous, next } = neighbours(tasks, current);
-  if (index === -1) return;
+  if (neighbours(tasks, current).index === -1) return;
+  const { previous, next } = neighbours(tasks.filter((task) => task.status === "built" || task.n === current), current);
   for (const home of root.querySelectorAll("[data-lab-home]")) {
     if (unified && lab?.home) home.href = lab.home;
     else home.removeAttribute("href");
@@ -310,7 +312,7 @@ export function renderTaskNav(tasks, current, lab, root = document, unified = on
         step.title = `${task.n} ${task.title}`;
       } else {
         step.setAttribute("role", "img");
-        step.setAttribute("aria-label", task ? `${word} task: ${task.n} ${task.title}, not linked` : `No ${word.toLowerCase()} task`);
+        step.setAttribute("aria-label", task ? `${word} task: ${task.n} ${task.title}, not linked` : `No ${word.toLowerCase()} built task`);
         step.setAttribute("aria-disabled", "true");
       }
       slot.replaceWith(step);

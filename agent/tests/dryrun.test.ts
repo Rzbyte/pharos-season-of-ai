@@ -127,6 +127,8 @@ describe("a dry run through the official Chain MCP server", () => {
       assert.equal(approval.outcome[0]!.role, "allowance");
       assert.equal(approval.outcome[0]!.shown.before, "0 USDC");
       assert.equal(approval.outcome[0]!.after, (2n ** 256n - 1n).toString());
+      // Shown as what it is, never as a 78-digit number; an approval sets the allowance, it does not add.
+      assert.deepEqual([approval.outcome[0]!.shown.after, approval.outcome[0]!.shown.change], ["unlimited USDC", "set to unlimited USDC"]);
       assert.equal(approval.summary, "Approve 0x1111…1111 to spend unlimited USDC of 0x912c…f647");
     } finally {
       await fake.close();
@@ -252,6 +254,32 @@ describe("dry-run proofs", () => {
       assert.match(content.text, /23c34600/, "the recipient's 600 USDC answer");
       content.text = content.text.replace("23c34600", "23c34601");
       assert.deepEqual(await failing(proof), ["result recomputed from the recorded responses"]);
+    } finally {
+      await fake.close();
+    }
+  });
+
+  test("an explicit block: the reads and the simulation name it, and the proof replays at that block", async () => {
+    const fake = await mainnetChain();
+    try {
+      const official = await connectOfficial(fake, NETWORKS["pharos-mainnet"]);
+      let proof: ProofFile;
+      try {
+        const request = { network: "pharos-mainnet" as const, intent: transfer() };
+        const run = await runDryRun(request.intent, { chain: official.chain, block: 4_999_990n });
+        assert.deepEqual([run.block.number, run.block.source, run.simulation.block], ["4999990", "requested", "4999990"]);
+        const calls = tools(official.recorder.messages);
+        assert.ok(!calls.some((c) => c.name === "get_block_number"), "the block is given, so it is not looked up");
+        for (const call of calls.filter((c) => ["eth_call", "get_balance", "get_code"].includes(c.name))) assert.equal(call.arguments.block, "0x4c4b36", JSON.stringify(call));
+        proof = JSON.parse(JSON.stringify(proofFile({ task: "08", capability: "dry-run-executor", about: "test", mcp: official.mcp, network: NETWORKS["pharos-mainnet"], startedAt: new Date(), input: request, result: run }))) as ProofFile;
+        proof.chainMcp = { ...proof.chainMcp, kind: "hosted", endpoint: HOSTED_CHAIN_MCP };
+      } finally {
+        await official.close();
+      }
+      assert.deepEqual(await failing(proof), []);
+      // The same answers do not reproduce the run when the block is claimed to be the latest.
+      (proof.result as { block: { source: string } }).block.source = "latest";
+      assert.ok((await failing(proof)).includes("result recomputed from the recorded responses"));
     } finally {
       await fake.close();
     }

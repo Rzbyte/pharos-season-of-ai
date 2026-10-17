@@ -114,7 +114,7 @@ PRIVATE_KEY=0x... node dist/src/cli.js guardian atlantic-payout --execute --proo
 ## Tests
 
 ```sh
-cd agent && npm test                                                    # 27 tests, offline
+cd agent && npm test                                                    # the agent's tests, offline
 node --test tasks/05-threshold-guardian/tests/page.test.mjs            # the page's files
 NODE_PATH="$(npm root -g)" node --test tasks/05-threshold-guardian/tests/browser.test.mjs
 ```

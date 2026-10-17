@@ -30,7 +30,7 @@ export const TASKS = Object.freeze([
   task("05", "Threshold Guardian", { verb: "Guard", tool: "Chain MCP", status: "built", purpose: "A payout that fires only when every on-chain condition holds at one block." }),
   task("06", "Saga Executor"),
   task("07", "Arbitrage Scanner"),
-  task("08", "Dry-Run Executor"),
+  task("08", "Dry-Run Executor", { verb: "Simulate", tool: "Chain MCP", status: "built", purpose: "What a transaction would do and cost, simulated at one block before anything is sent." }),
   task("09", "Trend Watcher"),
   task("10", "Batch Executor"),
   task("11", "Policy Gatekeeper"),

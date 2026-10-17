@@ -225,7 +225,7 @@ function printDryRun(run: DryRun): void {
   const width = Math.max(...run.outcome.map((l) => `${l.role} ${l.asset}`.length)) + 2;
   run.outcome.forEach((l, index) => {
     const label = `${l.role === "allowance" ? "Allowance" : l.role === "sender" ? "Sender" : "Recipient"} ${l.asset}`.padEnd(width);
-    out(`  ${index === 0 ? "Outcome " : "        "}    ${label}${l.shown.before}${l.shown.after ? ` → ${l.shown.after}${l.shown.change ? ` (${l.shown.change})` : ""}` : " (unchanged: it would not go through)"}`);
+    out(`  ${index === 0 ? "Outcome " : "        "}    ${label}${l.shown.before}${l.shown.after ? ` → ${l.shown.after}${l.shown.change && l.role !== "allowance" ? ` (${l.shown.change})` : ""}` : " (unchanged: it would not go through)"}`);
   });
   if (run.gas) {
     out(`  Gas         ${BigInt(run.gas.gas).toLocaleString("en-US")} (limit ${BigInt(run.gas.gasLimit).toLocaleString("en-US")}) at about ${formatGwei(BigInt(run.gas.expectedFeePerGas))}: about ${formatAmount(BigInt(run.gas.expectedCost), 18, 8)} ${network(run.network.id).nativeSymbol}, at most ${formatAmount(BigInt(run.gas.maxCost), 18, 8)} ${network(run.network.id).nativeSymbol}`);

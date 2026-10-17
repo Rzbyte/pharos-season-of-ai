@@ -10,6 +10,7 @@ My builds for the Pharos Season of AI Agent Arena using Chain MCP, Developer Doc
 | [03 · Docs MCP Onboarding](tasks/03-docs-mcp-onboarding) | The onboarding evidence with the Pharos Developer Docs MCP, as a short case-study page built from `evidence.json` |
 | [04 · Doc-Search CLI](tasks/04-doc-search-cli) | `pharos-docs`: a question in, a short answer from the official Pharos docs through the Pharos Developer Docs MCP (`askQuestion`) with its source pages out, or a plain no-answer; a docs search page runs the same search |
 | [05 · Threshold Guardian](tasks/05-threshold-guardian) | Six on-chain conditions read at one block through Pharos Chain MCP; a USDC payout fires only when all hold, simulated first; on Atlantic it re-checks, signs locally and broadcasts through Chain MCP |
+| [08 · Dry-Run Executor](tasks/08-dry-run-executor) | A transfer, approval or contract call simulated at one block through Pharos Chain MCP before it is sent: the verdict, before → after for every balance it changes, the gas and fee, and warnings; on Atlantic it submits and checks the receipt against the prediction |
 
 [`agent/`](agent) is the agent runtime behind Tasks 05 onward: one package that gains a capability per
 task. [`lab/`](lab) is the landing page that indexes the tasks, and [`shared/ui/`](shared/ui) is the

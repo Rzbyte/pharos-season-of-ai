@@ -17,7 +17,7 @@ import { createSiteServer } from "../serve.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const at = (path) => pathToFileURL(join(REPO, path)).href;
-const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian" };
+const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor" };
 
 let out;
 let site;
@@ -162,7 +162,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 27, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 31, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
@@ -172,11 +172,11 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
-    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05"]);
+    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08"]);
   });
 });
 
@@ -220,6 +220,19 @@ describe("APIs on the one domain", () => {
     assert.match((await bad.json()).error.message, /payer must be a 0x address/);
     assert.equal((await get("/api/agent?task=99")).status, 400);
     assert.equal((await get("/api/agent?task=05", { method: "POST" })).status, 405);
+  });
+
+  test("Task 08: /api/agent?task=08 dry-runs a transfer through Chain MCP; an unknown action is a 400", async () => {
+    const response = await get("/api/agent?task=08");
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.result.schema, "pharos-agent/dry-run/1");
+    assert.equal(body.result.verdict, "would-succeed");
+    assert.equal(body.result.submission, null, "nothing is sent from the site");
+    assert.deepEqual(body.calls.map((call) => call.tool).slice(0, 2), ["get_chain_info", "get_block_number"]);
+    const bad = await get("/api/agent?task=08&action=burn");
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error.message, /action must be transfer or approve/);
   });
 });
 
@@ -272,7 +285,7 @@ describe("the site in a browser", { skip }, () => {
       menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
@@ -289,7 +302,12 @@ describe("the site in a browser", { skip }, () => {
     assert.equal(await page.locator('[data-task-step="next"]').getAttribute("href"), "/tasks/05", "05 is built, so linked");
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/05`);
-    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "06 is planned, so not linked");
+    // 06 and 07 are still planned: the arrow steps over them to the next built task.
+    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("href"), "/tasks/08");
+    await page.click('[data-task-step="next"]');
+    await page.waitForURL(`${base}/tasks/08`);
+    assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/05");
+    assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "nothing built after 08 yet");
     assert.deepEqual(problems, []);
     await page.context().close();
   });
@@ -320,6 +338,18 @@ describe("the site in a browser", { skip }, () => {
     assert.match(await page.textContent(".answer"), /424242/);
     assert.deepEqual(problems, []);
     await page.context().close();
+  });
+
+  test("Tasks 05 and 08 at /tasks/NN run the agent through /api/agent on this domain", async () => {
+    for (const [path, panel, word] of [["/tasks/05", "guard", "Fire"], ["/tasks/08", "run", "Would succeed"]]) {
+      const before = apiHits.filter((name) => name === "agent").length;
+      const { page, problems } = await open(path);
+      await page.waitForFunction((id) => document.getElementById(id).getAttribute("aria-busy") === "false", panel, { timeout: 15_000 });
+      assert.equal(await page.textContent("#status-word"), word, path);
+      assert.equal(apiHits.filter((name) => name === "agent").length, before + 1, path);
+      assert.deepEqual(problems, [], path);
+      await page.context().close();
+    }
   });
 
   test("Task 03 at /tasks/03 shows its outcome and links the proof and video", async () => {

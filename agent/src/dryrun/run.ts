@@ -9,7 +9,7 @@
 //   5. Predict the outcome from what the call means: who ends with how much.
 //   6. Only with --submit, on Atlantic: sign locally, broadcast through Chain MCP send_raw_transaction,
 //      then read the same values after the receipt and compare them with the prediction.
-import { decodeFunctionResult } from "viem";
+import { decodeFunctionResult, maxUint256 } from "viem";
 import { decodeCall, ERC20, encodeCall, isTrueWord } from "../core/abi.js";
 import { formatAmount, formatGwei } from "../core/amounts.js";
 import type { Address, BlockHeader, Chain, Hex } from "../core/chain.js";
@@ -112,8 +112,11 @@ async function tokenDecimals(chain: Chain, token: Address, block: bigint): Promi
   return decimals;
 }
 
+/** An amount of `asset` for people; an allowance of 2^256 − 1 is the unlimited one. */
+const shownAmount = (value: bigint, decimals: number, asset: string, role: Line["role"]) => (role === "allowance" && value === maxUint256 ? `unlimited ${asset}` : `${formatAmount(value, decimals, decimals === 18 ? 8 : 6)} ${asset}`);
+
 function line(role: Line["role"], address: Address, token: Address | null, asset: string, decimals: number, before: bigint, after: bigint | null, approximate = false, spender: Address | null = null): Line {
-  const fmt = (value: bigint) => `${formatAmount(value, decimals, decimals === 18 ? 8 : 6)} ${asset}`;
+  const fmt = (value: bigint) => shownAmount(value, decimals, asset, role);
   const change = after === null ? null : after - before;
   return {
     role,
@@ -128,7 +131,8 @@ function line(role: Line["role"], address: Address, token: Address | null, asset
     shown: {
       before: fmt(before),
       after: after === null ? null : `${approximate ? "about " : ""}${fmt(after)}`,
-      change: change === null ? null : change === 0n ? "no change" : `${change > 0n ? "+" : "−"}${fmt(change < 0n ? -change : change)}`,
+      // An approval sets the allowance; it does not add to it.
+      change: change === null ? null : change === 0n ? "no change" : role === "allowance" ? `set to ${fmt(after!)}` : `${change > 0n ? "+" : "−"}${fmt(change < 0n ? -change : change)}`,
     },
   };
 }
@@ -194,6 +198,7 @@ export async function runDryRun(intent: Intent, options: DryRunOptions): Promise
   } else {
     if (intent.kind === "erc20-transfer" || intent.kind === "erc20-approve") {
       if (simulation.returned !== "0x" && !isTrueWord(simulation.returned ?? "0x")) {
+        returns = "false";
         verdict = "would-revert";
         reason = `The token returns false: the ${intent.kind === "erc20-transfer" ? "transfer" : "approval"} would not happen.`;
       } else returns = simulation.returned === "0x" ? "nothing (the token returns no value)" : "true";
@@ -308,7 +313,7 @@ async function submit(chain: Chain, options: DryRunOptions, tx: ReturnType<typeo
     const fmt = (value: bigint) => `${value < 0n ? "−" : value > 0n ? "+" : ""}${formatAmount(value < 0n ? -value : value, predicted.decimals, 8)} ${predicted.asset}`;
     const after = await readAgain(chain, predicted, block);
     if (predicted.role === "allowance") {
-      comparisons.push({ what: name, predicted: predicted.shown.after ?? "", actual: `${formatAmount(after, predicted.decimals, 8)} ${predicted.asset}`, match: predicted.after !== null && BigInt(predicted.after) === after });
+      comparisons.push({ what: name, predicted: predicted.shown.after ?? "", actual: shownAmount(after, predicted.decimals, predicted.asset, "allowance"), match: predicted.after !== null && BigInt(predicted.after) === after });
       continue;
     }
     const change = after - (await readAgain(chain, predicted, block - 1n));

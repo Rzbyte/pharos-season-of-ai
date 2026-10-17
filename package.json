@@ -8,7 +8,7 @@
     "install:tasks": "npm ci --prefix tasks/01-read-contract-state && npm ci --prefix tasks/02-event-log-monitor && npm ci --prefix tasks/04-doc-search-cli && npm ci --prefix agent",
     "build": "npm run build --prefix tasks/01-read-contract-state && npm run build --prefix tasks/02-event-log-monitor && npm run build --prefix tasks/04-doc-search-cli && npm run build --prefix agent && node site/build.mjs",
     "preview": "node site/serve.mjs",
-    "test": "node --test site/tests/*.test.mjs shared/ui/tests/*.test.mjs tasks/05-threshold-guardian/tests/*.test.mjs"
+    "test": "node --test site/tests/*.test.mjs shared/ui/tests/*.test.mjs tasks/05-threshold-guardian/tests/*.test.mjs tasks/08-dry-run-executor/tests/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
