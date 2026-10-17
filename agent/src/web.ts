@@ -20,6 +20,10 @@ import { parseWatcher } from "./trend/config.js";
 import { OUTFLOW_DEFAULTS, outflowWatcher } from "./trend/presets.js";
 import { runWatch } from "./trend/run.js";
 import { observingKey, parseStore } from "./trend/store.js";
+import { parseAlertBot } from "./alert/config.js";
+import { USDC_ALERT_DEFAULTS, usdcAlerts } from "./alert/presets.js";
+import { runAlerts } from "./alert/run.js";
+import { botKey, parseAlertStore } from "./alert/store.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -196,6 +200,45 @@ async function trendWatcher(params: URLSearchParams, options: WebOptions): Promi
   }
 }
 
+/**
+ * Task 22: the mainnet USDC alert bot with the page's thresholds. The page keeps the bot's memory: the
+ * last block scanned and which state rules held ("id:1,id:0"); the alerts it shows are its own record.
+ * Never cached: each answer depends on the memory sent.
+ */
+async function alertBot(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const get = (key: string, fallback: string) => (params.get(key) ?? fallback).trim();
+  const inputs = { min: get("min", USDC_ALERT_DEFAULTS.min), holder: get("holder", USDC_ALERT_DEFAULTS.holder), low: get("low", USDC_ALERT_DEFAULTS.low) };
+  if (!isAddress(inputs.holder, { strict: false })) return usage("The holder must be a 0x address (40 hex characters).");
+  for (const [key, what] of [["min", "The smallest transfer"], ["low", "The low balance"]] as const) {
+    if (!/^\d{1,12}(\.\d{1,6})?$/.test(inputs[key])) return usage(`${what} must be an amount of USDC, up to 6 decimals.`);
+  }
+  let bot;
+  try {
+    bot = parseAlertBot(usdcAlerts(inputs));
+  } catch (error) {
+    return usage(errorMessage(error));
+  }
+  const cursor = get("cursor", "");
+  if (cursor && !/^\d{1,12}$/.test(cursor)) return usage("cursor must be a block number.");
+  const states: Record<string, boolean> = {};
+  const listed = get("states", "");
+  for (const entry of listed ? listed.split(",") : []) {
+    const match = /^([a-z0-9-]{1,40}):([01])$/.exec(entry);
+    if (!match) return usage("states lists rule:1 or rule:0, separated by commas.");
+    states[match[1]!] = match[2] === "1";
+  }
+  const store = parseAlertStore({ schema: "pharos-agent/alert-store/1", bot: botKey(bot), cursor: cursor || null, states, pending: [] }, bot);
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 30, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runAlerts(bot, store, { chain: new Chain(mcp, net), now: options.now });
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -207,8 +250,10 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await trendWatcher(url.searchParams, options);
       case "11":
         return await gatekeeper(url.searchParams, options);
+      case "22":
+        return await alertBot(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09 or 11.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11 or 22.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

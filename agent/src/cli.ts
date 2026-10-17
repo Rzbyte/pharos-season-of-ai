@@ -5,6 +5,7 @@
 //   pharos-agent dryrun [kind] [--token --from --to --amount ...] [--submit]
 //   pharos-agent gate [policy] [kind] [--token --from --to --amount ...] [--execute]
 //   pharos-agent watch [preset | watcher.json] [--store FILE] [--execute]
+//   pharos-agent alert [preset | bot.json] [--store FILE] [--webhook URL]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -32,6 +33,12 @@ import { WATCHER_PRESETS } from "./trend/presets.js";
 import { runWatch, type TrendRun } from "./trend/run.js";
 import { emptyStore, parseStore } from "./trend/store.js";
 import { historyCheck, verifyTrendProof } from "./trend/verify.js";
+import { parseAlertBot } from "./alert/config.js";
+import { deliver } from "./alert/deliver.js";
+import { ALERT_PRESETS } from "./alert/presets.js";
+import { runAlerts } from "./alert/run.js";
+import { afterDelivery, emptyAlertStore, parseAlertStore } from "./alert/store.js";
+import { alertHistoryCheck, verifyAlertProof, type RecordedAlertRun } from "./alert/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -80,8 +87,18 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --store FILE         where the observations are kept between runs (default: trend-store.json)
       --execute, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent alert [preset | bot.json] [options]         Task 22, On-Chain Alert Bot
+      One run: the blocks since the last run scanned for matching transfers, and each state rule read
+      and compared with the last run. Every new alert is printed once, and POSTed to the webhook; one
+      the webhook did not take is kept and retried on the next run. Preset: usdc (Pharos Mainnet). A bot
+      is JSON (agent/src/alert/config.ts).
+      --store FILE         the bot's memory between runs (default: alert-store.json)
+      --webhook URL        POST each alert as JSON; its line is in "text" and "content"
+      --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
-                              proofs of one watcher, in run order, are also checked as one history
+                              proofs of one watcher or alert bot, in run order, are also checked as
+                              one history
 
 Mainnet runs use the hosted Chain MCP (https://mcp.pharos.xyz/mcp, read-only). Atlantic runs start
 the official Pharos Chain MCP server (vendored, unmodified) locally over stdio.`;
@@ -98,6 +115,7 @@ interface Flags {
   rpc?: string;
   submit: boolean;
   store?: string;
+  webhook?: string;
   values: Record<string, string>;
 }
 
@@ -119,6 +137,10 @@ function parseFlags(argv: string[]): Flags {
       const value = argv[++i];
       if (!value) throw new AgentError("usage", "--store needs a file.");
       flags.store = value;
+    } else if (arg === "--webhook") {
+      const value = argv[++i];
+      if (!value || !/^https?:\/\/\S+$/.test(value)) throw new AgentError("usage", "--webhook must be an http(s) URL.");
+      flags.webhook = value;
     } else if (arg === "--block" || arg === "--proof" || arg === "--chain-mcp" || arg === "--rpc") {
       const value = argv[++i];
       if (!value) throw new AgentError("usage", `${arg} needs a value.`);
@@ -498,10 +520,93 @@ async function watch(flags: Flags): Promise<number> {
   }
 }
 
+function printAlerts(run: RecordedAlertRun, storePath: string): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  out(`Pharos On-Chain Alert Bot · ${run.bot}`);
+  out();
+  out(`  Network     ${run.network.name} (chain ${run.network.chainId})`);
+  out(`  Chain MCP   ${run.chainMcp.where}${run.chainMcp.server ? ` (${run.chainMcp.server})` : ""}`);
+  out(`  Block       ${n(run.block.number)} · ${run.block.timestamp}`);
+  out(`  Scanned     ${run.scanned ? `blocks ${n(run.scanned.from)}–${n(run.scanned.to)} (${run.scanned.pages} get_logs ${run.scanned.pages === 1 ? "call" : "calls"})` : "no new blocks"}${run.skipped ? `; skipped ${n(run.skipped.from)}–${n(run.skipped.to)}, too far behind` : ""}`);
+  out(`  Store       ${storePath}`);
+  out();
+  const width = Math.max(...run.rules.map((r) => r.label.length));
+  for (const r of run.rules) {
+    const now = r.kind === "transfer" ? `${r.matches} new` : r.state === "unreadable" ? `unreadable (${r.error})` : `${r.state === "holds" ? "HOLDS" : "clear"}: ${r.observed}`;
+    out(`  ${r.label.padEnd(width)}  ${now}   [${r.tool}]`);
+  }
+  out();
+  if (!run.alerts.length) out("  Alerts      none new");
+  for (const [index, a] of run.alerts.entries()) out(`  ${index === 0 ? "Alerts  " : "        "}    ${a.kind === "transfer" ? "" : `${a.kind.toUpperCase()} `}${a.label}: ${a.message}`);
+  if (run.truncated) out(`              and ${run.truncated} more matching transfers, beyond the ${run.alerts.length} one run reports`);
+  const d = run.delivery;
+  if (d) out(`  Delivered   ${d.delivered.length} ${d.channel === "webhook" ? "to the webhook" : "here"}${d.failed.length ? `; ${d.failed.length} kept to retry (${d.failed[0]!.error})` : ""}`);
+  out();
+  out(`  ${run.toolCalls} Chain MCP calls. Nothing was signed or sent.`);
+}
+
+async function alert(flags: Flags): Promise<number> {
+  const name = flags.positional[1] ?? "usdc";
+  const preset = ALERT_PRESETS[name];
+  let text: string;
+  if (preset) text = JSON.stringify(preset());
+  else {
+    try {
+      text = await readFile(name, "utf8");
+    } catch {
+      throw new AgentError("usage", `No alert bot preset or file "${name}".`, "Preset: usdc (mainnet). Or pass a path to an alert bot JSON file.");
+    }
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new AgentError("usage", `${name} is not valid JSON: ${errorMessage(error)}`);
+  }
+  const bot = parseAlertBot(json);
+  const net = network(bot.network);
+  const storePath = flags.store ?? "alert-store.json";
+  let saved: string | null = null;
+  try {
+    saved = await readFile(storePath, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw new AgentError("usage", `The store ${storePath} cannot be read: ${errorMessage(error)}`);
+  }
+  let stored: unknown = null;
+  if (saved !== null) {
+    try {
+      stored = JSON.parse(saved);
+    } catch (error) {
+      throw new AgentError("usage", `The store ${storePath} is not valid JSON: ${errorMessage(error)}`);
+    }
+  }
+  const store = stored === null ? emptyAlertStore(bot) : parseAlertStore(stored, bot);
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 80 });
+  try {
+    const run = await runAlerts(bot, store, { chain: new Chain(mcp, net), block: flags.block });
+    // Every pending alert, new or kept from a failed delivery, goes out now.
+    const delivery = await deliver(bot.name, run.store.pending, flags.webhook ?? null);
+    const recorded: RecordedAlertRun = { ...run, delivery };
+    if (flags.proof) {
+      const proof = proofFile({ task: "22", capability: "alert-bot", about: "One On-Chain Alert Bot run: the bot and the store it started from (input), the run with its alerts, the store it left and the delivery (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>, or several in run order.", mcp, network: net, startedAt: started, input: { bot: json, store }, result: recorded });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    await writeFile(`${storePath}.tmp`, `${JSON.stringify(afterDelivery(run.store, delivery.delivered), null, 2)}\n`);
+    await rename(`${storePath}.tmp`, storePath);
+    if (flags.json) out(JSON.stringify(recorded, null, 2));
+    else printAlerts(recorded, storePath);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -516,9 +621,11 @@ async function verify(flags: Flags): Promise<number> {
     total += checks.length;
     proofs.push(proof);
   }
-  // Several runs of one watcher, in order: one history, each run from the store the last one left.
-  if (proofs.length > 1 && proofs.every((p) => p.capability === "trend-watcher")) {
-    const history = historyCheck(proofs);
+  // Several runs of one watcher or bot, in order: one history, each run from the store the last one left.
+  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck };
+  const historyOf = histories[proofs[0]?.capability ?? ""];
+  if (proofs.length > 1 && historyOf && proofs.every((p) => p.capability === proofs[0]!.capability)) {
+    const history = historyOf(proofs);
     out(`  ${history.ok ? "PASS" : "FAIL"}  ${history.name}: ${history.detail}`);
     failed += history.ok ? 0 : 1;
     total += 1;
@@ -538,6 +645,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "dryrun") return dryrun(flags);
   if (command === "gate") return gate(flags);
   if (command === "watch") return watch(flags);
+  if (command === "alert") return alert(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

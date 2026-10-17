@@ -148,17 +148,33 @@ const tokensOf = (config: GuardianConfig): Address[] => [
   ...(config.action.type === "erc20-transfer" ? [config.action.token] : []),
 ];
 
-async function evaluateAt(chain: Chain, config: GuardianConfig, block: BlockHeader, now: Date, decimals: Map<string, number | Error>, gasMemo: { price?: bigint }) {
+/** Each condition read at `block` and judged against its threshold. */
+async function judge(chain: Chain, conditions: readonly Condition[], block: BlockHeader, now: Date, decimals: Map<string, number | Error>, gasMemo: { price?: bigint }) {
   const outcomes: ConditionOutcome[] = [];
   const values = new Map<string, Value | null>();
-  for (const condition of config.conditions) {
+  for (const condition of conditions) {
     const read = await readCondition(chain, condition, block, now, decimals, gasMemo);
     values.set(condition.id, read.value);
     const tokenDec = condition.read.kind === "erc20-balance" ? decimals.get(condition.read.token.toLowerCase()) : undefined;
     const threshold = thresholdValue(condition, typeof tokenDec === "number" ? tokenDec : 0, read.unit);
     outcomes.push(outcome(condition, read.value, threshold, read.error));
   }
+  return { outcomes, values };
+}
+
+async function evaluateAt(chain: Chain, config: GuardianConfig, block: BlockHeader, now: Date, decimals: Map<string, number | Error>, gasMemo: { price?: bigint }) {
+  const { outcomes, values } = await judge(chain, config.conditions, block, now, decimals, gasMemo);
   return { outcomes, values, decision: decide(config.fireWhen, outcomes) };
+}
+
+/**
+ * Conditions read at `block` and judged, as a guardian judges them: each token's decimals read once, a
+ * value that cannot be read never counting as holding. Also used by Task 22's alert rules.
+ */
+export async function readConditions(chain: Chain, conditions: readonly Condition[], block: BlockHeader, now: Date): Promise<ConditionOutcome[]> {
+  const tokens = conditions.flatMap((c) => (c.read.kind === "erc20-balance" ? [c.read.token] : []));
+  const decimals = await readDecimals(chain, tokens, block.number);
+  return (await judge(chain, conditions, block, now, decimals, {})).outcomes;
 }
 
 /** Prepare the action, simulate it at the pinned block, estimate gas, and check the payer can pay. */

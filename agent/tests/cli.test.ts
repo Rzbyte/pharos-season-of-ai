@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer, type IncomingMessage } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -292,5 +293,89 @@ describe("pharos-agent watch", () => {
     const refused = await cli(["watch", "--store", store, "--rpc", "http://127.0.0.1:9"]);
     assert.equal(refused.code, 2);
     assert.match(refused.stderr, /The store holds observations of something else/);
+  });
+});
+
+describe("pharos-agent alert", () => {
+  // Its own chain with past USDC transfers, moved on between runs; and a webhook receiver that can refuse.
+  const RECIPIENT = "0xb2749bd12f19c24a2244176658f3df3e48e79553";
+  const OTHER = "0x1111111111111111111111111111111111111111";
+  let chain: FakeChain;
+  let hook: ReturnType<typeof createHttpServer>;
+  let hookUrl: string;
+  const posts: { text: string; alert: { id: string; kind: string } }[] = [];
+  let refuse = (_alert: { kind: string }) => false;
+  before(async () => {
+    chain = await startFakeChain(defaultState({ tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: 80_000_000n } } }, transfers: [{ token: USDC, from: OTHER, to: RECIPIENT, amount: 600_000_000n, block: 4_999_990n }, { token: USDC, from: PAYER, to: OTHER, amount: 40_000_000n, block: 4_999_995n }] }));
+    hook = createHttpServer((request: IncomingMessage, response) => {
+      let body = "";
+      request.on("data", (chunk) => (body += chunk));
+      request.on("end", () => {
+        const post = JSON.parse(body);
+        posts.push(post);
+        response.writeHead(refuse(post.alert) ? 503 : 204).end();
+      });
+    });
+    await new Promise<void>((resolve) => hook.listen(0, "127.0.0.1", resolve));
+    hookUrl = `http://127.0.0.1:${(hook.address() as { port: number }).port}/hook`;
+  });
+  after(async () => {
+    await new Promise<void>((resolve) => hook.close(() => resolve()));
+    await chain.close();
+  });
+
+  test("two runs, one store: each alert POSTed once, one the webhook refused retried next run; the proofs verify as one history", async () => {
+    const store = join(dir, "alert-store.json");
+    const proofs = [1, 2].map((n) => join(dir, `alert-${n}.json`));
+    refuse = (alert) => alert.kind === "triggered";
+    const first = await cli(["alert", "--store", store, "--rpc", chain.url, "--webhook", hookUrl, "--proof", proofs[0]!]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.match(first.stdout, /\n {2}Scanned {5}blocks 4,999,001–5,000,000 \(1 get_logs call\)\n/);
+    assert.match(first.stdout, /\n {2}A USDC transfer of 500 or more +1 new +\[get_logs\]\n/);
+    assert.match(first.stdout, /\n {2}0x912c…f647 holds less than 100 USDC +HOLDS: 80 USDC +\[eth_call\]\n/);
+    assert.match(first.stdout, /\n {2}Alerts {6}A USDC transfer of 500 or more: 600 USDC from 0x1111…1111 to 0xB274…9553 at block 4,999,990\n {14}TRIGGERED 0x912c…f647 holds less than 100 USDC: 80 USDC at block 5,000,000\n/);
+    assert.match(first.stdout, /\n {2}Delivered {3}1 to the webhook; 1 kept to retry \(HTTP 503\)\n/);
+    assert.deepEqual(posts.map((p) => p.text), ["USDC alerts: A USDC transfer of 500 or more: 600 USDC from 0x1111…1111 to 0xB274…9553 at block 4,999,990", "USDC alerts: 0x912c…f647 holds less than 100 USDC: 80 USDC at block 5,000,000"]);
+    const kept = JSON.parse(await readFile(store, "utf8"));
+    assert.deepEqual([kept.cursor, kept.states, kept.pending.map((a: { kind: string }) => a.kind)], ["5000000", { "holder-low": true, "usdc-paused": false, "gas-high": false }, ["triggered"]]);
+
+    // Ten blocks on: a new large transfer, the balance back above 100, and the webhook taking everything.
+    chain.state.head += 10n;
+    chain.state.headTime += 10n;
+    chain.state.transfers.push({ token: USDC, from: PAYER, to: OTHER, amount: 1_000_000_000n, block: 5_000_004n });
+    chain.state.tokens[USDC]!.balances[PAYER] = 200_000_000n;
+    refuse = () => false;
+    posts.length = 0;
+    const second = await cli(["alert", "--store", store, "--rpc", chain.url, "--webhook", hookUrl, "--proof", proofs[1]!]);
+    assert.equal(second.code, 0, second.stderr);
+    assert.match(second.stdout, /\n {2}Scanned {5}blocks 5,000,001–5,000,010 \(1 get_logs call\)\n/);
+    assert.match(second.stdout, /\n {2}Alerts {6}A USDC transfer of 500 or more: 1,000 USDC from 0x912c…f647 to 0x1111…1111 at block 5,000,004\n {14}RESOLVED 0x912c…f647 holds less than 100 USDC: no longer holds: 200 USDC at block 5,000,010\n/);
+    assert.match(second.stdout, /\n {2}Delivered {3}3 to the webhook\n/);
+    assert.deepEqual(posts.map((p) => p.alert.kind), ["triggered", "transfer", "resolved"], "the kept alert first, then this run's");
+    assert.deepEqual(JSON.parse(await readFile(store, "utf8")).pending, []);
+
+    // A third run at the same block: nothing new, nothing POSTed.
+    posts.length = 0;
+    const third = await cli(["alert", "--store", store, "--rpc", chain.url, "--webhook", hookUrl]);
+    assert.match(third.stdout, /\n {2}Scanned {5}no new blocks\n[\s\S]*\n {2}Alerts {6}none new\n/);
+    assert.deepEqual(posts, []);
+
+    const verified = await cli(["verify", ...proofs]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint", "  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}delivery: 1 delivered \(webhook\), 1 kept to retry\n/);
+    assert.match(verified.stdout, /\n {2}PASS {2}one history: 2 runs, each from the store the last one left; 4 alerts in all\n/);
+    const reversed = await cli(["verify", proofs[1]!, proofs[0]!]);
+    assert.match(reversed.stdout, /\n {2}FAIL {2}one history: run 2 did not start from the store run 1 left\n/);
+  });
+
+  test("refusals before anything runs: another bot's store, a webhook that is not http(s)", async () => {
+    const store = join(dir, "other-alert-store.json");
+    await writeFile(store, JSON.stringify({ schema: "pharos-agent/alert-store/1", bot: "pharos-mainnet:Someone else", cursor: null, states: {}, pending: [] }));
+    const other = await cli(["alert", "--store", store, "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(other.code, 2);
+    assert.match(other.stderr, /The store belongs to another bot \("pharos-mainnet:Someone else"\)/);
+    const hookless = await cli(["alert", "--webhook", "ftp://hooks.example/x"]);
+    assert.equal(hookless.code, 2);
+    assert.match(hookless.stderr, /--webhook must be an http\(s\) URL/);
   });
 });

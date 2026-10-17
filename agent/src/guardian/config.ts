@@ -143,6 +143,24 @@ function checkThreshold(read: Read, op: Comparator, value: unknown, where: strin
   }
 }
 
+/**
+ * One condition from untrusted JSON: { id, label, read, op, value }, with its threshold checked against
+ * the kind of value the read gives. `ids` collects the ids seen so far, so none repeats. Also used by
+ * Task 22's alert rules.
+ */
+export function parseCondition(raw: unknown, where: string, ids: Set<string>, extra: string[] = []): Condition {
+  const cond = record(raw, where);
+  only(cond, ["id", "label", "read", "op", "value", ...extra], where);
+  const id = text(cond.id, `${where}.id`, 40);
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw bad(`${where}.id must be lowercase letters, digits and dashes.`);
+  if (ids.has(id)) throw bad(`Two conditions share the id "${id}".`);
+  ids.add(id);
+  const read = parseRead(cond.read, where);
+  if (typeof cond.op !== "string" || !COMPARATORS.includes(cond.op as Comparator)) throw bad(`${where}.op must be one of ${COMPARATORS.join(" ")}.`);
+  const op = cond.op as Comparator;
+  return { id, label: text(cond.label, `${where}.label`, LIMITS.label), read, op, value: checkThreshold(read, op, cond.value, where) };
+}
+
 function parseAction(raw: unknown): Action {
   const a = record(raw, "action");
   if (a.type === "erc20-transfer") {
@@ -166,19 +184,7 @@ export function parseGuardianConfig(input: unknown): GuardianConfig {
   if (typeof c.network !== "string" || !(c.network in NETWORKS)) throw bad("network must be pharos-mainnet or atlantic-testnet.");
   if (!Array.isArray(c.conditions) || c.conditions.length === 0 || c.conditions.length > LIMITS.conditions) throw bad(`conditions must list 1 to ${LIMITS.conditions} conditions.`);
   const ids = new Set<string>();
-  const conditions = c.conditions.map((raw, index): Condition => {
-    const where = `conditions[${index}]`;
-    const cond = record(raw, where);
-    only(cond, ["id", "label", "read", "op", "value"], where);
-    const id = text(cond.id, `${where}.id`, 40);
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw bad(`${where}.id must be lowercase letters, digits and dashes.`);
-    if (ids.has(id)) throw bad(`Two conditions share the id "${id}".`);
-    ids.add(id);
-    const read = parseRead(cond.read, where);
-    if (typeof cond.op !== "string" || !COMPARATORS.includes(cond.op as Comparator)) throw bad(`${where}.op must be one of ${COMPARATORS.join(" ")}.`);
-    const op = cond.op as Comparator;
-    return { id, label: text(cond.label, `${where}.label`, LIMITS.label), read, op, value: checkThreshold(read, op, cond.value, where) };
-  });
+  const conditions = c.conditions.map((raw, index) => parseCondition(raw, `conditions[${index}]`, ids));
   let fireWhen: FireWhen;
   if (c.fireWhen === "all" || c.fireWhen === "any") fireWhen = c.fireWhen;
   else {

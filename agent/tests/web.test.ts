@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09 or 11\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11 or 22\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -137,3 +137,63 @@ describe("GET /api/agent?task=09", () => {
     assert.equal(fake.requests.length, before, "nothing reached the chain");
   });
 });
+
+describe("GET /api/agent?task=22", () => {
+  type Alert = { kind: string; rule: string; message: string };
+  type Body = { result: { schema: string; scanned: { from: string; to: string; pages: number } | null; alerts: Alert[]; rules: { id: string; state: string | null; observed: string | null; matches: number | null }[]; store: { cursor: string | null; states: Record<string, boolean> } }; inputs: Record<string, string> };
+  const RECIPIENT = "0xb2749bd12f19c24a2244176658f3df3e48e79553";
+  let kept: typeof fake.state.transfers;
+  before(() => {
+    // Transfers between other addresses, so the payer's spending (Task 11's window) is unchanged.
+    kept = fake.state.transfers;
+    fake.state.transfers = [...kept, { token: USDC, from: STRANGER, to: RECIPIENT, amount: 750_000_000n, block: 4_999_995n }, { token: USDC, from: STRANGER, to: RECIPIENT, amount: 10_000_000n, block: 4_999_996n }];
+  });
+  after(() => {
+    fake.state.transfers = kept;
+  });
+
+  test("a first run: the last 1,000 blocks scanned, every condition read, the store to keep; never cached", async () => {
+    const response = await get("task=22");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 0, "each answer depends on the store sent");
+    const body = response.body as Body;
+    assert.equal(body.result.schema, "pharos-agent/alert-run/1");
+    assert.deepEqual(body.result.scanned, { from: "4999001", to: "5000000", pages: 1 });
+    assert.deepEqual(body.result.alerts.map((a) => [a.kind, a.message]), [["transfer", "750 USDC from 0x1111…1111 to 0xB274…9553 at block 4,999,995"]]);
+    assert.deepEqual(body.result.rules.map((r) => [r.id, r.state ?? r.matches]), [["large-transfer", 1], ["holder-low", "clear"], ["usdc-paused", "clear"], ["gas-high", "clear"]]);
+    assert.deepEqual([body.result.store.cursor, body.result.store.states], ["5000000", { "holder-low": false, "usdc-paused": false, "gas-high": false }]);
+    assert.deepEqual(body.inputs, { min: "500", holder: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", low: "100" });
+  });
+
+  test("the page's cursor and states: only newer blocks scanned, a condition alerting when it starts and when it stops", async () => {
+    const caughtUp = (await get("task=22&cursor=5000000&states=holder-low:0")).body as Body;
+    assert.deepEqual([caughtUp.result.scanned, caughtUp.result.alerts], [null, []]);
+    const starts = (await get("task=22&cursor=5000000&states=holder-low:0&low=2000")).body as Body;
+    assert.deepEqual(starts.result.alerts.map((a) => [a.kind, a.message]), [["triggered", "1,000 USDC at block 5,000,000"]]);
+    const still = (await get("task=22&cursor=5000000&states=holder-low:1&low=2000")).body as Body;
+    assert.deepEqual(still.result.alerts, [], "already alerted");
+    const stops = (await get("task=22&cursor=5000000&states=holder-low:1")).body as Body;
+    assert.deepEqual(stops.result.alerts.map((a) => [a.kind, a.message]), [["resolved", "no longer holds: 1,000 USDC at block 5,000,000"]]);
+    const smaller = (await get("task=22&min=5")).body as Body;
+    assert.equal(smaller.result.alerts.length, 2, "both transfers are 5 USDC or more");
+  });
+
+  test("bad settings or a bad store are a 400, before any Chain MCP call", async () => {
+    const before = fake.requests.length;
+    const cases: [string, RegExp][] = [
+      ["task=22&holder=0x12", /The holder must be a 0x address/],
+      ["task=22&min=lots", /The smallest transfer must be an amount of USDC, up to 6 decimals/],
+      ["task=22&low=1.1234567", /The low balance must be an amount of USDC, up to 6 decimals/],
+      ["task=22&cursor=x", /cursor must be a block number/],
+      ["task=22&states=holder-low", /states lists rule:1 or rule:0/],
+      ["task=22&states=holder-low:2", /states lists rule:1 or rule:0/],
+    ];
+    for (const [query, error] of cases) {
+      const response = await get(query);
+      assert.equal(response.status, 400, query);
+      assert.match(message(response), error, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
