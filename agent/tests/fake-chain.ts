@@ -12,6 +12,8 @@ export interface FakeToken {
   /** Addresses a transfer may not come from or go to (Circle's USDC has such a list). */
   blacklist?: string[];
   balances: Record<string, bigint>;
+  /** owner → spender → amount. */
+  allowances?: Record<string, Record<string, bigint>>;
 }
 
 export interface FakeChainState {
@@ -59,6 +61,8 @@ const ERC20 = parseAbi([
   "function paused() view returns (bool)",
   "function totalSupply() view returns (uint256)",
   "function transfer(address to, uint256 amount) returns (bool)",
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
 ]);
 const ERROR_ABI = parseAbi(["error Error(string)"]);
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -97,8 +101,20 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     if (tag === "earliest") return 0n;
     return BigInt(tag as string);
   };
-  const tokenCall = (to: string, data: Hex, from: string | undefined, apply: boolean): Hex => {
-    const token = state.tokens[to]!;
+  // State as it was while each earlier block was the head, kept before every applied transaction, so a
+  // read at an older block sees that block's state (as an archive node would).
+  type World = Pick<FakeChainState, "native" | "nonces" | "tokens">;
+  const history = new Map<bigint, World>();
+  const worldAt = (tag: unknown): World => {
+    const n = blockOf(tag);
+    if (n >= state.head || history.size === 0) return state;
+    const exact = history.get(n);
+    if (exact) return exact;
+    const first = [...history.keys()].reduce((a, b) => (b < a ? b : a));
+    return n < first ? history.get(first)! : state;
+  };
+  const tokenCall = (world: World, to: string, data: Hex, from: string | undefined, apply: boolean): Hex => {
+    const token = world.tokens[to]!;
     let decoded;
     try {
       decoded = decodeFunctionData({ abi: ERC20, data });
@@ -114,6 +130,20 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
         return word("bool", token.paused === true);
       case "totalSupply":
         return word("uint256", Object.values(token.balances).reduce((a, b) => a + b, 0n));
+      case "allowance": {
+        const [owner, spender] = decoded.args as [string, string];
+        return word("uint256", token.allowances?.[lower(owner)]?.[lower(spender)] ?? 0n);
+      }
+      case "approve": {
+        if (token.paused) throw new Revert("Pausable: paused");
+        const [spender, amount] = decoded.args as [string, bigint];
+        const owner = lower(from ?? "0x0000000000000000000000000000000000000000");
+        if (apply) {
+          token.allowances ??= {};
+          token.allowances[owner] = { ...(token.allowances[owner] ?? {}), [lower(spender)]: amount };
+        }
+        return word("bool", true);
+      }
       case "transfer": {
         if (token.paused) throw new Revert("Pausable: paused");
         const sender = lower(from ?? "0x0000000000000000000000000000000000000000");
@@ -128,15 +158,15 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       }
     }
   };
-  const execute = (tx: { from?: string; to?: string; data?: Hex; value?: string | bigint }, apply: boolean): Hex => {
+  const execute = (world: World, tx: { from?: string; to?: string; data?: Hex; value?: string | bigint }, apply: boolean): Hex => {
     const to = lower(tx.to);
     const value = tx.value === undefined ? 0n : BigInt(tx.value);
     const from = tx.from ? lower(tx.from) : undefined;
-    if (value > 0n && from && (state.native[from] ?? 0n) < value) throw new RpcFailure(-32000, "insufficient funds for gas * price + value");
-    if (state.tokens[to] && tx.data && tx.data !== "0x") return tokenCall(to, tx.data, from, apply);
+    if (value > 0n && from && (world.native[from] ?? 0n) < value) throw new RpcFailure(-32000, "insufficient funds for gas * price + value");
+    if (world.tokens[to] && tx.data && tx.data !== "0x") return tokenCall(world, to, tx.data, from, apply);
     if (apply && value > 0n && from) {
-      state.native[from] = (state.native[from] ?? 0n) - value;
-      state.native[to] = (state.native[to] ?? 0n) + value;
+      world.native[from] = (world.native[from] ?? 0n) - value;
+      world.native[to] = (world.native[to] ?? 0n) + value;
     }
     return "0x";
   };
@@ -144,8 +174,8 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     eth_chainId: () => hex(BigInt(state.chainId)),
     eth_blockNumber: () => hex(state.head),
     web3_clientVersion: () => "fake-chain/1.0 (deterministic test fixture)",
-    eth_getBalance: ([address]) => hex(state.native[lower(address)] ?? 0n),
-    eth_getTransactionCount: ([address]) => hex(state.nonces[lower(address)] ?? 0n),
+    eth_getBalance: ([address, tag]) => hex(worldAt(tag).native[lower(address)] ?? 0n),
+    eth_getTransactionCount: ([address, tag]) => hex(tag === "pending" ? (state.nonces[lower(address)] ?? 0n) : (worldAt(tag).nonces[lower(address)] ?? 0n)),
     eth_gasPrice: () => hex(state.gasPrice),
     eth_maxPriorityFeePerGas: () => hex(state.priorityFee),
     eth_getBlockByNumber: ([tag]) => {
@@ -155,11 +185,11 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     },
     eth_getCode: ([address]) => state.code[lower(address)] ?? (state.tokens[lower(address)] ? "0x6080604052" : "0x"),
     eth_getStorageAt: () => word("uint256", 0n),
-    eth_call: ([tx]) => execute(tx as never, false),
+    eth_call: ([tx, tag]) => execute(worldAt(tag), tx as never, false),
     eth_estimateGas: ([tx]) => {
       const t = tx as { to?: string; data?: Hex };
-      execute(t, false);
-      return state.tokens[lower(t.to)] ? hex(51_234n) : hex(21_000n);
+      execute(state, t, false);
+      return state.tokens[lower(t.to)] ? hex(t.data?.startsWith("0x095ea7b3") ? 46_500n : 51_234n) : hex(21_000n);
     },
     eth_getLogs: () => [],
     eth_getTransactionReceipt: ([hash]) => receipts.get(lower(hash)) ?? null,
@@ -170,12 +200,13 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       const from = lower(await recoverTransactionAddress({ serializedTransaction: serialized as never }));
       if (tx.chainId !== state.chainId) throw new RpcFailure(-32000, `invalid chain id ${tx.chainId}`);
       if (BigInt(tx.nonce ?? 0) !== (state.nonces[from] ?? 0n)) throw new RpcFailure(-32000, "nonce too low");
-      const gasUsed = state.tokens[lower(tx.to)] ? 49_871n : 21_000n;
+      const gasUsed = state.tokens[lower(tx.to)] ? (tx.data?.startsWith("0x095ea7b3") ? 46_123n : 49_871n) : 21_000n;
       const fee = gasUsed * (state.baseFee ?? state.gasPrice);
       let status: "0x1" | "0x0" = "0x1";
       const logs: unknown[] = [];
+      history.set(state.head, structuredClone({ native: state.native, nonces: state.nonces, tokens: state.tokens }));
       try {
-        execute({ from, to: tx.to ?? undefined, data: tx.data, value: tx.value }, true);
+        execute(state, { from, to: tx.to ?? undefined, data: tx.data, value: tx.value }, true);
         if (state.tokens[lower(tx.to)] && tx.data) {
           const decoded = decodeFunctionData({ abi: ERC20, data: tx.data });
           if (decoded.functionName === "transfer") {

@@ -11,6 +11,8 @@ import { HOSTED_CHAIN_MCP, NETWORKS } from "./core/networks.js";
 import { parseGuardianConfig } from "./guardian/config.js";
 import { PAYOUT_DEFAULTS, payoutGuardian } from "./guardian/presets.js";
 import { runGuardian } from "./guardian/run.js";
+import { parseDryRun } from "./dryrun/intent.js";
+import { runDryRun } from "./dryrun/run.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -77,13 +79,48 @@ async function guardian(params: URLSearchParams, options: WebOptions): Promise<W
   }
 }
 
+/** Task 08: a dry run on mainnet of a transfer (an official token or PROS) or a token approval. */
+async function dryRun(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const get = (key: string, fallback: string) => (params.get(key) ?? fallback).trim();
+  const inputs = { action: get("action", "transfer"), asset: get("asset", "USDC"), from: get("from", PAYOUT_DEFAULTS.payer), to: get("to", PAYOUT_DEFAULTS.recipient), amount: get("amount", "25") };
+  if (inputs.action !== "transfer" && inputs.action !== "approve") return usage("action must be transfer or approve.");
+  const token = net.tokens.find((entry) => entry.symbol === inputs.asset);
+  if (!token && inputs.asset !== net.nativeSymbol) return usage(`asset must be ${net.nativeSymbol} or one of ${net.tokens.map((entry) => entry.symbol).join(", ")}.`);
+  if (inputs.action === "approve" && !token) return usage(`Only a token can be approved, not ${net.nativeSymbol}.`);
+  if (inputs.amount === "max" && inputs.action !== "approve") return usage("Only an approval can be unlimited.");
+  const intent =
+    inputs.action === "approve"
+      ? { kind: "erc20-approve", token: token!.address, from: inputs.from, spender: inputs.to, amount: inputs.amount }
+      : token
+        ? { kind: "erc20-transfer", token: token.address, from: inputs.from, to: inputs.to, amount: inputs.amount }
+        : { kind: "native-transfer", from: inputs.from, to: inputs.to, amount: inputs.amount };
+  let request;
+  try {
+    request = parseDryRun({ network: net.id, intent });
+  } catch (error) {
+    return usage(errorMessage(error).replace(/^from /, "The sender ").replace(/^(to|spender) /, (word) => (word.trim() === "to" ? "The recipient " : "The spender ")));
+  }
+  if (inputs.amount !== "max" && Number(inputs.amount) > 1e12) return usage("The amount is too large to dry-run here.");
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 30, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runDryRun(request.intent, { chain: new Chain(mcp, net) });
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
       case "05":
         return await guardian(url.searchParams, options);
+      case "08":
+        return await dryRun(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05.");
+        return usage("Unknown task. Use ?task=05 or ?task=08.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

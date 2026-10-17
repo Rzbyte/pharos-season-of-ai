@@ -118,3 +118,54 @@ describe("pharos-agent guardian", () => {
     assert.match(stderr, /--execute is limited to the Atlantic testnet/);
   });
 });
+
+describe("pharos-agent dryrun", () => {
+  test("the default dry run: a USDC transfer on mainnet, its verdict, outcome, gas and funds", async () => {
+    const { code, stdout, stderr } = await cli(["dryrun", "--chain-mcp", mcpUrl]);
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /^Pharos Dry-Run Executor · Send 25 USDC from 0x912c…f647 to 0xB274…9553\n/);
+    assert.match(stdout, /\n  Verdict     WOULD SUCCEED: returns true\n/);
+    assert.ok(stdout.includes("\n  Outcome     Sender USDC     1,000 USDC → 975 USDC (−25 USDC)\n              Recipient USDC  0 USDC → 25 USDC (+25 USDC)\n              Sender PROS     1 PROS → about 0.99994364 PROS (−0.00005635 PROS)\n"), stdout);
+    assert.ok(stdout.includes("\n  Gas         51,234 (limit 61,480) at about 1.1 gwei: about 0.00005635 PROS, at most 0.0001291 PROS\n  Funds       the sender holds 1 PROS; it needs up to 0.0001291 PROS\n"), stdout);
+    assert.match(stdout, /\n  Submitted   no: the hosted Chain MCP is read-only; --submit runs on Atlantic\n/);
+    assert.match(stdout, /Chain MCP calls\. Nothing was signed or sent\.\n$/);
+  });
+
+  test("--proof: the dry-run proof verifies by replay (only the endpoint differs from the hosted one)", async () => {
+    const proofPath = join(dir, "dryrun.json");
+    const { code, stdout, stderr } = await cli(["dryrun", "erc20-approve", "--spender", "0x1111111111111111111111111111111111111111", "--amount", "max", "--chain-mcp", mcpUrl, "--json", "--proof", proofPath]);
+    assert.equal(code, 0, stderr);
+    const run = JSON.parse(stdout);
+    assert.deepEqual([run.verdict, run.warnings.map((w: { code: string }) => w.code)], ["would-succeed", ["unlimited-approval", "spender-not-contract"]]);
+    const verified = await cli(["verify", proofPath]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")), [`  FAIL  hosted endpoint: hosted ${mcpUrl}`]);
+    assert.match(verified.stdout, /PASS {2}result recomputed from the recorded responses: \d+ calls replayed; prediction, cost and verdict identical/);
+  });
+
+  test("--submit on Atlantic: sent, then every predicted change matched against the receipt; the proof verifies", async () => {
+    const token = "0xe0be08c77f415f577a1b3a9ad7a1df1479564ec8";
+    const atlantic = await startFakeChain(defaultState({ chainId: 688689, native: { [KEY_ADDRESS]: 10n ** 18n }, tokens: { [token]: { decimals: 6, balances: { [KEY_ADDRESS]: 3_000_000n } } } }));
+    try {
+      const proofPath = join(dir, "submitted.json");
+      const { code, stdout, stderr } = await cli(["dryrun", "--network", "atlantic-testnet", "--to", "0xB2749BD12f19C24a2244176658F3dF3e48e79553", "--amount", "1", "--submit", "--rpc", atlantic.url, "--proof", proofPath], { PRIVATE_KEY: KEY });
+      assert.equal(code, 0, stderr);
+      assert.match(stdout, /\n  Submitted   0x[0-9a-f]{64} \(nonce 0\): success in block 5,000,001\n/);
+      assert.equal((stdout.match(/^ {4}match {2}/gm) ?? []).length, 6);
+      assert.match(stdout, /\n  Prediction  matched the receipt in every line\n/);
+      const verified = await cli(["verify", proofPath]);
+      assert.equal(verified.code, 0, verified.stdout);
+    } finally {
+      await atlantic.close();
+    }
+  });
+
+  test("refusals before anything runs: --submit on mainnet, a token that is not official", async () => {
+    const mainnet = await cli(["dryrun", "--submit"], { PRIVATE_KEY: KEY });
+    assert.equal(mainnet.code, 2);
+    assert.match(mainnet.stderr, /--submit is limited to the Atlantic testnet/);
+    const token = await cli(["dryrun", "--token", "DOGE", "--chain-mcp", "http://127.0.0.1:9/mcp"]);
+    assert.equal(token.code, 2);
+    assert.match(token.stderr, /DOGE is not an official Pharos Mainnet token\. Use one of WPROS, USDC, LINK, WETH, or a token address\./);
+  });
+});
+

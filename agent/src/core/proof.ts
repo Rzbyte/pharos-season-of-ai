@@ -6,6 +6,7 @@
 // requests, and requires the same result to come out. Separate checks cover what replay cannot:
 // that the server was the official one, on the right chain, at the endpoint the proof names.
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
+import { parseTransaction, recoverTransactionAddress, type Hex } from "viem";
 import { AGENT, type ChainMcp, type RecordedMessage } from "./chain-mcp.js";
 import { ToolCallError } from "./errors.js";
 import { HOSTED_CHAIN_MCP, type Network } from "./networks.js";
@@ -151,4 +152,45 @@ export function commonChecks(proof: ProofFile, expected: { task: string; capabil
   const text = JSON.stringify(proof);
   add("no key material", !/private[_ ]?key/i.test(text), "no private key field anywhere in the proof");
   return checks;
+}
+
+/** Tools whose reads name a block, so a pinned run must pass its block to every one of them. */
+export const PINNABLE = new Set(["eth_call", "get_balance", "get_code", "get_transaction_count", "get_storage_at"]);
+
+/** The first path where two results differ, with both values, for a failed replay. */
+export function firstDifference(a: unknown, b: unknown, path = "result"): string {
+  if (JSON.stringify(a) === JSON.stringify(b)) return "";
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      const diff = firstDifference((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], `${path}.${key}`);
+      if (diff) return diff;
+    }
+  }
+  return `${path} differs: recomputed ${JSON.stringify(a)?.slice(0, 120)}, recorded ${JSON.stringify(b)?.slice(0, 120)}`;
+}
+
+/**
+ * For replay only: a signer that "signs" by returning the transaction the live run broadcast, so the
+ * replayed code sends exactly the recorded send_raw_transaction. Its address is the recorded sender.
+ */
+export function replaySigner(calls: readonly RecordedCall[], address: `0x${string}`): { address: `0x${string}`; sign: () => Promise<Hex> } {
+  const raw = calls.find((call) => call.name === "send_raw_transaction")?.args.rawTransaction;
+  return { address, sign: async () => (typeof raw === "string" ? (raw as Hex) : "0x") };
+}
+
+/** The broadcast transaction is exactly `expected`, on `chainId`, signed by `expected.from`. */
+export async function signedTransactionCheck(calls: readonly RecordedCall[], chainId: number, expected: { from: string; to: string; data: string; value: bigint }, what = "transaction"): Promise<Check> {
+  const raw = calls.find((call) => call.name === "send_raw_transaction")?.args.rawTransaction;
+  if (typeof raw !== "string") return { name: "signed transaction", ok: false, detail: "no send_raw_transaction in the transcript" };
+  const tx = parseTransaction(raw as Hex);
+  const from = await recoverTransactionAddress({ serializedTransaction: raw as never });
+  const ok = tx.chainId === chainId && tx.to?.toLowerCase() === expected.to.toLowerCase() && (tx.data ?? "0x") === expected.data && (tx.value ?? 0n) === expected.value && from.toLowerCase() === expected.from.toLowerCase();
+  return { name: "signed transaction", ok, detail: ok ? `chain ${tx.chainId}, signed by ${from}, exactly the prepared ${what}` : `the broadcast transaction is not the prepared ${what}` };
+}
+
+/** Every state read before the first send names the pinned block. */
+export function pinnedCheck(calls: readonly RecordedCall[], block: string, until: number = calls.length): Check {
+  const pinned = `0x${BigInt(block).toString(16)}`;
+  const unpinned = calls.slice(0, until).filter((call) => PINNABLE.has(call.name) && call.args.block !== pinned);
+  return { name: "one pinned block", ok: unpinned.length === 0, detail: unpinned.length ? `${unpinned.length} reads not at ${pinned}` : `every state read before execution is at block ${block}` };
 }
