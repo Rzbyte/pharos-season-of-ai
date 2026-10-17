@@ -17,7 +17,7 @@ import { createSiteServer } from "../serve.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const at = (path) => pathToFileURL(join(REPO, path)).href;
-const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/11": "11 · Policy Gatekeeper" };
+const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/09": "09 · Trend Watcher", "/tasks/11": "11 · Policy Gatekeeper" };
 
 let out;
 let site;
@@ -163,7 +163,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 33, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 35, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
@@ -173,11 +173,11 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/11"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
-    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/11"]);
+    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11"]);
   });
 });
 
@@ -236,6 +236,18 @@ describe("APIs on the one domain", () => {
     assert.match((await bad.json()).error.message, /action must be transfer or approve/);
   });
 
+  test("Task 09: /api/agent?task=09 adds one observation through Chain MCP to the page's store; never cached", async () => {
+    const response = await get("/api/agent?task=09");
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const body = await response.json();
+    assert.equal(body.result.schema, "pharos-agent/trend-run/1");
+    assert.deepEqual([body.result.outcome, body.result.store.observations.length], ["watching", 1]);
+    const bad = await get("/api/agent?task=09&series=nope");
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error.message, /block:raw:seconds/);
+  });
+
   test("Task 11: /api/agent?task=11 checks a request against the treasury policy through Chain MCP; bad hours are a 400", async () => {
     const response = await get("/api/agent?task=11");
     assert.equal(response.status, 200);
@@ -273,7 +285,8 @@ describe("the site in a browser", { skip }, () => {
     const problems = [];
     page.on("pageerror", (error) => problems.push(error.message));
     page.on("response", (response) => response.status() >= 400 && problems.push(`${response.status()} ${response.url()}`));
-    page.on("requestfailed", (request) => problems.push(`failed ${request.url()}`));
+    // A request cut short by leaving the page (or by a newer run replacing it) is aborted, not failed.
+    page.on("requestfailed", (request) => request.failure()?.errorText !== "net::ERR_ABORTED" && problems.push(`failed ${request.url()}`));
     await page.goto(`${base}${path}`);
     await page.evaluate(() => document.fonts.ready);
     return { page, problems };
@@ -299,7 +312,7 @@ describe("the site in a browser", { skip }, () => {
       menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/11", "/"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
@@ -321,6 +334,8 @@ describe("the site in a browser", { skip }, () => {
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/08`);
     assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/05");
+    await page.click('[data-task-step="next"]');
+    await page.waitForURL(`${base}/tasks/09`);
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/11`);
     assert.equal(await page.locator('[data-task-step="next"]').getAttribute("aria-disabled"), "true", "nothing built after 11 yet");
@@ -356,8 +371,8 @@ describe("the site in a browser", { skip }, () => {
     await page.context().close();
   });
 
-  test("Tasks 05, 08 and 11 at /tasks/NN run the agent through /api/agent on this domain", async () => {
-    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/]]) {
+  test("Tasks 05, 08, 09 and 11 at /tasks/NN run the agent through /api/agent on this domain", async () => {
+    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/09", "watch", /^Watching$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/]]) {
       const before = apiHits.filter((name) => name === "agent").length;
       const { page, problems } = await open(path);
       await page.waitForFunction((id) => document.getElementById(id).getAttribute("aria-busy") === "false", panel, { timeout: 15_000 });

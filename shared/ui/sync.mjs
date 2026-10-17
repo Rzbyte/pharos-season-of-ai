@@ -23,6 +23,7 @@ export const TARGETS = [
   "tasks/04-doc-search-cli/public",
   "tasks/05-threshold-guardian/public",
   "tasks/08-dry-run-executor/public",
+  "tasks/09-trend-watcher/public",
   "tasks/11-policy-gatekeeper/public",
 ];
 export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];

@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08 or 11\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09 or 11\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -88,5 +88,52 @@ describe("GET /api/agent?task=11", () => {
     const response = await handle(new URL("http://agent.test/api/agent?task=11"), { chainMcpUrl: "http://127.0.0.1:9/mcp", timeoutMs: 2000 });
     assert.equal(response.status, 502);
     assert.match(message(response), /^Could not reach http:\/\/127\.0\.0\.1:9\/mcp/);
+  });
+});
+
+describe("GET /api/agent?task=09", () => {
+  type Body = { result: { schema: string; outcome: string; observation: { block: string; shown: string } | null; trend: { detail: string; holds: boolean }; action: { verdict: string } | null; store: { observations: unknown[]; actedAt: string | null } }; inputs: Record<string, string> };
+
+  test("a first run: one observation through Chain MCP, the store to keep, never cached", async () => {
+    const response = await get("task=09");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 0, "each answer depends on the store sent");
+    const body = response.body as Body;
+    assert.equal(body.result.schema, "pharos-agent/trend-run/1");
+    assert.deepEqual([body.result.outcome, body.result.observation?.shown, body.result.trend.detail], ["watching", "1,000 USDC", "1 of 3 observations so far"]);
+    assert.equal(body.result.store.observations.length, 1);
+    assert.deepEqual(body.inputs, { holder: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", trend: "falling", observations: "3", every: "10" });
+  });
+
+  test("the page's earlier observations make the trend; the watcher fires and dry-runs its action", async () => {
+    const response = await get("task=09&series=4999980:1020000000:1789999980,4999990:1010000000:1789999990");
+    const body = response.body as Body;
+    assert.deepEqual([body.result.outcome, body.result.trend.holds, body.result.trend.detail], ["fired", true, "2 of 2 steps down"]);
+    // The example top-up comes from an address this chain gave no USDC: the dry run says so, and nothing is sent.
+    assert.equal(body.result.action?.verdict, "would-revert");
+    assert.deepEqual([body.result.store.observations.length, body.result.store.actedAt], [3, "5000000"]);
+    const acted = (await get("task=09&series=4999980:1020000000:1789999980,4999990:1010000000:1789999990&actedAt=4999990")).body as Body;
+    assert.deepEqual([acted.result.outcome, acted.result.trend.detail], ["watching", "1 of 3 observations so far"], "only observations after the last action count");
+  });
+
+  test("bad settings or a bad store are a 400, before any Chain MCP call", async () => {
+    const before = fake.requests.length;
+    const tooMany = Array.from({ length: 21 }, (_, i) => `${4_000_000 + i}:1:1789990000`).join(",");
+    const cases: [string, RegExp][] = [
+      ["task=09&holder=0x12", /The holder must be a 0x address/],
+      ["task=09&trend=sideways", /trend must be falling or rising/],
+      ["task=09&observations=7", /observations must be a whole number from 2 to 6/],
+      ["task=09&every=0", /every must be a whole number of blocks from 1 to 1,000/],
+      ["task=09&series=abc", /series lists earlier observations as block:raw:seconds/],
+      [`task=09&series=${tooMany}`, /At most 20 earlier observations/],
+      ["task=09&series=4999990:1:1789999990,4999980:2:1789999980", /in block order, one per block/],
+      ["task=09&actedAt=x", /actedAt must be a block number/],
+    ];
+    for (const [query, error] of cases) {
+      const response = await get(query);
+      assert.equal(response.status, 400, query);
+      assert.match(message(response), error, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
   });
 });

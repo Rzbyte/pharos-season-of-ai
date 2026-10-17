@@ -4,8 +4,9 @@
 //   pharos-agent guardian [preset | config.json] [--block N] [--json] [--proof FILE] [--execute] [--verbose]
 //   pharos-agent dryrun [kind] [--token --from --to --amount ...] [--submit]
 //   pharos-agent gate [policy] [kind] [--token --from --to --amount ...] [--execute]
-//   pharos-agent verify FILE
-import { readFile, writeFile } from "node:fs/promises";
+//   pharos-agent watch [preset | watcher.json] [--store FILE] [--execute]
+//   pharos-agent verify FILE...
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { formatAmount, formatGwei } from "./core/amounts.js";
 import { Chain } from "./core/chain.js";
@@ -26,6 +27,11 @@ import { runGate, type GateRun } from "./policy/check.js";
 import { parsePolicy } from "./policy/config.js";
 import { POLICY_PRESETS } from "./policy/presets.js";
 import { verifyGateProof } from "./policy/verify.js";
+import { parseWatcher } from "./trend/config.js";
+import { WATCHER_PRESETS } from "./trend/presets.js";
+import { runWatch, type TrendRun } from "./trend/run.js";
+import { emptyStore, parseStore } from "./trend/store.js";
+import { historyCheck, verifyTrendProof } from "./trend/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -67,7 +73,15 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --execute            Atlantic only: when allowed and the dry run succeeds, send it (PRIVATE_KEY)
       --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
-  pharos-agent verify FILE    check a proof offline by replaying its recorded responses
+  pharos-agent watch [preset | watcher.json] [options]     Task 09, Trend Watcher
+      One observation per run, kept in a store file across runs. Acts only when the trend over the last
+      N observations holds, once per trend: the action is dry-run, and on Atlantic with --execute sent.
+      Preset: usdc-outflow (Pharos Mainnet). A watcher is JSON (agent/src/trend/config.ts).
+      --store FILE         where the observations are kept between runs (default: trend-store.json)
+      --execute, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
+  pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
+                              proofs of one watcher, in run order, are also checked as one history
 
 Mainnet runs use the hosted Chain MCP (https://mcp.pharos.xyz/mcp, read-only). Atlantic runs start
 the official Pharos Chain MCP server (vendored, unmodified) locally over stdio.`;
@@ -83,6 +97,7 @@ interface Flags {
   chainMcp?: string;
   rpc?: string;
   submit: boolean;
+  store?: string;
   values: Record<string, string>;
 }
 
@@ -100,7 +115,11 @@ function parseFlags(argv: string[]): Flags {
     }
     else if (arg === "--execute") flags.execute = true;
     else if (arg === "--verbose") flags.verbose = true;
-    else if (arg === "--block" || arg === "--proof" || arg === "--chain-mcp" || arg === "--rpc") {
+    else if (arg === "--store") {
+      const value = argv[++i];
+      if (!value) throw new AgentError("usage", "--store needs a file.");
+      flags.store = value;
+    } else if (arg === "--block" || arg === "--proof" || arg === "--chain-mcp" || arg === "--rpc") {
       const value = argv[++i];
       if (!value) throw new AgentError("usage", `${arg} needs a value.`);
       if (arg === "--block") {
@@ -390,17 +409,121 @@ async function gate(flags: Flags): Promise<number> {
   }
 }
 
+function printWatch(run: TrendRun, storePath: string): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  out(`Pharos Trend Watcher · ${run.watcher}`);
+  out();
+  out(`  Network     ${run.network.name} (chain ${run.network.chainId})`);
+  out(`  Chain MCP   ${run.chainMcp.where}${run.chainMcp.server ? ` (${run.chainMcp.server})` : ""}`);
+  out(`  Block       ${n(run.block.number)} · ${run.block.timestamp}`);
+  out(`  Observing   ${run.observing.label}`);
+  out(`  Store       ${storePath}: ${run.store.observations.length} ${run.store.observations.length === 1 ? "observation" : "observations"}${run.store.actedAt ? `; acted at block ${n(run.store.actedAt)}` : ""}`);
+  if (run.skipped) out(`  Skipped     ${run.skipped}`);
+  out();
+  const width = Math.max(0, ...run.trend.window.map((p) => p.shown.length));
+  for (const [index, p] of run.trend.window.entries()) out(`  ${index === 0 ? "Counted " : "        "}    block ${n(p.block).padStart(12)}  ${p.timestamp.slice(11, 19)}  ${p.shown.padStart(width)}${p.change ? `  ${p.change}` : ""}`);
+  out(`  Trend       ${run.trend.label}: ${run.trend.detail}${run.trend.holds ? " (holds)" : " (not yet)"}`);
+  if (run.action) out(`  Action      ${run.action.headline}`);
+  const e = run.execution;
+  if (e) {
+    out(`  Sent        ${e.txHash} (nonce ${e.nonce}): ${e.status}${e.blockNumber ? ` in block ${n(e.blockNumber)}` : ""}`);
+    for (const c of e.comparisons) out(`    ${c.match ? "match" : "DIFF "}  ${c.what.padEnd(18)} predicted ${c.predicted}; actual ${c.actual}`);
+  } else if (run.notSent) out(`  Not sent    ${run.notSent}`);
+  else if (run.action) out(`  Sent        no${run.network.chainId === 1672 ? ": the hosted Chain MCP is read-only; --execute runs on Atlantic" : ""}`);
+  out(`  Outcome     ${run.outcome.toUpperCase()}${run.outcome === "watching" ? "" : ": the next trend counts only observations after this block"}`);
+  out();
+  out(`  ${run.toolCalls} Chain MCP calls.${e ? "" : " Nothing was signed or sent."}`);
+}
+
+async function watch(flags: Flags): Promise<number> {
+  let key: Signer | undefined;
+  const keySigner = () => (key ??= signerFromEnv());
+  const name = flags.positional[1] ?? "usdc-outflow";
+  const preset = WATCHER_PRESETS[name];
+  let text: string;
+  if (preset) text = JSON.stringify(preset());
+  else {
+    try {
+      text = await readFile(name, "utf8");
+    } catch {
+      throw new AgentError("usage", `No watcher preset or file "${name}".`, "Preset: usdc-outflow (mainnet). Or pass a path to a watcher JSON file.");
+    }
+  }
+  if (text.includes("$SIGNER")) {
+    if (!process.env.PRIVATE_KEY) throw new AgentError("usage", `"${name}" uses your own wallet ($SIGNER), so it needs PRIVATE_KEY (an Atlantic testnet key) for the address.`, "export PRIVATE_KEY=0x... (never commit it)");
+    text = text.replaceAll("$SIGNER", keySigner().address);
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new AgentError("usage", `${name} is not valid JSON: ${errorMessage(error)}`);
+  }
+  const watcher = parseWatcher(json);
+  const net = network(watcher.network);
+  // The store: the observations of earlier runs, or a new one on the first run.
+  const storePath = flags.store ?? "trend-store.json";
+  let saved: string | null = null;
+  try {
+    saved = await readFile(storePath, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw new AgentError("usage", `The store ${storePath} cannot be read: ${errorMessage(error)}`);
+  }
+  let stored: unknown = null;
+  if (saved !== null) {
+    try {
+      stored = JSON.parse(saved);
+    } catch (error) {
+      throw new AgentError("usage", `The store ${storePath} is not valid JSON: ${errorMessage(error)}`);
+    }
+  }
+  const store = stored === null ? emptyStore(watcher) : parseStore(stored, watcher);
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 80 });
+  try {
+    const run = await runWatch(watcher, store, { chain: new Chain(mcp, net), block: flags.block, signer: flags.execute ? keySigner() : undefined });
+    if (flags.proof) {
+      const proof = proofFile({ task: "09", capability: "trend-watcher", about: "One Trend Watcher run: the watcher and the store it started from (input), the run and the store it left (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>, or several in run order.", mcp, network: net, startedAt: started, input: { watcher: json, store }, result: run });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    // Written only after a run that worked, and whole: a new file, then renamed over the old one.
+    await writeFile(`${storePath}.tmp`, `${JSON.stringify(run.store, null, 2)}\n`);
+    await rename(`${storePath}.tmp`, storePath);
+    if (flags.json) out(JSON.stringify(run, null, 2));
+    else printWatch(run, storePath);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return run.execution && !run.execution.matched ? 8 : 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
-  const path = flags.positional[1];
-  if (!path) throw new AgentError("usage", "verify needs a proof file.");
-  const proof = JSON.parse(await readFile(path, "utf8")) as ProofFile;
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof };
-  const verifier = verifiers[proof.capability];
-  if (!verifier) throw new AgentError("usage", `No verifier for "${proof.capability}".`);
-  const checks = await verifier(proof);
-  for (const check of checks) out(`  ${check.ok ? "PASS" : "FAIL"}  ${check.name}: ${check.detail}`);
-  const failed = checks.filter((c) => !c.ok).length;
-  out(failed ? `\n${failed} check(s) failed.` : `\nProof verified: ${checks.length} checks.`);
+  const paths = flags.positional.slice(1);
+  if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof };
+  const proofs: ProofFile[] = [];
+  let failed = 0;
+  let total = 0;
+  for (const path of paths) {
+    const proof = JSON.parse(await readFile(path, "utf8")) as ProofFile;
+    const verifier = verifiers[proof.capability];
+    if (!verifier) throw new AgentError("usage", `No verifier for "${proof.capability}".`);
+    const checks = await verifier(proof);
+    if (paths.length > 1) out(path);
+    for (const check of checks) out(`  ${check.ok ? "PASS" : "FAIL"}  ${check.name}: ${check.detail}`);
+    failed += checks.filter((c) => !c.ok).length;
+    total += checks.length;
+    proofs.push(proof);
+  }
+  // Several runs of one watcher, in order: one history, each run from the store the last one left.
+  if (proofs.length > 1 && proofs.every((p) => p.capability === "trend-watcher")) {
+    const history = historyCheck(proofs);
+    out(`  ${history.ok ? "PASS" : "FAIL"}  ${history.name}: ${history.detail}`);
+    failed += history.ok ? 0 : 1;
+    total += 1;
+  }
+  out(failed ? `\n${failed} check(s) failed.` : `\nProof${paths.length > 1 ? "s" : ""} verified: ${total} checks.`);
   return failed ? 1 : 0;
 }
 
@@ -414,6 +537,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "guardian") return guardian(flags);
   if (command === "dryrun") return dryrun(flags);
   if (command === "gate") return gate(flags);
+  if (command === "watch") return watch(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

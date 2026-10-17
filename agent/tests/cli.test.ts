@@ -238,3 +238,59 @@ describe("pharos-agent gate", () => {
     assert.match(keyless.stderr, /"atlantic-treasury" uses your own wallet \(\$SIGNER\), so it needs PRIVATE_KEY/);
   });
 });
+
+describe("pharos-agent watch", () => {
+  // Its own chain, changed between runs the way time changes the real one; reached with --rpc.
+  const RECIPIENT = "0xb2749bd12f19c24a2244176658f3df3e48e79553";
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(defaultState({ native: { [PAYER]: 10n ** 18n, [RECIPIENT]: 10n ** 18n }, tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: 1_000_000_000n, [RECIPIENT]: 600_000_000n } } } }));
+  });
+  after(() => chain.close());
+  const step = (usdc: bigint) => {
+    chain.state.head += 10n;
+    chain.state.headTime += 10n;
+    chain.state.tokens[USDC]!.balances[PAYER] = usdc;
+  };
+
+  test("three runs, one store file: the observations persist, the trend fires on the third, and the proofs verify as one history", async () => {
+    const store = join(dir, "watch-store.json");
+    const proofs = [1, 2, 3].map((n) => join(dir, `watch-${n}.json`));
+    const first = await cli(["watch", "--store", store, "--rpc", chain.url, "--proof", proofs[0]!]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.match(first.stdout, /\n {2}Store {7}.*watch-store\.json: 1 observation\n/);
+    assert.match(first.stdout, /\n {2}Trend {7}Fell across the last 3 observations: 1 of 3 observations so far \(not yet\)\n/);
+    assert.match(first.stdout, /\n {2}Outcome {5}WATCHING\n/);
+    step(990_000_000n);
+    const second = await cli(["watch", "--store", store, "--rpc", chain.url, "--proof", proofs[1]!]);
+    assert.equal(second.code, 0, second.stderr);
+    assert.match(second.stdout, /: 2 observations\n/);
+    step(975_500_000n);
+    const third = await cli(["watch", "--store", store, "--rpc", chain.url, "--proof", proofs[2]!]);
+    assert.equal(third.code, 0, third.stderr);
+    assert.match(third.stdout, /\n {2}Counted {5}block +5,000,000 +\d\d:\d\d:\d\d +1,000 USDC\n +block +5,000,010 +\d\d:\d\d:\d\d +990 USDC {2}−10 USDC\n +block +5,000,020 +\d\d:\d\d:\d\d +975\.5 USDC {2}−14\.5 USDC\n/);
+    assert.match(third.stdout, /\n {2}Trend {7}Fell across the last 3 observations: 2 of 2 steps down \(holds\)\n/);
+    assert.match(third.stdout, /\n {2}Action {6}Would succeed: Send 100 USDC from 0xB274…9553 to 0x912c…f647, for about 0\.00005635 PROS in gas\.\n/);
+    assert.match(third.stdout, /\n {2}Outcome {5}FIRED: the next trend counts only observations after this block\n/);
+    const saved = JSON.parse(await readFile(store, "utf8"));
+    assert.deepEqual([saved.observations.length, saved.actedAt], [3, "5000020"]);
+    // Too soon after the last: the store is left as it was.
+    const soon = await cli(["watch", "--store", store, "--rpc", chain.url]);
+    assert.match(soon.stdout, /\n {2}Skipped {5}The last observation is 0 blocks old|\n {2}Skipped {5}Block 5,000,020 is not after the last observation/);
+    assert.deepEqual(JSON.parse(await readFile(store, "utf8")), saved);
+    // Each proof alone, and the three as one history (only the hosted-endpoint check differs, with --rpc).
+    const verified = await cli(["verify", ...proofs]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint", "  FAIL  hosted endpoint", "  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}one history: 3 runs, each from the store the last one left; 3 observations kept\n/);
+    const shuffled = await cli(["verify", proofs[0]!, proofs[2]!]);
+    assert.match(shuffled.stdout, /\n {2}FAIL {2}one history: run 2 did not start from the store run 1 left\n/);
+  });
+
+  test("a store of another watcher's value is refused, and nothing runs", async () => {
+    const store = join(dir, "other-store.json");
+    await writeFile(store, JSON.stringify({ schema: "pharos-agent/trend-store/1", observing: "something else", observations: [], actedAt: null }));
+    const refused = await cli(["watch", "--store", store, "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(refused.code, 2);
+    assert.match(refused.stderr, /The store holds observations of something else/);
+  });
+});

@@ -116,7 +116,8 @@ function renderCalls(calls) {
 
 /**
  * The page's runner. `run(params)` asks the agent, one run at a time (a newer run aborts the older), with
- * the panel marked busy and "again" disabled meanwhile; "again" repeats the last run. An answer that holds
+ * the panel marked busy and "again" disabled meanwhile; "again" repeats the last run. `params` is the
+ * query, or a function that makes it when the run starts (for a page whose query changes between runs). An answer that holds
  * a result shows its block, calls and JSON, then goes to `render(body)`; anything else shows the error
  * note, with the API's own message where it gave one, and calls `onFail()`.
  */
@@ -156,7 +157,8 @@ export function agentRunner({ task, panel, running, failed, render, onFail }) {
     busy(true);
     setStatus("active", ...running);
     try {
-      const response = await fetch(`${api}?${new URLSearchParams({ task, ...params })}`, { headers: { accept: "application/json" }, signal: controller.signal });
+      const query = typeof params === "function" ? params() : params;
+      const response = await fetch(`${api}?${new URLSearchParams({ task, ...query })}`, { headers: { accept: "application/json" }, signal: controller.signal });
       const body = await response.json().catch(() => null);
       if (controller !== inFlight) return;
       if (!response.ok || !body?.result) fail(body?.error ? [body.error.message, body.error.hint].filter(Boolean).join(" ") : `The agent answered HTTP ${response.status}.`);

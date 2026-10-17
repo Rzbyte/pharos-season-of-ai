@@ -76,7 +76,8 @@ export function readValueType(read: Read): "bool" | "address" | "number" {
   return "number";
 }
 
-function parseRead(raw: unknown, where: string): Read {
+/** One read from untrusted JSON; `where` names it in messages ("conditions[2]"). Also used by Task 09's watcher. */
+export function parseRead(raw: unknown, where: string): Read {
   const r = record(raw, `${where}.read`);
   switch (r.kind) {
     case "erc20-balance":

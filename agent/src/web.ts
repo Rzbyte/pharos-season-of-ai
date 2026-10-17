@@ -16,6 +16,10 @@ import { runDryRun } from "./dryrun/run.js";
 import { runGate } from "./policy/check.js";
 import { minutesOf, parsePolicy } from "./policy/config.js";
 import { TREASURY_HOURS, treasuryPolicy } from "./policy/presets.js";
+import { parseWatcher } from "./trend/config.js";
+import { OUTFLOW_DEFAULTS, outflowWatcher } from "./trend/presets.js";
+import { runWatch } from "./trend/run.js";
+import { observingKey, parseStore } from "./trend/store.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -147,6 +151,51 @@ async function gatekeeper(params: URLSearchParams, options: WebOptions): Promise
   }
 }
 
+/** The most earlier observations a page may send with a run. */
+export const WEB_SERIES = 20;
+
+/**
+ * Task 09: the mainnet USDC watcher with the page's settings. The page keeps the store: it sends its
+ * earlier observations ("block:raw:seconds", oldest first) and the block it last acted at, the agent adds
+ * one observation through Chain MCP, and the page keeps the store it gets back. Never cached: each answer
+ * depends on the store sent.
+ */
+async function trendWatcher(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const get = (key: string, fallback: string) => (params.get(key) ?? fallback).trim();
+  const inputs = { holder: get("holder", OUTFLOW_DEFAULTS.holder), trend: get("trend", OUTFLOW_DEFAULTS.trend), observations: get("observations", String(OUTFLOW_DEFAULTS.observations)), every: get("every", String(OUTFLOW_DEFAULTS.everyBlocks)) };
+  if (!isAddress(inputs.holder, { strict: false })) return usage("The holder must be a 0x address (40 hex characters).");
+  if (inputs.trend !== "falling" && inputs.trend !== "rising") return usage("trend must be falling or rising.");
+  if (!/^\d+$/.test(inputs.observations) || Number(inputs.observations) < 2 || Number(inputs.observations) > 6) return usage("observations must be a whole number from 2 to 6.");
+  if (!/^\d+$/.test(inputs.every) || Number(inputs.every) < 1 || Number(inputs.every) > 1000) return usage("every must be a whole number of blocks from 1 to 1,000.");
+  const watcher = parseWatcher(outflowWatcher({ holder: inputs.holder, trend: inputs.trend, observations: Number(inputs.observations), everyBlocks: Number(inputs.every) }));
+  const series = get("series", "");
+  const entries = series ? series.split(",") : [];
+  if (entries.length > WEB_SERIES) return usage(`At most ${WEB_SERIES} earlier observations can be sent.`);
+  const observations = [];
+  for (const entry of entries) {
+    const match = /^(\d{1,12}):(\d{1,78}):(\d{1,12})$/.exec(entry);
+    if (!match) return usage("series lists earlier observations as block:raw:seconds, separated by commas.");
+    observations.push({ block: match[1]!, raw: match[2]!, timestamp: new Date(Number(match[3]) * 1000).toISOString() });
+  }
+  const actedAt = get("actedAt", "");
+  if (actedAt && !/^\d{1,12}$/.test(actedAt)) return usage("actedAt must be a block number.");
+  let store;
+  try {
+    store = parseStore({ schema: "pharos-agent/trend-store/1", observing: observingKey(watcher), observations, actedAt: actedAt || null }, watcher);
+  } catch (error) {
+    return usage(errorMessage(error));
+  }
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 30, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runWatch(watcher, store, { chain: new Chain(mcp, net) });
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -154,10 +203,12 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await guardian(url.searchParams, options);
       case "08":
         return await dryRun(url.searchParams, options);
+      case "09":
+        return await trendWatcher(url.searchParams, options);
       case "11":
         return await gatekeeper(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08 or 11.");
+        return usage("Unknown task. Use ?task=05, 08, 09 or 11.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

@@ -1,0 +1,15 @@
+/* Task 09 workspace: the trend watcher. The run panel, form and proof are shared by the agent pages
+   (agent.css); this adds the observations, newest first: a row each (block and time, the value, its
+   change), the ones the trend was judged on marked, the ones before the last action dimmed. */
+@layer task {
+  .observations { border-top: 1px solid var(--line); }
+  .obs { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--space-3); align-items: baseline; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+  .obs[data-window="true"] { border-left-color: var(--accent); }
+  .obs-when { min-width: 0; color: var(--text-2); font-size: var(--fs-small); }
+  .obs-value { font-family: var(--mono); font-size: var(--fs-small); font-weight: 600; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+  .obs-change { grid-column: 2; font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+  .obs[data-counted="false"] :is(.obs-when, .obs-value) { color: var(--text-3); font-weight: 400; }
+  .obs-tag { margin-left: var(--space-2); padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 99px; font-size: var(--fs-label); color: var(--text-2); }
+  .obs-key { color: var(--text-3); font-size: var(--fs-meta); }
+  #main .obs-change, #main .obs-value { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+}
