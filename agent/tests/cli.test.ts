@@ -379,3 +379,54 @@ describe("pharos-agent alert", () => {
     assert.match(hookless.stderr, /--webhook must be an http\(s\) URL/);
   });
 });
+
+describe("pharos-agent whales", () => {
+  // Its own chain: the four sample addresses with holdings, one USDC transfer of theirs in the lookback.
+  const [BUSIEST, SENDER, TRADER, LARGEST] = ["0x912c9ade24d44d8922f0866d8dcb079f1363f647", "0x936564245b69f5a293b42cbd752e0ee3bb68b470", "0x1f3546a29eec2102c8d52e21a45114124014c85c", "0x0018b46177c611fc1efbca63c845c2a69045e28d"];
+  const OTHER = "0x1111111111111111111111111111111111111111";
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(defaultState({ native: { [BUSIEST]: 500n * 10n ** 18n }, nonces: { [BUSIEST]: 7n }, code: { [TRADER]: "0x6080604052" }, tokens: { [USDC]: { decimals: 6, balances: { [BUSIEST]: 1_000_000_000n, [SENDER]: 50_000_000n, [LARGEST]: 1n } } }, transfers: [{ token: USDC, from: SENDER, to: OTHER, amount: 698_770_000n, block: 4_999_950n }, { token: USDC, from: OTHER, to: BUSIEST, amount: 20_000_000n, block: 4_999_960n }] }));
+  });
+  after(() => chain.close());
+
+  test("two runs, one store: each address with its holdings, the significant moves, what changed; the proofs verify as one history", async () => {
+    const store = join(dir, "whale-store.json");
+    const proofs = [1, 2].map((n) => join(dir, `whales-${n}.json`));
+    const first = await cli(["whales", "--store", store, "--rpc", chain.url, "--proof", proofs[0]!]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.match(first.stdout, /\n {2}Scanned {5}blocks 4,999,001–5,000,000 \(2 get_logs calls\): 2 transfers by tracked addresses\n/);
+    assert.match(first.stdout, /\n {2}Busiest in the sample \(0x912c9aDe24D44d8922f0866D8Dcb079f1363f647, no code\)\n {4}USDC {3}1,000 USDC, first seen · this run: 1 in \(20 USDC\), 0 out \(0 USDC\)\n {4}PROS {3}500 PROS, first seen\n {4}Nonce {2}7\n/);
+    assert.match(first.stdout, /\n {2}Trades with the busiest \(0x1F3546a29EeC2102c8d52E21a45114124014c85C, has code\)\n/);
+    assert.match(first.stdout, /\n {2}Significant Sent the most sent 698\.77 USDC to 0x1111…1111 at block 4,999,950\n/);
+    // Ten blocks on: the busiest sent two transactions and 120 PROS left it.
+    chain.state.head += 10n;
+    chain.state.headTime += 10n;
+    chain.state.native[BUSIEST] = 380n * 10n ** 18n;
+    chain.state.nonces[BUSIEST] = 9n;
+    const second = await cli(["whales", "--store", store, "--rpc", chain.url, "--proof", proofs[1]!]);
+    assert.equal(second.code, 0, second.stderr);
+    assert.match(second.stdout, /\n {4}USDC {3}1,000 USDC ±0 USDC since block 5,000,000\n {4}PROS {3}380 PROS −120 PROS since block 5,000,000\n {4}Nonce {2}9 · 2 transactions sent since block 5,000,000\n/);
+    assert.match(second.stdout, /\n {2}Significant Busiest in the sample's PROS balance fell by 120 PROS since block 5,000,000, to 380 PROS\n/);
+    const saved = JSON.parse(await readFile(store, "utf8"));
+    assert.deepEqual([saved.cursor, saved.snapshots[BUSIEST].nonce], ["5000010", "9"]);
+    const verified = await cli(["verify", ...proofs]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint", "  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}scanned blocks: 2 get_logs calls within blocks 4,999,001–5,000,000\n/);
+    assert.match(verified.stdout, /\n {2}PASS {2}one history: 2 runs, each from the store the last one left; 2 significant moves in all\n/);
+  });
+
+  test("refusals before anything runs: another watchlist's store, a token that is not official", async () => {
+    const store = join(dir, "other-whale-store.json");
+    await writeFile(store, JSON.stringify({ schema: "pharos-agent/whale-store/1", watchlist: "pharos-mainnet:Someone else", cursor: null, snapshots: {} }));
+    const other = await cli(["whales", "--store", store, "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(other.code, 2);
+    assert.match(other.stderr, /The store belongs to another watchlist \("pharos-mainnet:Someone else"\)/);
+    const listFile = join(dir, "whales-unofficial.json");
+    await writeFile(listFile, JSON.stringify({ name: "Mine", addresses: [BUSIEST], tokens: [{ token: OTHER, min: "1" }] }));
+    const unofficial = await cli(["whales", listFile, "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(unofficial.code, 2);
+    assert.match(unofficial.stderr, /is not on Pharos Mainnet's official token list/);
+  });
+});
+

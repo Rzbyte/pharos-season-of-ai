@@ -5,7 +5,7 @@
 // the last one left, minus the alerts it delivered.
 import { Chain } from "../core/chain.js";
 import { network } from "../core/networks.js";
-import { commonChecks, firstDifference, pinnedCheck, recordedCalls, ReplayMcp, ReplayMismatch, type Check, type ProofFile, type RecordedCall } from "../core/proof.js";
+import { commonChecks, firstDifference, pinnedCheck, recordedCalls, ReplayMcp, ReplayMismatch, scanCheck, type Check, type ProofFile } from "../core/proof.js";
 import { parseAlertBot, type AlertBot } from "./config.js";
 import type { Delivery } from "./deliver.js";
 import { runAlerts, type AlertRun } from "./run.js";
@@ -17,15 +17,6 @@ export type RecordedAlertRun = AlertRun & { delivery?: Delivery };
 interface AlertInput {
   bot?: unknown;
   store?: unknown;
-}
-
-/** Every get_logs page within the blocks the run says it scanned, none past the pinned block, none over 1,000 blocks. */
-function scanCheck(calls: readonly RecordedCall[], result: AlertRun): Check {
-  const pages = calls.filter((c) => c.name === "get_logs").map((c) => ({ from: BigInt(String(c.args.fromBlock)), to: BigInt(String(c.args.toBlock)) }));
-  if (!result.scanned) return { name: "scanned blocks", ok: pages.length === 0, detail: pages.length ? `${pages.length} get_logs calls, but the run says it scanned nothing` : "no new blocks to scan" };
-  const [from, to] = [BigInt(result.scanned.from), BigInt(result.scanned.to)];
-  const outside = pages.filter((p) => p.from < from || p.to > to || p.to < p.from || p.to - p.from + 1n > 1000n);
-  return { name: "scanned blocks", ok: outside.length === 0 && pages.length === result.scanned.pages, detail: outside.length ? `${outside.length} get_logs pages outside blocks ${from}–${to}` : `${pages.length} get_logs ${pages.length === 1 ? "page" : "pages"} within blocks ${from.toLocaleString("en-US")}–${to.toLocaleString("en-US")}` };
 }
 
 export async function verifyAlertProof(proof: ProofFile): Promise<Check[]> {
@@ -51,7 +42,7 @@ export async function verifyAlertProof(proof: ProofFile): Promise<Check[]> {
     return checks; // already reported by "every request answered"
   }
   checks.push(pinnedCheck(calls, result.block.number));
-  checks.push(scanCheck(calls, result));
+  checks.push(scanCheck(calls, result.scanned));
   const replay = new ReplayMcp(calls, result.chainMcp.where, proof.chainMcp.server ?? undefined);
   try {
     const block = result.block.source === "requested" ? BigInt(result.block.number) : undefined;

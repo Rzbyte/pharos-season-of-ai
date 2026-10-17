@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11 or 22\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22 or 23\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -187,6 +187,61 @@ describe("GET /api/agent?task=22", () => {
       ["task=22&cursor=x", /cursor must be a block number/],
       ["task=22&states=holder-low", /states lists rule:1 or rule:0/],
       ["task=22&states=holder-low:2", /states lists rule:1 or rule:0/],
+    ];
+    for (const [query, error] of cases) {
+      const response = await get(query);
+      assert.equal(response.status, 400, query);
+      assert.match(message(response), error, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=23", () => {
+  type Body = { result: { schema: string; scanned: { from: string; to: string; pages: number } | null; transfers: number; events: { kind: string; message: string }[]; addresses: { label: string; native: { changeShown: string | null }; tokens: { shown: string }[]; sent: number | null }[]; store: { cursor: string; snapshots: Record<string, unknown> } }; inputs: Record<string, string> };
+  const BUSIEST = "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647";
+
+  test("the sample addresses: each read at the newest block, the last 1,000 blocks scanned, the store to keep; never cached", async () => {
+    const response = await get("task=23");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 0, "each answer depends on the store sent");
+    const body = response.body as Body;
+    assert.equal(body.result.schema, "pharos-agent/whale-run/1");
+    assert.deepEqual(body.result.scanned, { from: "4999001", to: "5000000", pages: 2 });
+    assert.deepEqual(body.result.addresses.map((a) => [a.label, a.tokens[0]!.shown, a.native.changeShown, a.sent]), [
+      ["Busiest in the sample", "1,000 USDC", null, null],
+      ["Sent the most", "0 USDC", null, null],
+      ["Trades with the busiest", "0 USDC", null, null],
+      ["Sent the largest transfer", "0 USDC", null, null],
+    ]);
+    assert.equal(Object.keys(body.result.store.snapshots).length, 4);
+    assert.deepEqual(body.inputs, { addresses: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647,0x936564245B69f5a293b42cbd752E0eE3bb68b470,0x1F3546a29EeC2102c8d52E21a45114124014c85C,0x0018b46177c611fc1EfBca63c845c2a69045E28D", min: "250", native: "100" });
+  });
+
+  test("the page's store: only newer blocks scanned, and a balance change since the last run surfaced", async () => {
+    const first = (await get(`task=23&addresses=${BUSIEST}`)).body as Body;
+    const kept = { cursor: first.result.store.cursor, snapshots: first.result.store.snapshots };
+    const unchanged = (await get(`task=23&addresses=${BUSIEST}&store=${encodeURIComponent(JSON.stringify(kept))}`)).body as Body;
+    assert.deepEqual([unchanged.result.scanned, unchanged.result.events, unchanged.result.addresses[0]!.native.changeShown], [null, [], "±0 PROS"]);
+    const richer = structuredClone(kept) as { snapshots: Record<string, { native: string }> };
+    richer.snapshots[BUSIEST.toLowerCase()]!.native = (2n * 10n ** 20n).toString(); // it held 200 PROS; now 1
+    const fell = (await get(`task=23&addresses=${BUSIEST}&store=${encodeURIComponent(JSON.stringify(richer))}`)).body as Body;
+    assert.deepEqual(fell.result.events.map((e) => [e.kind, e.message]), [["native", "Busiest in the sample's PROS balance fell by 199 PROS since block 5,000,000, to 1 PROS"]]);
+  });
+
+  test("bad settings or a bad store are a 400, before any Chain MCP call", async () => {
+    const before = fake.requests.length;
+    const six = Array.from({ length: 6 }, (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`).join(",");
+    const cases: [string, RegExp][] = [
+      ["task=23&addresses=", /Track 1 to 5 addresses, separated by commas/],
+      [`task=23&addresses=${six}`, /Track 1 to 5 addresses, separated by commas/],
+      ["task=23&addresses=0x12", /0x12 is not a 0x address/],
+      [`task=23&addresses=${BUSIEST},${BUSIEST.toLowerCase()}`, /is listed twice/],
+      ["task=23&min=lots", /The smallest significant transfer must be an amount, up to 6 decimals/],
+      ["task=23&native=-1", /The smallest significant balance change must be an amount, up to 6 decimals/],
+      ["task=23&store=nope", /store must be JSON: \{ cursor, snapshots \}/],
+      [`task=23&store=${encodeURIComponent(JSON.stringify({ cursor: "x" }))}`, /cursor must be a block number or null/],
+      [`task=23&store=${encodeURIComponent(JSON.stringify({ cursor: null, snapshots: { [BUSIEST.toLowerCase()]: { block: "1", native: "x", nonce: "1", contract: false, tokens: {} } } }))}`, /needs a native balance and a nonce/],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);

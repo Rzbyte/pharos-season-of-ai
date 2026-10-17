@@ -6,6 +6,7 @@
 //   pharos-agent gate [policy] [kind] [--token --from --to --amount ...] [--execute]
 //   pharos-agent watch [preset | watcher.json] [--store FILE] [--execute]
 //   pharos-agent alert [preset | bot.json] [--store FILE] [--webhook URL]
+//   pharos-agent whales [preset | watchlist.json] [--store FILE]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -39,6 +40,11 @@ import { ALERT_PRESETS } from "./alert/presets.js";
 import { MAX_ALERTS, runAlerts } from "./alert/run.js";
 import { afterDelivery, emptyAlertStore, parseAlertStore } from "./alert/store.js";
 import { alertHistoryCheck, verifyAlertProof, type RecordedAlertRun } from "./alert/verify.js";
+import { parseWatchlist } from "./whale/config.js";
+import { WHALE_PRESETS } from "./whale/presets.js";
+import { MAX_MOVES, runWhales, type WhaleRun } from "./whale/run.js";
+import { emptyWhaleStore, parseWhaleStore } from "./whale/store.js";
+import { verifyWhaleProof, whaleHistoryCheck } from "./whale/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -96,9 +102,18 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --webhook URL        POST each alert as JSON; its line is in "text" and "content"
       --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent whales [preset | watchlist.json] [options]  Task 23, Whale-Watching Agent
+      One run: each tracked address read at the newest block (holdings, nonce), and the blocks since
+      the last run scanned for its token transfers. Surfaces the significant moves (a transfer of at
+      least the token's minimum, a native balance change of at least the native minimum since the last
+      run) and sums up the rest per address. Preset: usdc (Pharos Mainnet). A watchlist is JSON
+      (agent/src/whale/config.ts).
+      --store FILE         what the watcher saw last run (default: whale-store.json)
+      --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
-                              proofs of one watcher or alert bot, in run order, are also checked as
-                              one history
+                              proofs of one watcher, alert bot or watchlist, in run order, are also
+                              checked as one history
 
 Mainnet runs use the hosted Chain MCP (https://mcp.pharos.xyz/mcp, read-only). Atlantic runs start
 the official Pharos Chain MCP server (vendored, unmodified) locally over stdio.`;
@@ -604,10 +619,93 @@ async function alert(flags: Flags): Promise<number> {
   }
 }
 
+function printWhales(run: WhaleRun, storePath: string): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  out(`Pharos Whale Watcher · ${run.watchlist}`);
+  out();
+  out(`  Network     ${run.network.name} (chain ${run.network.chainId})`);
+  out(`  Chain MCP   ${run.chainMcp.where}${run.chainMcp.server ? ` (${run.chainMcp.server})` : ""}`);
+  out(`  Block       ${n(run.block.number)} · ${run.block.timestamp}`);
+  out(`  Scanned     ${run.scanned ? `blocks ${n(run.scanned.from)}–${n(run.scanned.to)} (${run.scanned.pages} get_logs ${run.scanned.pages === 1 ? "call" : "calls"}): ${run.transfers} ${run.transfers === 1 ? "transfer" : "transfers"} by tracked addresses` : "no new blocks"}${run.skipped ? `; skipped ${n(run.skipped.from)}–${n(run.skipped.to)}, too far behind` : ""}`);
+  out(`  Store       ${storePath}`);
+  for (const a of run.addresses) {
+    const since = a.since === null ? "first seen" : `since block ${n(a.since)}`;
+    out();
+    out(`  ${a.label} (${a.address}, ${a.contract ? "has code" : "no code"})`);
+    for (const t of a.tokens) {
+      const moved = t.in.count || t.out.count ? ` · this run: ${t.in.count} in (${t.in.shown}), ${t.out.count} out (${t.out.shown})` : "";
+      out(`    ${t.symbol.padEnd(6)} ${t.shown}${t.changeShown === null ? `, ${since}` : ` ${t.changeShown} ${since}`}${moved}`);
+    }
+    out(`    ${network(run.network.id).nativeSymbol.padEnd(6)} ${a.native.shown}${a.native.changeShown === null ? `, ${since}` : ` ${a.native.changeShown} ${since}`}`);
+    out(`    Nonce  ${n(a.nonce)}${a.sent === null ? "" : ` · ${a.sent} ${a.sent === 1 ? "transaction" : "transactions"} sent ${since}`}`);
+  }
+  out();
+  if (!run.events.length) out("  Significant none this run");
+  for (const [index, e] of run.events.entries()) out(`  ${index === 0 ? "Significant" : "           "} ${e.message}`);
+  if (run.truncated) out(`              and ${run.truncated} more significant transfers, beyond the ${MAX_MOVES} one run reports`);
+  out();
+  out(`  ${run.toolCalls} Chain MCP calls. Nothing was signed or sent.`);
+}
+
+async function whales(flags: Flags): Promise<number> {
+  const name = flags.positional[1] ?? "usdc";
+  const preset = WHALE_PRESETS[name];
+  let text: string;
+  if (preset) text = JSON.stringify(preset());
+  else {
+    try {
+      text = await readFile(name, "utf8");
+    } catch {
+      throw new AgentError("usage", `No watchlist preset or file "${name}".`, "Preset: usdc (mainnet). Or pass a path to a watchlist JSON file.");
+    }
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new AgentError("usage", `${name} is not valid JSON: ${errorMessage(error)}`);
+  }
+  const list = parseWatchlist(json);
+  const net = network(list.network);
+  const storePath = flags.store ?? "whale-store.json";
+  let saved: string | null = null;
+  try {
+    saved = await readFile(storePath, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw new AgentError("usage", `The store ${storePath} cannot be read: ${errorMessage(error)}`);
+  }
+  let stored: unknown = null;
+  if (saved !== null) {
+    try {
+      stored = JSON.parse(saved);
+    } catch (error) {
+      throw new AgentError("usage", `The store ${storePath} is not valid JSON: ${errorMessage(error)}`);
+    }
+  }
+  const store = stored === null ? emptyWhaleStore(list) : parseWhaleStore(stored, list);
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 120 });
+  try {
+    const run = await runWhales(list, store, { chain: new Chain(mcp, net), block: flags.block });
+    await writeFile(`${storePath}.tmp`, `${JSON.stringify(run.store, null, 2)}\n`);
+    await rename(`${storePath}.tmp`, storePath);
+    if (flags.proof) {
+      const proof = proofFile({ task: "23", capability: "whale-watcher", about: "One Whale-Watching Agent run: the watchlist and the store it started from (input), the run with its significant moves, each address's report and the store it left (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>, or several in run order.", mcp, network: net, startedAt: started, input: { watchlist: json, store }, result: run });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(run, null, 2));
+    else printWhales(run, storePath);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -623,7 +721,7 @@ async function verify(flags: Flags): Promise<number> {
     proofs.push(proof);
   }
   // Several runs of one watcher or bot, in order: one history, each run from the store the last one left.
-  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck };
+  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck, "whale-watcher": whaleHistoryCheck };
   const historyOf = histories[proofs[0]?.capability ?? ""];
   if (proofs.length > 1 && historyOf && proofs.every((p) => p.capability === proofs[0]!.capability)) {
     const history = historyOf(proofs);
@@ -647,6 +745,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "gate") return gate(flags);
   if (command === "watch") return watch(flags);
   if (command === "alert") return alert(flags);
+  if (command === "whales") return whales(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

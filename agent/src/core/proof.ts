@@ -157,6 +157,18 @@ export function commonChecks(proof: ProofFile, expected: { task: string; capabil
 /** Tools whose reads name a block, so a pinned run must pass its block to every one of them. */
 export const PINNABLE = new Set(["eth_call", "get_balance", "get_code", "get_transaction_count", "get_storage_at"]);
 
+/**
+ * Every get_logs call inside the blocks the run says it scanned (`scanned.pages` of them), none over
+ * 1,000 blocks; none at all when it says it scanned nothing.
+ */
+export function scanCheck(calls: readonly RecordedCall[], scanned: { from: string; to: string; pages: number } | null): Check {
+  const pages = calls.filter((c) => c.name === "get_logs").map((c) => ({ from: BigInt(String(c.args.fromBlock)), to: BigInt(String(c.args.toBlock)) }));
+  if (!scanned) return { name: "scanned blocks", ok: pages.length === 0, detail: pages.length ? `${pages.length} get_logs calls, but the run says it scanned nothing` : "no new blocks to scan" };
+  const [from, to] = [BigInt(scanned.from), BigInt(scanned.to)];
+  const outside = pages.filter((p) => p.from < from || p.to > to || p.to < p.from || p.to - p.from + 1n > 1000n);
+  return { name: "scanned blocks", ok: outside.length === 0 && pages.length === scanned.pages, detail: outside.length ? `${outside.length} get_logs pages outside blocks ${from}–${to}` : `${pages.length} get_logs ${pages.length === 1 ? "call" : "calls"} within blocks ${from.toLocaleString("en-US")}–${to.toLocaleString("en-US")}` };
+}
+
 /** The first path where two results differ, with both values, for a failed replay. */
 export function firstDifference(a: unknown, b: unknown, path = "result"): string {
   if (JSON.stringify(a) === JSON.stringify(b)) return "";

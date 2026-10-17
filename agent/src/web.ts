@@ -24,6 +24,10 @@ import { parseAlertBot } from "./alert/config.js";
 import { USDC_ALERT_DEFAULTS, usdcAlerts } from "./alert/presets.js";
 import { runAlerts } from "./alert/run.js";
 import { botKey, parseAlertStore } from "./alert/store.js";
+import { parseWatchlist } from "./whale/config.js";
+import { SAMPLE_ADDRESSES, USDC_WHALE_DEFAULTS, usdcWhales } from "./whale/presets.js";
+import { runWhales } from "./whale/run.js";
+import { parseWhaleStore, watchlistKey } from "./whale/store.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -239,6 +243,49 @@ async function alertBot(params: URLSearchParams, options: WebOptions): Promise<W
   }
 }
 
+/** The most addresses the page tracks in one run (the CLI takes up to 10). */
+export const WEB_ADDRESSES = 5;
+
+async function whaleWatcher(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const get = (key: string, fallback: string) => (params.get(key) ?? fallback).trim();
+  const inputs = { addresses: get("addresses", USDC_WHALE_DEFAULTS.addresses.map((a) => a.address).join(",")), min: get("min", USDC_WHALE_DEFAULTS.min), native: get("native", USDC_WHALE_DEFAULTS.native) };
+  const listed = inputs.addresses.split(",").map((a) => a.trim()).filter(Boolean);
+  if (listed.length === 0 || listed.length > WEB_ADDRESSES) return usage(`Track 1 to ${WEB_ADDRESSES} addresses, separated by commas.`);
+  for (const address of listed) if (!isAddress(address, { strict: false })) return usage(`${address.slice(0, 50)} is not a 0x address (40 hex characters).`);
+  for (const [key, what] of [["min", "The smallest significant transfer"], ["native", "The smallest significant balance change"]] as const) {
+    if (!/^\d{1,12}(\.\d{1,6})?$/.test(inputs[key])) return usage(`${what} must be an amount, up to 6 decimals.`);
+  }
+  const named = new Map(SAMPLE_ADDRESSES.map((a) => [a.address.toLowerCase(), a.label]));
+  let list;
+  try {
+    list = parseWatchlist(usdcWhales({ addresses: listed.map((address) => ({ address, label: named.get(address.toLowerCase()) ?? `${address.slice(0, 6)}…${address.slice(-4)}` })), min: inputs.min, native: inputs.native }));
+  } catch (error) {
+    return usage(errorMessage(error));
+  }
+  // The page's memory: the last block scanned and each address as it was, as JSON.
+  const sent = get("store", "");
+  let memory: { cursor?: unknown; snapshots?: unknown } = {};
+  if (sent) {
+    if (sent.length > 6000) return usage("store is too long.");
+    try {
+      memory = JSON.parse(sent);
+    } catch {
+      return usage("store must be JSON: { cursor, snapshots }.");
+    }
+    if (!memory || typeof memory !== "object" || Array.isArray(memory) || Object.keys(memory).some((key) => !["cursor", "snapshots"].includes(key))) return usage("store must be JSON: { cursor, snapshots }.");
+  }
+  const store = parseWhaleStore({ schema: "pharos-agent/whale-store/1", watchlist: watchlistKey(list), cursor: memory.cursor ?? null, snapshots: memory.snapshots ?? {} }, list);
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runWhales(list, store, { chain: new Chain(mcp, net), now: options.now });
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -252,8 +299,10 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await gatekeeper(url.searchParams, options);
       case "22":
         return await alertBot(url.searchParams, options);
+      case "23":
+        return await whaleWatcher(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11 or 22.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22 or 23.");
     }
   } catch (error) {
     if (error instanceof AgentError) {
