@@ -542,3 +542,44 @@ describe("pharos-agent risk", () => {
   });
 });
 
+
+describe("pharos-agent audit", () => {
+  // Its own chain: in the last hour the example address received 500 USDC from a trader and sent 200 back.
+  const TRADER = "0x1f3546a29eec2102c8d52e21a45114124014c85c";
+  const world = (native: bigint, nonce: bigint, usdc: bigint) => ({ native: { [PAYER]: native }, nonces: { [PAYER]: nonce }, tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: usdc } } } });
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(
+      defaultState({
+        ...world(10n ** 18n, 12n, 1_300_000_000n),
+        transfers: [{ token: USDC, from: TRADER, to: PAYER, amount: 500_000_000n, block: 4_998_000n }, { token: USDC, from: PAYER, to: TRADER, amount: 200_000_000n, block: 4_999_000n }],
+        past: { "4996400": world(11n * 10n ** 17n, 10n, 1_000_000_000n) },
+      }),
+    );
+  });
+  after(() => chain.close());
+
+  test("the last hour, in sentences and a timeline; the proof verifies", async () => {
+    const proof = join(dir, "audit.json");
+    const run = await cli(["audit", "--rpc", chain.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Address {7}0x912c9aDe24D44d8922f0866D8Dcb079f1363f647 \(a wallet\)\n {2}Period {8}in the last hour: blocks 4,996,401–5,000,000, 2026-09-21T13:13:21\.000Z to 2026-09-21T14:13:20\.000Z\n/);
+    assert.match(run.stdout, /\n {2}It sent 2 transactions \(its nonce went from 10 to 12\)\.\n {2}It received 500 USDC in 1 transfer from 0x1F35…c85C and sent 200 USDC in 1 transfer to 0x1F35…c85C\.\n/);
+    assert.match(run.stdout, /\n {2}Its USDC went from 1,000 to 1,300, all of it in the logs above\.\n/);
+    assert.match(run.stdout, /\n {7}4,999,000 {2}~13:56:40 {2}Sent 200 USDC to 0x1F35…c85C {2}0x[0-9a-f]{64}\n/);
+    assert.match(run.stdout, /\n {2}\d+ Chain MCP calls, 8 of them get_logs\. Nothing was signed or sent\.\n/);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}pinned blocks: every state read is at block 5000000 or 4996400\n/);
+    assert.match(verified.stdout, /\n {2}PASS {2}scanned blocks: 8 get_logs calls within blocks 4,996,401–5,000,000\n/);
+  });
+
+  test("an address, and one period, checked before anything runs", async () => {
+    const bad = await cli(["audit", "0x12", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /The address must be a 0x address of 40 hex characters/);
+    const both = await cli(["audit", "--hours", "2", "--since", "2026-10-17T09:00Z", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(both.code, 2);
+    assert.match(both.stderr, /Give the period one way/);
+  });
+});

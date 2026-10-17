@@ -17,6 +17,17 @@ export interface FakeToken {
   allowances?: Record<string, Record<string, bigint>>;
 }
 
+/** Any other log already on the chain (an Approval, a Deposit…), at `block`: eth_getLogs answers it as is. */
+export interface FakeLog {
+  address: string;
+  topics: Hex[];
+  data: Hex;
+  block: bigint;
+}
+
+/** Balances and nonces as they were at a block. */
+export type FakeWorld = Pick<FakeChainState, "native" | "nonces" | "tokens">;
+
 /** A token transfer already on the chain, at `block`: eth_getLogs answers it as a Transfer log. */
 export interface FakeTransfer {
   token: string;
@@ -46,6 +57,12 @@ export interface FakeChainState {
   failures: Record<string, { code: number; message: string }>;
   /** Contracts (lowercase address) every call to which reverts with this revert data. */
   reverts?: Record<string, Hex>;
+  /** Logs other than the transfers'. */
+  logs?: FakeLog[];
+  /** The world as it was at earlier blocks (by block number): a read at block n sees the first one at or after n, else today's. */
+  past?: Record<string, FakeWorld>;
+  /** A block's timestamp, where blocks are not one second apart. */
+  timeOf?: (block: bigint) => bigint;
 }
 
 export interface FakeReceipt {
@@ -123,17 +140,19 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     if (tag === "earliest") return 0n;
     return BigInt(tag as string);
   };
-  // State as it was while each earlier block was the head, kept before every applied transaction, so a
-  // read at an older block sees that block's state (as an archive node would).
-  type World = Pick<FakeChainState, "native" | "nonces" | "tokens">;
+  // State as it was while each earlier block was the head, kept before every applied transaction (and
+  // any a test sets in `past`), so a read at an older block sees that block's state (as an archive node
+  // would): the first snapshot at or after it, since nothing changed in between, else today's.
+  type World = FakeWorld;
   const history = new Map<bigint, World>();
   const worldAt = (tag: unknown): World => {
     const n = blockOf(tag);
-    if (n >= state.head || history.size === 0) return state;
-    const exact = history.get(n);
-    if (exact) return exact;
-    const first = [...history.keys()].reduce((a, b) => (b < a ? b : a));
-    return n < first ? history.get(first)! : state;
+    if (n >= state.head) return state;
+    let found: [bigint, World] | null = null;
+    for (const [block, world] of [...history.entries(), ...Object.entries(state.past ?? {}).map(([k, w]) => [BigInt(k), w] as [bigint, World])]) {
+      if (block >= n && (found === null || block < found[0])) found = [block, world];
+    }
+    return found ? found[1] : state;
   };
   const tokenCall = (world: World, to: string, data: Hex, from: string | undefined, apply: boolean): Hex => {
     const token = world.tokens[to]!;
@@ -205,7 +224,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     eth_getBlockByNumber: ([tag]) => {
       const n = blockOf(tag);
       if (n > state.head) return null;
-      return { number: hex(n), hash: keccak256(word("uint256", n)), timestamp: hex(state.headTime - (state.head - n)), ...(state.baseFee !== null ? { baseFeePerGas: hex(state.baseFees?.[n.toString()] ?? state.baseFee) } : {}), gasUsed: "0x5208", gasLimit: "0x1c9c380", transactions: [] };
+      return { number: hex(n), hash: keccak256(word("uint256", n)), timestamp: hex(state.timeOf ? state.timeOf(n) : state.headTime - (state.head - n)), ...(state.baseFee !== null ? { baseFeePerGas: hex(state.baseFees?.[n.toString()] ?? state.baseFee) } : {}), gasUsed: "0x5208", gasLimit: "0x1c9c380", transactions: [] };
     },
     eth_getCode: ([address]) => state.code[lower(address)] ?? (state.tokens[lower(address)] ? "0x6080604052" : "0x"),
     eth_getStorageAt: () => word("uint256", 0n),
@@ -221,8 +240,10 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       const addresses = f.address === undefined ? null : (Array.isArray(f.address) ? f.address : [f.address]).map(lower);
       // A topic position matches when it is null or absent, equal to the wanted topic, or one of a list.
       const matches = (topic: string | undefined, want: string | string[] | null | undefined) => want === null || want === undefined || (topic !== undefined && (Array.isArray(want) ? want : [want]).map(lower).includes(lower(topic)));
-      return state.transfers
-        .map((t, index) => ({ address: lower(t.token), topics: [TRANSFER_TOPIC, word("address", lower(t.from)), word("address", lower(t.to))], data: word("uint256", t.amount), blockNumber: hex(t.block), transactionHash: keccak256(word("uint256", BigInt(index + 1))), logIndex: "0x0", removed: false }))
+      return [
+        ...state.transfers.map((t, index) => ({ address: lower(t.token), topics: [TRANSFER_TOPIC, word("address", lower(t.from)), word("address", lower(t.to))], data: word("uint256", t.amount), blockNumber: hex(t.block), transactionHash: keccak256(word("uint256", BigInt(index + 1))), logIndex: "0x0", removed: false })),
+        ...(state.logs ?? []).map((l, index) => ({ address: lower(l.address), topics: l.topics.map(lower), data: l.data, blockNumber: hex(l.block), transactionHash: keccak256(word("uint256", BigInt(1_000_000 + index))), logIndex: "0x0", removed: false })),
+      ]
         .filter((log) => BigInt(log.blockNumber) >= from && BigInt(log.blockNumber) <= to && (addresses === null || addresses.includes(log.address)))
         .filter((log) => (f.topics ?? []).every((want, i) => matches(log.topics[i], want)));
     },

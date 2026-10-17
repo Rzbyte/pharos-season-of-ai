@@ -33,6 +33,9 @@ import { runGasPlan } from "./gas/run.js";
 import { parseGasStore, planKey } from "./gas/store.js";
 import { explain } from "./support/explain.js";
 import { checkRisk, DEFAULT_BLOCKS } from "./risk/check.js";
+import { parsePeriod } from "./audit/period.js";
+import { auditAddress, parseAuditAddress } from "./audit/report.js";
+import { EXAMPLE_PAYER } from "./guardian/presets.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -376,6 +379,36 @@ async function riskChecker(params: URLSearchParams, options: WebOptions): Promis
   }
 }
 
+/** The most blocks one page report reads: 40 get_logs calls, inside the hosted endpoint's 120 a minute. */
+export const WEB_AUDIT_BLOCKS = 20_000;
+
+/** Task 26: what an address did over a period (the last hour by default), in plain language. */
+async function auditLog(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  let address;
+  let period;
+  try {
+    address = parseAuditAddress(params.get("address") ?? EXAMPLE_PAYER);
+    const field = (name: string) => params.get(name) ?? undefined;
+    period = parsePeriod({ hours: field("hours"), since: field("since"), until: field("until"), fromBlock: field("fromBlock"), toBlock: field("toBlock") });
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const inputs: Record<string, string> = { address, ...(period.kind === "hours" ? { hours: String(period.hours) } : period.kind === "time" ? { since: period.since, ...(period.until ? { until: period.until } : {}) } : { fromBlock: period.from, toBlock: period.to }) };
+  const recorder = new Recorder();
+  // 40 get_logs at most, a search that rarely needs more than 6 block reads (48 at worst), 18 other reads.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 110, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await auditAddress(address, period, { chain: new Chain(mcp, net), maxBlocks: WEB_AUDIT_BLOCKS, now: options.now });
+    // A period that ended before the newest block does not change; the last N hours do.
+    const settled = result.period.to.number !== result.head.number;
+    return { status: 200, body: { result, inputs, calls: callLines(recorder.messages) }, maxAge: settled ? 300 : 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -395,10 +428,12 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await gasOptimizer(url.searchParams, options);
       case "25":
         return await riskChecker(url.searchParams, options);
+      case "26":
+        return await auditLog(url.searchParams, options);
       case "27":
         return await supportAgent(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22, 23, 24, 25 or 27.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22 to 27.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

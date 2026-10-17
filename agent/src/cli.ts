@@ -10,6 +10,7 @@
 //   pharos-agent gas [preset | plan.json] [--store FILE] [--execute]
 //   pharos-agent explain (0xHASH | [kind] --from --to --amount ...)
 //   pharos-agent risk [kind] --from --to --amount ... [--blocks N]
+//   pharos-agent audit [address] [--hours N | --since TIME [--until TIME] | --from-block N --to-block N]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -57,6 +58,9 @@ import { explain as explainTx, type Explanation } from "./support/explain.js";
 import { parseExplainRequest, verifyExplanationProof } from "./support/verify.js";
 import { checkRisk, DEFAULT_BLOCKS, MAX_BLOCKS, type RiskReport } from "./risk/check.js";
 import { verifyRiskProof } from "./risk/verify.js";
+import { parsePeriod } from "./audit/period.js";
+import { auditAddress, MAX_BLOCKS as MAX_AUDIT_BLOCKS, parseAuditAddress, type AuditReport } from "./audit/report.js";
+import { verifyAuditProof } from "./audit/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -151,6 +155,18 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --blocks N           blocks of history to read (default 2,000, at most 10,000)
       --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent audit [address] [options]                   Task 26, Audit-Log Agent
+      What an address did over a period, in plain language: the transactions it sent (its nonce's
+      change), its PROS before and after, each official token's transfers in and out with the main
+      counterparties, its balance reconciled with them, the approvals it gave, transfers of nothing, and
+      a timeline. The last hour by default; the example address on Pharos Mainnet when none is given.
+      --hours N            the last N hours (1 to 168), ending at the newest block
+      --since TIME         from this time (ISO 8601; UTC when no zone is given) to --until TIME, or to now
+      --from-block N --to-block N   a block range instead
+      Up to 100,000 blocks a report, two get_logs calls per 1,000; calls are paced under the hosted
+      endpoint's 120 a minute, so a long period takes minutes.
+      --network ID, --block (as the newest), --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist or gas plan, in run order,
                               are also checked as one history
@@ -181,7 +197,7 @@ function parseFlags(argv: string[]): Flags {
     if (arg === "--help" || arg === "-h") flags.help = true;
     else if (arg === "--json") flags.json = true;
     else if (arg === "--submit") flags.submit = true;
-    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks"].includes(arg)) {
+    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block"].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new AgentError("usage", `${arg} needs a value.`);
       flags.values[arg.slice(2)] = value;
@@ -959,10 +975,57 @@ async function riskCommand(flags: Flags): Promise<number> {
   }
 }
 
+function printAudit(r: AuditReport): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  out("Pharos Audit-Log Agent");
+  out();
+  out(`  Network       ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP     ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Address       ${r.address} (${r.account.code === "none" ? "a wallet" : r.account.code === "delegated" ? `a wallet delegated to ${r.account.delegate}` : "a contract"})`);
+  out(`  Period        ${r.period.description}: blocks ${n(r.period.from.number)}–${n(r.period.to.number)}, ${r.period.from.timestamp} to ${r.period.to.timestamp}`);
+  out();
+  for (const line of r.summary) out(`  ${line}`);
+  if (r.events.length) {
+    const total = r.events.length + r.truncated;
+    out();
+    out(`  Timeline, newest first${total > 10 ? ` (10 of ${total.toLocaleString("en-US")})` : ""}; times estimated from the block number:`);
+    for (const e of r.events.slice(0, 10)) out(`    ${n(e.block).padStart(12)}  ~${e.approxTime.slice(11, 19)}  ${e.text}  ${e.tx}`);
+  }
+  out();
+  out(`  ${r.toolCalls} Chain MCP calls, ${r.scanned.pages} of them get_logs. Nothing was signed or sent.`);
+}
+
+async function auditCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  const target = flags.positional[1] ?? (net.id === "pharos-mainnet" ? EXAMPLE_PAYER : undefined);
+  if (!target) throw new AgentError("usage", "audit needs an address on this network.");
+  const address = parseAuditAddress(target);
+  const period = parsePeriod({ hours: v.hours, since: v.since, until: v.until, fromBlock: v["from-block"], toBlock: v["to-block"] });
+  const endpoint = endpointFor(net, flags);
+  const started = new Date();
+  // Pacing waits are said even without --verbose: a long period takes minutes at the hosted endpoint's rate.
+  const trace = (line: string) => (flags.verbose || line.startsWith("pacing:")) && process.stderr.write(`  ${line}\n`);
+  const mcp = await ChainMcp.connect(endpoint, { trace, budget: (MAX_AUDIT_BLOCKS / 1000) * 2 + 80, pace: endpoint.kind === "hosted" ? { calls: 100 } : undefined });
+  try {
+    const report = await auditAddress(address, period, { chain: new Chain(mcp, net), maxBlocks: MAX_AUDIT_BLOCKS, block: flags.block });
+    if (flags.proof) {
+      const proof = proofFile({ task: "26", capability: "audit-log", about: "One Audit-Log Agent report: the address and the period asked (input), the report with its figures and sentences (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { address, period, maxBlocks: MAX_AUDIT_BLOCKS }, result: report });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(report, null, 2));
+    else printAudit(report);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1006,6 +1069,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "gas") return gasPlan(flags);
   if (command === "explain") return explainCommand(flags);
   if (command === "risk") return riskCommand(flags);
+  if (command === "audit") return auditCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

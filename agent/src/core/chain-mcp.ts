@@ -99,6 +99,11 @@ export interface ChainMcpOptions {
   timeoutMs?: number;
   /** At most this many tool calls in one run (the hosted endpoint allows 120 requests a minute per IP). */
   budget?: number;
+  /**
+   * Waits, rather than fails, to start at most `calls` tool calls in any `windowMs` (default a minute):
+   * for runs longer than the hosted endpoint's 120 requests a minute.
+   */
+  pace?: { calls: number; windowMs?: number };
   recorder?: Recorder;
   trace?: (line: string) => void;
 }
@@ -123,6 +128,8 @@ export class ChainMcp {
   server?: { name: string; version: string };
   protocolVersion?: string;
   private calls = 0;
+  /** When each recent call started, for `pace`. */
+  private starts: number[] = [];
 
   private constructor(
     private readonly client: Client,
@@ -174,6 +181,7 @@ export class ChainMcp {
   /** Call one Chain MCP tool by name and return its JSON payload; a tool error throws ToolCallError. */
   async call<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
     if (this.calls >= this.options.budget) throw new AgentError("budget", `This run reached its limit of ${this.options.budget} Chain MCP calls.`);
+    if (this.options.pace) await this.paced(this.options.pace.calls, this.options.pace.windowMs ?? 60_000);
     this.calls += 1;
     const started = performance.now();
     this.options.trace?.(`-> ${name} ${JSON.stringify(args)}`);
@@ -196,6 +204,17 @@ export class ChainMcp {
       throw error;
     }
     return payload as T;
+  }
+
+  private async paced(calls: number, windowMs: number): Promise<void> {
+    this.starts = this.starts.filter((at) => performance.now() - at < windowMs);
+    if (this.starts.length >= calls) {
+      const wait = windowMs - (performance.now() - this.starts[0]!) + 20;
+      this.options.trace?.(`pacing: ${calls} calls in ${windowMs / 1000} s, waiting ${(wait / 1000).toFixed(1)} s`);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      this.starts.shift();
+    }
+    this.starts.push(performance.now());
   }
 
   /** Best effort: end the HTTP session (frees the server's slot), then close the transport. */

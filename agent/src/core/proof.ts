@@ -200,9 +200,11 @@ export async function signedTransactionCheck(calls: readonly RecordedCall[], cha
   return { name: "signed transaction", ok, detail: ok ? `chain ${tx.chainId}, signed by ${from}, exactly the prepared ${what}` : `the broadcast transaction is not the prepared ${what}` };
 }
 
-/** Every state read before the first send names the pinned block. */
-export function pinnedCheck(calls: readonly RecordedCall[], block: string, until: number = calls.length): Check {
-  const pinned = `0x${BigInt(block).toString(16)}`;
-  const unpinned = calls.slice(0, until).filter((call) => PINNABLE.has(call.name) && call.args.block !== pinned);
-  return { name: "one pinned block", ok: unpinned.length === 0, detail: unpinned.length ? `${unpinned.length} reads not at ${pinned}` : `every state read before execution is at block ${block}` };
+/** Every state read before the first send names the pinned block (or one of them, for a report read at two). */
+export function pinnedCheck(calls: readonly RecordedCall[], block: string | readonly string[], until: number = calls.length): Check {
+  const blocks = typeof block === "string" ? [block] : block;
+  const pinned = blocks.map((b) => `0x${BigInt(b).toString(16)}`);
+  const unpinned = calls.slice(0, until).filter((call) => PINNABLE.has(call.name) && !pinned.includes(String(call.args.block)));
+  if (blocks.length > 1) return { name: "pinned blocks", ok: unpinned.length === 0, detail: unpinned.length ? `${unpinned.length} reads not at ${pinned.join(" or ")}` : `every state read is at block ${blocks.join(" or ")}` };
+  return { name: "one pinned block", ok: unpinned.length === 0, detail: unpinned.length ? `${unpinned.length} reads not at ${pinned[0]}` : `every state read before execution is at block ${block}` };
 }

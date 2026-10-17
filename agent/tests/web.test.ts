@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22, 23, 24, 25 or 27\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22 to 27\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -357,3 +357,39 @@ describe("GET /api/agent?task=25", () => {
   });
 });
 
+
+describe("GET /api/agent?task=26", () => {
+  type Body = { result: { schema: string; headline: string; summary: string[]; period: { description: string; from: { number: string }; to: { number: string }; trimmed: unknown }; scanned: { pages: number } }; inputs: Record<string, string>; calls: { tool: string }[] };
+
+  test("the example address over the last hour by default, in sentences; never cached", async () => {
+    const response = await get("task=26");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 0);
+    const body = response.body as Body;
+    assert.equal(body.result.schema, "pharos-agent/audit-log/1");
+    assert.deepEqual([body.result.period.description, body.result.period.from.number, body.result.period.to.number, body.result.scanned.pages], ["in the last hour", "4996401", "5000000", 8]);
+    assert.equal(body.result.headline, "0x912c…f647 in the last hour: nothing happened.");
+    assert.deepEqual(body.inputs, { address: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", hours: "1" });
+    assert.deepEqual(body.calls.slice(0, 3).map((c) => c.tool), ["get_chain_info", "get_block_number", "get_block"]);
+  });
+
+  test("a block period that has ended is cached; the page reads at most 20,000 blocks; bad input is a 400 before any call", async () => {
+    const ended = await get("task=26&fromBlock=4990001&toBlock=4991000");
+    assert.equal(ended.maxAge, 300);
+    assert.deepEqual((ended.body as Body).inputs, { address: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", fromBlock: "4990001", toBlock: "4991000" });
+    const long = (await get("task=26&hours=24")).body as Body;
+    assert.deepEqual([long.result.period.from.number, long.result.period.trimmed, long.result.scanned.pages], ["4980001", { from: "4913601", blocks: "86400" }, 40]);
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      ["task=26&address=0x12", /The address must be a 0x address/],
+      ["task=26&hours=0", /hours must be a whole number from 1 to 168/],
+      ["task=26&hours=1&since=2026-10-17T09:00Z", /Give the period one way/],
+      ["task=26&since=2026-02-30", /since is not a real date and time/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
