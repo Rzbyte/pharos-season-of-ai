@@ -37,9 +37,9 @@ describe("helpers", () => {
     assert.equal(neighbours(TASKS, "99").index, -1);
   });
 
-  test("the manifest: 01 to 05, 08, 09, 11 and 22 built at /tasks/NN, legacy addresses only as fallbacks", () => {
+  test("the manifest: 01 to 05, 08, 09, 11, 22 and 23 built at /tasks/NN, legacy addresses only as fallbacks", () => {
     assert.equal(TASKS.length, LAB.total);
-    assert.equal(BUILT, 9);
+    assert.equal(BUILT, 10);
     assert.equal(LAB.home, "/");
     for (const task of TASKS) {
       assert.equal(task.href, task.status === "built" ? route(task.n) : null, task.n);
@@ -83,8 +83,9 @@ describe("the official task map", () => {
       ["09", "Trend Watcher", "/tasks/09", null],
       ["11", "Policy Gatekeeper", "/tasks/11", null],
       ["22", "On-Chain Alert Bot", "/tasks/22", null],
+      ["23", "Whale-Watching Agent", "/tasks/23", null],
     ]);
-    for (const task of TASKS.filter((entry) => !["01", "02", "03", "04", "05", "08", "09", "11", "22"].includes(entry.n))) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
+    for (const task of TASKS.filter((entry) => !["01", "02", "03", "04", "05", "08", "09", "11", "22", "23"].includes(entry.n))) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
   });
 
   test("moving through the map: 04 then 05, 19 then the x402 tasks then 22, and 30 is the last", () => {
@@ -138,7 +139,7 @@ describe("sync", () => {
   });
 
   test("the agent page layer goes to the agent pages (05 onward) only; the lab and Tasks 01 to 04 do without it", () => {
-    assert.deepEqual(AGENT_TARGETS, ["tasks/05-threshold-guardian/public", "tasks/08-dry-run-executor/public", "tasks/09-trend-watcher/public", "tasks/11-policy-gatekeeper/public", "tasks/22-on-chain-alert-bot/public"]);
+    assert.deepEqual(AGENT_TARGETS, ["tasks/05-threshold-guardian/public", "tasks/08-dry-run-executor/public", "tasks/09-trend-watcher/public", "tasks/11-policy-gatekeeper/public", "tasks/22-on-chain-alert-bot/public", "tasks/23-whale-watching-agent/public"]);
     for (const target of TARGETS) {
       const has = (name) => {
         try {
@@ -223,6 +224,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["09 Trend Watcher Track", "/tasks/09", null],
         ["11 Policy Gatekeeper Gate", "/tasks/11", null],
         ["22 On-Chain Alert Bot Alert", "/tasks/22", null],
+        ["23 Whale-Watching Agent Track", "/tasks/23", null],
         ["All 30 tasks", "/", null],
       ],
       footer: 0,
@@ -250,6 +252,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["09 Trend Watcher Track, not linked from here", null, null],
         ["11 Policy Gatekeeper Gate, not linked from here", null, null],
         ["22 On-Chain Alert Bot Alert, not linked from here", null, null],
+        ["23 Whale-Watching Agent Track, not linked from here", null, null],
       ],
       footer: 0,
     });
@@ -265,11 +268,13 @@ describe("task navigation in a browser", { skip }, () => {
     const gate = await render("/tasks/11", "11");
     assert.deepEqual([gate.previous, gate.next], [["A", "/tasks/09", "Previous task: 09 Trend Watcher"], ["A", "/tasks/22", null, 0]]);
     assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 22 On-Chain Alert Bot");
+    const alerts = await render("/tasks/22", "22");
+    assert.deepEqual([alerts.previous, alerts.next], [["A", "/tasks/11", "Previous task: 11 Policy Gatekeeper"], ["A", "/tasks/23", null, 0]]);
     // The last built task has no next arrow to follow; the switcher still ends with the lab and the total.
-    const last = await render("/tasks/22", "22");
+    const last = await render("/tasks/23", "23");
     assert.deepEqual([last.count[1], last.previous, last.next], [
-      "Task 22 / 30, switch task",
-      ["A", "/tasks/11", "Previous task: 11 Policy Gatekeeper"],
+      "Task 23 / 30, switch task",
+      ["A", "/tasks/22", "Previous task: 22 On-Chain Alert Bot"],
       ["SPAN", null, "true", -1],
     ]);
     assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "No next built task");

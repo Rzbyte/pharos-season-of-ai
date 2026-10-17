@@ -1,0 +1,34 @@
+/* Task 23 workspace: the whale watcher. The run panel, form and proof are shared by the agent pages
+   (agent.css); this adds the significant moves, newest first (who, what moved, the block; this run's
+   marked), and the tracked addresses with their holdings and what changed since the last check. */
+@layer task {
+  .run a.who { color: var(--text); font-weight: 600; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .run a.who:hover { text-decoration-color: var(--text-3); }
+  span.who { font-weight: 600; color: var(--text); }
+
+  .moves { border-top: 1px solid var(--line); }
+  .moves:empty { display: none; }
+  .move { display: grid; gap: 2px; min-width: 0; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+  .move[data-new="true"] { border-left-color: var(--warning); }
+  .move-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); min-width: 0; font-size: var(--fs-small); }
+  .move-kind { flex: none; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 99px; font-size: var(--fs-label); color: var(--text-2); }
+  .move-body { font-size: var(--fs-small); color: var(--text-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .move-meta { font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .move-meta a { color: var(--text-2); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .moves-empty { color: var(--text-3); font-size: var(--fs-meta); }
+
+  .whales { border-top: 1px solid var(--line); }
+  .whale { display: grid; gap: 2px; min-width: 0; padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+  .whale-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); min-width: 0; font-size: var(--fs-small); }
+  .whale-tag { padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 99px; font-size: var(--fs-label); color: var(--text-2); }
+  .whale-lines { display: grid; gap: 0; }
+  .whale-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 var(--space-3); font-family: var(--mono); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+  .whale-amount { color: var(--text); }
+  .whale-change { color: var(--text-3); }
+  .whale-activity { font-size: var(--fs-meta); color: var(--text-3); }
+  .whale-tag.whale-moved { border-color: var(--warning); color: var(--warning); }
+  #main :is(.whale-line) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+
+  /* The address list: one per line, never broken inside an address. */
+  textarea.whale-list { width: 100%; min-height: calc(5 * 1.6em + 20px); padding: 10px 12px; line-height: 1.6; font-size: var(--fs-small); resize: vertical; overflow-x: auto; }
+}

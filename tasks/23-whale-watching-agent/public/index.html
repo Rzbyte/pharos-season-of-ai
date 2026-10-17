@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>23 · Whale-Watching Agent · Pharos Agent Lab</title>
+<meta name="description" content="Pharos Agent Lab, task 23: a whale watcher that tracks addresses on Pharos Mainnet through Pharos Chain MCP, run after run: their USDC and PROS holdings, what changed since the last check, and the significant moves, USDC transfers of 250 or more and PROS balance changes of 100 or more.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#EFF1F2" media="(prefers-color-scheme: light)">
+<meta name="explorer" content="https://pharos.socialscan.io">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20rx='3'%20fill='%230113B7'/%3E%3Crect%20x='3'%20y='7'%20width='10'%20height='2'%20fill='%23FFFFFF'/%3E%3C/svg%3E">
+<script src="/assets/theme.js"></script>
+<link rel="preload" href="/assets/fonts/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/lab.css">
+<link rel="stylesheet" href="/assets/agent.css">
+<link rel="stylesheet" href="/assets/whale.css">
+<script type="module" src="/assets/whale.js"></script>
+</head>
+<body>
+<a class="skip" href="#moves-h">Skip to the moves</a>
+
+<!-- shell:header 23 -->
+<header class="shell">
+  <div class="rail shell-bar">
+    <a class="shell-home" data-lab-home><span class="brand-mark" aria-hidden="true"></span><span><b>Pharos</b> <span class="when-wide">Agent </span>Lab</span></a>
+    <nav class="shell-tasks" aria-label="Tasks">
+      <span class="shell-step" data-task-step="previous" role="img" aria-label="Previous task" aria-disabled="true"></span>
+      <span class="shell-count" data-task-count><span class="sr">Task </span><b>23</b> / 30</span>
+      <span class="shell-step" data-task-step="next" role="img" aria-label="Next task" aria-disabled="true"></span>
+    </nav>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme">
+      <span class="theme-icons" aria-hidden="true">
+        <svg class="when-dark" viewBox="0 0 16 16" focusable="false"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.06 1.06M11.74 11.74l1.06 1.06M3.2 12.8l1.06-1.06M11.74 4.26l1.06-1.06" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <svg class="when-light" viewBox="0 0 16 16" focusable="false"><path d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+  </div>
+</header>
+<!-- /shell:header -->
+
+<main id="main" class="rail page" data-api="/api/agent" data-task="23">
+  <header class="task-head">
+    <p class="label task-kicker"><span class="task-n">23</span><span>Whale-Watching Agent</span></p>
+    <h1 class="task-title">USDC whale watcher</h1>
+    <p class="task-via">Tracked addresses via <strong class="nowrap">Pharos Chain MCP</strong>, run after run; significant moves surfaced</p>
+  </header>
+
+  <section class="panel run" id="watch" aria-labelledby="moves-h">
+    <div class="beacon" aria-hidden="true"></div>
+    <div class="run-head">
+      <h2 class="sr" id="moves-h" tabindex="-1">Significant moves</h2>
+      <p class="status" id="status" role="status" data-tone="active"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="status-word">Checking</span><span class="status-detail" id="status-detail">reading Pharos Mainnet</span></p>
+      <button class="btn" id="again" type="button" aria-disabled="true"><span class="swap"><span>Check now</span><span>Checking…</span></span></button>
+    </div>
+    <p class="meta" id="pin" hidden><span>Block <b id="pin-block">—</b></span><span>mined <b id="pin-time">—</b></span></p>
+    <p class="tx" id="scan" hidden></p>
+    <p class="note" id="gap" data-tone="warning" hidden></p>
+    <p class="note" id="error" data-tone="error" hidden></p>
+    <noscript><p class="note">The whale watcher runs from this page with JavaScript. One run is at /api/agent?task=23 as JSON.</p></noscript>
+
+    <div class="run-body">
+      <div class="run-main" id="moves-box" hidden>
+        <h3 class="sub-title" id="moves-list-h">Significant moves <span class="sub-meta" id="moves-meta"></span></h3>
+        <ol class="moves" id="moves" aria-labelledby="moves-list-h"></ol>
+        <p class="moves-empty" id="moves-empty" hidden></p>
+        <div class="actions">
+          <button class="action" id="auto" type="button" aria-pressed="false">Check every 30 s</button>
+          <button class="action" id="forget" type="button">Forget what was seen</button>
+        </div>
+      </div>
+      <div class="run-side" id="tracked-box" hidden>
+        <h3 class="sub-title" id="tracked-h">Tracked <span class="sub-meta" id="tracked-meta"></span></h3>
+        <ul class="whales" id="tracked" aria-labelledby="tracked-h"></ul>
+      </div>
+    </div>
+  </section>
+
+  <details class="disclosure" id="change">
+    <summary><h2 class="disclosure-title">Change the watchlist</h2><span class="disclosure-meta change-meta" id="change-meta">4 addresses · 250 USDC · 100 PROS</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
+    <div class="disclosure-body">
+      <form class="inputs" id="settings" novalidate>
+        <div class="inputs-field">
+          <label class="field-label" for="f-addresses">Addresses</label>
+          <textarea class="input whale-list" id="f-addresses" name="addresses" rows="5" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" required aria-describedby="h-addresses"></textarea>
+          <p class="field-hint" id="h-addresses">Up to 5, one per line. Each set of settings is its own watcher, with its own memory.</p>
+        </div>
+        <div class="inputs-field inputs-short">
+          <label class="field-label" for="f-min">Significant transfer</label>
+          <input class="input" id="f-min" name="min" inputmode="decimal" autocomplete="off" required aria-describedby="h-min">
+          <p class="field-hint" id="h-min">In USDC. A transfer of at least this much, sent or received.</p>
+        </div>
+        <div class="inputs-field inputs-short">
+          <label class="field-label" for="f-native">Significant change</label>
+          <input class="input" id="f-native" name="native" inputmode="decimal" autocomplete="off" required aria-describedby="h-native">
+          <p class="field-hint" id="h-native">In PROS. A balance change of at least this much since the last check.</p>
+        </div>
+        <div class="inputs-go">
+          <button class="btn btn-primary" type="submit">Watch these addresses</button>
+          <button class="btn-quiet" id="reset" type="button">Example</button>
+        </div>
+      </form>
+      <p class="prose inputs-note">The example addresses are the four that moved the most USDC in Task 02's live proof, about 110 blocks of Pharos Mainnet: picked from real activity, not known to be anyone in particular. In that sample the largest transfer was 600 USDC and most were under 100. What the watcher saw last, the block it scanned to and each address's holdings, is kept in this browser with the moves; each run sends it, and the agent reads only what is new through Chain MCP. Nothing is signed or sent from this page.</p>
+    </div>
+  </details>
+
+  <details class="disclosure" id="proof">
+    <summary><h2 class="disclosure-title" id="proof-h">Proof &amp; technical details</h2><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
+    <div class="disclosure-body">
+      <div class="proof-grid">
+        <div class="proof-col">
+          <h3 class="sub-title">How it watches</h3>
+          <ol class="steps">
+            <li><span class="step-n">1</span><code class="step-k">get_chain_info</code><span class="step-d">Confirms Pharos Mainnet, chain 1672</span></li>
+            <li><span class="step-n">2</span><code class="step-k">get_block_number · get_block</code><span class="step-d">Pins the newest block</span></li>
+            <li><span class="step-n">3</span><code class="step-k">get_balance · get_transaction_count · eth_call</code><span class="step-d">Each address at that block: its PROS, its nonce and its USDC. get_code too, the first time, to tell a contract from a wallet</span></li>
+            <li><span class="step-n">4</span><code class="step-k">get_logs</code><span class="step-d">USDC's Transfer logs since the last check, at most 1,000 blocks a call: one query for what any tracked address sent, one for what any received. A first run looks back 1,000 blocks</span></li>
+            <li><span class="step-n">5</span><code class="step-k">significant</code><span class="step-d">A transfer of the minimum or more, once. A PROS balance change of the minimum or more since the last check, since PROS transfers leave no logs. The rest is counted per address</span></li>
+          </ol>
+        </div>
+        <div class="proof-col">
+          <h3 class="sub-title">This run's Chain MCP calls <span class="sub-meta" id="pin-calls"></span></h3>
+          <ol class="calls" id="calls"><li class="calls-empty">The calls of the latest run appear here.</li></ol>
+          <div class="actions"><button class="action" id="json-toggle" type="button" aria-expanded="false" aria-controls="json">Show the result as JSON</button></div>
+          <pre class="json" id="json" hidden></pre>
+        </div>
+      </div>
+      <div class="proof-col">
+        <h3 class="sub-title">Run it yourself</h3>
+        <pre class="cmd"><code>cd agent &amp;&amp; npm ci
+node dist/src/cli.js whales --store whales.json --proof run-1.json
+node dist/src/cli.js whales --store whales.json --proof run-2.json
+node dist/src/cli.js verify run-1.json run-2.json</code></pre>
+        <p class="prose">Each run reads every tracked address and only the blocks after the last run, and keeps what it saw in the store file. The verifier replays each run's recorded Chain MCP answers through the same code, and checks the runs as one history: each must start from exactly the store the run before it left. A watchlist is a JSON file of up to 10 labelled addresses and up to 4 official tokens, each with its own significant amount.</p>
+      </div>
+      <div class="proof-col">
+        <h3 class="sub-title" id="sources-h">Sources</h3>
+        <ul class="sources" aria-labelledby="sources-h">
+          <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/23-whale-watching-agent" target="_blank" rel="noopener noreferrer"><span class="source-title">Task and proof</span><span class="source-meta">tasks/23-whale-watching-agent</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/agent/src/whale" target="_blank" rel="noopener noreferrer"><span class="source-title">Agent source</span><span class="source-meta">agent/src/whale</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/02-event-log-monitor/proof" target="_blank" rel="noopener noreferrer"><span class="source-title">The live sample</span><span class="source-meta">Task 02 proof</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="https://github.com/PharosNetwork/pharos-mcp" target="_blank" rel="noopener noreferrer"><span class="source-title">Pharos Chain MCP server</span><span class="source-meta">PharosNetwork/pharos-mcp</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="/api/agent?task=23"><span class="source-title">API JSON</span><span class="source-meta">/api/agent?task=23</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></li>
+        </ul>
+      </div>
+    </div>
+  </details>
+</main>
+
+<!-- shell:footer 23 -->
+<footer class="foot">
+  <div class="rail foot-inner">
+    <p class="foot-tag">Pharos Agent Lab<span class="foot-more"> · Season of AI</span></p>
+    <ul class="foot-links" aria-label="Elsewhere">
+      <li><a class="icon-link" href="https://github.com/Rzbyte/pharos-season-of-ai" target="_blank" rel="noopener noreferrer" aria-label="Source code on GitHub, opens in a new tab" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a></li>
+      <li><a class="icon-link" href="https://docs.pharos.xyz/" target="_blank" rel="noopener noreferrer" aria-label="Pharos documentation, opens in a new tab" title="Pharos Docs"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M6 1.5h8.25L20 7.25V20.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-17a2 2 0 0 1 2-2Zm7.5 1.75V8.5h5.25L13.5 3.25ZM7.5 12h9v1.5h-9V12Zm0 3.5h9V17h-9v-1.5Zm0-7h3.5V10H7.5V8.5Z"/></svg></a></li>
+      <li><a class="icon-link" href="https://x.com/rzbyte_" target="_blank" rel="noopener noreferrer" aria-label="rzbyte_ on X, opens in a new tab" title="X"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a></li>
+    </ul>
+  </div>
+</footer>
+<!-- /shell:footer -->
+</body>
+</html>

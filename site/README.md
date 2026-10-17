@@ -14,6 +14,7 @@ One Vercel project, one domain: the repository root (`vercel.json`, `package.jso
 | `/tasks/09` | `tasks/09-trend-watcher/public/index.html` |
 | `/tasks/11` | `tasks/11-policy-gatekeeper/public/index.html` |
 | `/tasks/22` | `tasks/22-on-chain-alert-bot/public/index.html` |
+| `/tasks/23` | `tasks/23-whale-watching-agent/public/index.html` |
 | `/assets/*` | every deployment's `public/assets/`, merged |
 | `/api/state`, `/api/inspect`, `/api/explain` | Task 01's handlers |
 | `/api/events` | Task 02's handler |
