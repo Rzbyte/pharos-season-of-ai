@@ -194,6 +194,28 @@ export function replaySigner(calls: readonly RecordedCall[], address: `0x${strin
   return { address, sign: async () => (typeof raw === "string" ? (raw as Hex) : "0x") };
 }
 
+/** For replay only: like replaySigner, for a run that sends several transactions, each the next recorded one. */
+export function replaySigners(calls: readonly RecordedCall[], address: `0x${string}`): { address: `0x${string}`; sign: () => Promise<Hex> } {
+  const raws = calls.filter((call) => call.name === "send_raw_transaction").map((call) => call.args.rawTransaction);
+  let next = 0;
+  return { address, sign: async () => (typeof raws[next] === "string" ? (raws[next++] as Hex) : "0x") };
+}
+
+/** Each broadcast transaction, in order, is exactly the expected one (at its nonce, where given), on `chainId`, signed by its sender. */
+export async function signedTransactionsCheck(calls: readonly RecordedCall[], chainId: number, expected: readonly { from: string; to: string; data: string; value: bigint; nonce?: number }[], what = "transaction"): Promise<Check> {
+  const raws = calls.filter((call) => call.name === "send_raw_transaction").map((call) => call.args.rawTransaction);
+  if (raws.length !== expected.length) return { name: "signed transactions", ok: false, detail: `${raws.length} sent, ${expected.length} recorded as sent` };
+  for (const [k, raw] of raws.entries()) {
+    if (typeof raw !== "string") return { name: "signed transactions", ok: false, detail: `send ${k + 1} has no raw transaction` };
+    const tx = parseTransaction(raw as Hex);
+    const from = await recoverTransactionAddress({ serializedTransaction: raw as never });
+    const e = expected[k]!;
+    const ok = tx.chainId === chainId && tx.to?.toLowerCase() === e.to.toLowerCase() && (tx.data ?? "0x") === e.data && (tx.value ?? 0n) === e.value && from.toLowerCase() === e.from.toLowerCase() && (e.nonce === undefined || tx.nonce === e.nonce);
+    if (!ok) return { name: "signed transactions", ok: false, detail: `broadcast ${k + 1} is not the prepared ${what} ${k + 1}` };
+  }
+  return { name: "signed transactions", ok: true, detail: `${raws.length} on chain ${chainId}, each signed by its sender, each exactly the prepared ${what}, in order` };
+}
+
 /** The broadcast transaction is exactly `expected`, on `chainId`, signed by `expected.from`. */
 export async function signedTransactionCheck(calls: readonly RecordedCall[], chainId: number, expected: { from: string; to: string; data: string; value: bigint }, what = "transaction"): Promise<Check> {
   const raw = calls.find((call) => call.name === "send_raw_transaction")?.args.rawTransaction;

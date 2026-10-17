@@ -75,7 +75,7 @@ describe("pharos-agent guardian", () => {
   });
 
   test("--json and --proof: the proof verifies by replay, failing only the hosted-endpoint check for a local server", async () => {
-    const proofPath = join(dir, "proof.json");
+    const proofPath = join(dir, "guardian", "proof", "proof.json");
     const { code, stdout, stderr } = await cli(["guardian", "payout", "--chain-mcp", mcpUrl, "--json", "--proof", proofPath]);
     assert.equal(code, 0, stderr);
     assert.equal(JSON.parse(stdout).outcome, "fire");
@@ -256,8 +256,9 @@ describe("pharos-agent watch", () => {
   };
 
   test("three runs, one store file: the observations persist, the trend fires on the third, and the proofs verify as one history", async () => {
-    const store = join(dir, "watch-store.json");
-    const proofs = [1, 2, 3].map((n) => join(dir, `watch-${n}.json`));
+    // Both in a folder that does not exist yet, as a task's proof/ folder on a fresh checkout.
+    const store = join(dir, "trend", "proof", "watch-store.json");
+    const proofs = [1, 2, 3].map((n) => join(dir, "trend", "proof", `watch-${n}.json`));
     const first = await cli(["watch", "--store", store, "--rpc", chain.url, "--proof", proofs[0]!]);
     assert.equal(first.code, 0, first.stderr);
     assert.match(first.stdout, /\n {2}Store {7}.*watch-store\.json: 1 observation\n/);
@@ -693,6 +694,31 @@ describe("pharos-agent howto", () => {
     assert.equal(bad.code, 2);
     assert.match(bad.stderr, /from must be a 0x address/);
     const mainnet = await cli(["howto", "How do I send USDC?", "--execute", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(mainnet.code, 2);
+    assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
+  });
+});
+
+describe("pharos-agent pay", () => {
+  test("a request in words with an address book: each payment, the totals, the commands; the proof verifies but for its endpoint", async () => {
+    const book = join(dir, "contacts.txt");
+    await writeFile(book, "alice = 0x1111111111111111111111111111111111111111\nbob = 0x2222222222222222222222222222222222222222\n");
+    const proof = join(dir, "pay.json");
+    const run = await cli(["pay", "Pay", "alice", "25", "USDC", "and", "bob", "0.5", "USDC", "for", "lunch", "--contacts", book, "--rpc", fake.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Sender {7}0x912c9aDe24D44d8922f0866D8Dcb079f1363f647 \(the example's\), next nonce \d+\n/);
+    assert.match(run.stdout, /\n {3}1\. 25 USDC to alice \(0x1111111111111111111111111111111111111111\)\n {6}would succeed, [\d,]+ gas, nonce \d+\n {6}cast send 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 "transfer\(address,uint256\)" 0x1111111111111111111111111111111111111111 25000000 --private-key \$PRIVATE_KEY --rpc-url https:\/\/rpc\.pharos\.xyz\n/);
+    assert.match(run.stdout, /\n {3}2\. 0\.5 USDC to bob \(0x2222222222222222222222222222222222222222\), for lunch\n/);
+    assert.match(run.stdout, /\n {2}Verdict {6}READY: The 2 payments, 25\.5 USDC in all, ready: each dry-runs at block 5,000,000/);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+  });
+
+  test("a request not read whole, or --execute on mainnet, is refused before anything runs", async () => {
+    const unknown = await cli(["pay", "Pay carol 5 USDC", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(unknown.code, 2);
+    assert.match(unknown.stderr, /Who is "carol"\? Name an address \(0x…\), or a name in the address book \(none given\)\./);
+    const mainnet = await cli(["pay", "Send 1 USDC to 0x1111111111111111111111111111111111111111", "--execute", "--rpc", "http://127.0.0.1:9"]);
     assert.equal(mainnet.code, 2);
     assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
   });

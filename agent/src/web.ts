@@ -2,7 +2,7 @@
 // powers, so the site stays one project within Vercel's function limits. Each task validates its own
 // parameters strictly; nothing here signs or holds a key, and the only Chain MCP endpoint is the hosted
 // one, the only Developer Docs MCP the official one (tests pass local ones).
-import { isAddress } from "viem";
+import { getAddress, isAddress } from "viem";
 import { parseAmount, parseGasPrice } from "./core/amounts.js";
 import { Chain } from "./core/chain.js";
 import { ChainMcp, Recorder, type RecordedMessage } from "./core/chain-mcp.js";
@@ -43,6 +43,8 @@ import { DOCS_MCP, DocsMcp } from "./core/docs-mcp.js";
 import { docsThenChain, parseQuestion } from "./docs/run.js";
 import { parseAction, type ActionInputs } from "./builder/action.js";
 import { howTo } from "./builder/run.js";
+import { preparePayments } from "./payment/flow.js";
+import { parseContacts, parseRequest } from "./payment/request.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -513,6 +515,41 @@ async function builder(params: URLSearchParams, options: WebOptions): Promise<We
   }
 }
 
+export const DEFAULT_PAYMENT = "Pay alice 25 USDC and send 0.01 PROS to bob for lunch";
+/** The example address book: the agent's example recipient (Tasks 05, 08, 11) and a sample address from Task 23. */
+export const DEFAULT_CONTACTS = "alice = 0xB2749BD12f19C24a2244176658F3dF3e48e79553\nbob = 0x1F3546a29EeC2102c8d52E21a45114124014c85C";
+export const WEB_MAX_PAYMENTS = 5;
+
+/**
+ * Task 17: a payment request in plain words, prepared on Pharos Mainnet as a flow: each payment dry-run
+ * at one block, the totals against the sender's holdings, the transactions to sign in nonce order, the
+ * Skill Engine's commands. Nothing is sent: the page holds no key and the hosted Chain MCP is read-only.
+ */
+async function paymentFlow(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const request = params.get("request") ?? DEFAULT_PAYMENT;
+  const contactsText = params.get("contacts") ?? DEFAULT_CONTACTS;
+  const fromText = params.get("from")?.trim() || undefined;
+  let contacts;
+  try {
+    contacts = parseContacts(contactsText);
+    if (fromText !== undefined && !isAddress(fromText, { strict: false })) throw new AgentError("usage", "from must be a 0x address (40 hex characters).");
+    parseRequest(request, contacts, net, WEB_MAX_PAYMENTS);
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // Each payment is a dry run of about ten reads; five payments, the nonce and the block fit in sixty.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 60, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const flow = await preparePayments(request, { chain: new Chain(mcp, net), contacts, from: fromText ? getAddress(fromText) : undefined, maxPayments: WEB_MAX_PAYMENTS, now: options.now });
+    return { status: 200, body: { result: flow, inputs: { request, contacts: contactsText, ...(fromText ? { from: fromText } : {}) }, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -526,6 +563,8 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await gatekeeper(url.searchParams, options);
       case "13":
         return await docsChain(url.searchParams, options);
+      case "17":
+        return await paymentFlow(url.searchParams, options);
       case "22":
         return await alertBot(url.searchParams, options);
       case "23":
@@ -543,7 +582,7 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
       case "29":
         return await builder(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 22 to 29.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17, 22 to 29.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

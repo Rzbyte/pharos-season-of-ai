@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { after, before, describe, test } from "node:test";
-import { DEFAULT_HOW_TO, DEFAULT_QUESTION, handle } from "../src/web.js";
+import { DEFAULT_CONTACTS, DEFAULT_HOW_TO, DEFAULT_PAYMENT, DEFAULT_QUESTION, handle } from "../src/web.js";
 import { defaultState, startFakeChain, type FakeChain } from "./fake-chain.js";
 import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
@@ -74,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 22 to 29\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17, 22 to 29\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -512,5 +512,38 @@ describe("GET /api/agent?task=29", () => {
       assert.match(message(bad), pattern, query);
     }
     assert.deepEqual([fake.requests.length, docs.requests.length], [chainBefore, docsBefore], "nothing reached the chain or the docs");
+  });
+});
+
+describe("GET /api/agent?task=17", () => {
+  type Body = { result: { schema: string; verdict: string; sender: { address: string; from: string }; payments: { to: { name: string | null }; amount: string; asset: string; tx: { nonce: number } | null }[]; totals: { asset: string; covered: boolean }[] }; inputs: Record<string, string>; calls: { tool: string }[] };
+
+  test("the example request and address book: two payments dry-run, the totals covered, nonces in order; shared 15 s", async () => {
+    const response = await get("task=17");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 15);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.sender.from], ["pharos-agent/payment-flow/1", "ready", "example"]);
+    assert.deepEqual(body.result.payments.map((p) => [p.to.name, p.amount, p.asset]), [["alice", "25", "USDC"], ["bob", "0.01", "PROS"]]);
+    assert.deepEqual(body.result.payments.map((p) => p.tx!.nonce - body.result.payments[0]!.tx!.nonce), [0, 1]);
+    assert.deepEqual(body.inputs, { request: DEFAULT_PAYMENT, contacts: DEFAULT_CONTACTS });
+    assert.equal(body.calls.some((c) => c.tool === "send_raw_transaction"), false);
+  });
+
+  test("a request of your own, from your address; refused before any call when it is not read whole", async () => {
+    const mine = (await get(`task=17&request=${encodeURIComponent("Send 5 USDC each to alice and bob")}&contacts=${encodeURIComponent(`alice=${PAYER}, bob=${USDC}`)}&from=${STRANGER}`)).body as Body;
+    assert.deepEqual([mine.result.verdict, mine.result.sender], ["would-fail", { address: STRANGER, from: "input" }]);
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      [`task=17&request=${encodeURIComponent("Pay carol 5 USDC")}`, /Who is "carol"\?/],
+      [`task=17&request=${encodeURIComponent(Array.from({ length: 6 }, () => "pay alice 1 USDC").join(" and "))}`, /at most 5 payments/],
+      ["task=17&contacts=alice%3D0x12", /alice's address must be 0x and 40 hex characters/],
+      ["task=17&from=0x12", /from must be a 0x address/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
   });
 });
