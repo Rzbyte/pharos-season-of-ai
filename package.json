@@ -8,7 +8,7 @@
     "install:tasks": "npm ci --prefix tasks/01-read-contract-state && npm ci --prefix tasks/02-event-log-monitor && npm ci --prefix tasks/04-doc-search-cli && npm ci --prefix agent",
     "build": "npm run build --prefix tasks/01-read-contract-state && npm run build --prefix tasks/02-event-log-monitor && npm run build --prefix tasks/04-doc-search-cli && npm run build --prefix agent && node site/build.mjs",
     "preview": "node site/serve.mjs",
-    "test": "node --test site/tests/*.test.mjs shared/ui/tests/*.test.mjs tasks/05-threshold-guardian/tests/*.test.mjs tasks/08-dry-run-executor/tests/*.test.mjs tasks/09-trend-watcher/tests/*.test.mjs tasks/11-policy-gatekeeper/tests/*.test.mjs tasks/22-on-chain-alert-bot/tests/*.test.mjs tasks/23-whale-watching-agent/tests/*.test.mjs tasks/24-gas-fee-optimizer/tests/*.test.mjs tasks/25-wallet-risk-checker/tests/*.test.mjs tasks/27-dapp-support-agent/tests/*.test.mjs"
+    "test": "node --test site/tests/*.test.mjs shared/ui/tests/*.test.mjs tasks/05-threshold-guardian/tests/*.test.mjs tasks/08-dry-run-executor/tests/*.test.mjs tasks/09-trend-watcher/tests/*.test.mjs tasks/11-policy-gatekeeper/tests/*.test.mjs tasks/22-on-chain-alert-bot/tests/*.test.mjs tasks/23-whale-watching-agent/tests/*.test.mjs tasks/24-gas-fee-optimizer/tests/*.test.mjs tasks/25-wallet-risk-checker/tests/*.test.mjs tasks/26-audit-log-agent/tests/*.test.mjs tasks/27-dapp-support-agent/tests/*.test.mjs"
   },
   "engines": {
     "node": ">=20"

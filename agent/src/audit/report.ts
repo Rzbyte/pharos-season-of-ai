@@ -34,6 +34,8 @@ export interface TokenActivity {
   closing: string;
   openingShown: string | null;
   closingShown: string;
+  /** Closing less opening, signed ("+1,145.5"); null without an opening. */
+  changeShown: string | null;
   /** Transfers of something in and out (transfers of nothing are counted apart, in `zeroValue`, and to itself in neither). */
   in: Flow;
   out: Flow;
@@ -244,6 +246,7 @@ export async function auditAddress(address: Address, period: PeriodRequest, opti
       closing: after.toString(),
       openingShown: before === null ? null : amount(before, token.decimals),
       closingShown: amount(after, token.decimals),
+      changeShown: before === null ? null : signed(after - before, token.decimals),
       in: flow(ins, token.decimals),
       out: flow(outs, token.decimals),
       wrapped: flow(wraps, token.decimals),

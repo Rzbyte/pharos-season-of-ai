@@ -29,6 +29,7 @@ export const TARGETS = [
   "tasks/23-whale-watching-agent/public",
   "tasks/24-gas-fee-optimizer/public",
   "tasks/25-wallet-risk-checker/public",
+  "tasks/26-audit-log-agent/public",
   "tasks/27-dapp-support-agent/public",
 ];
 export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];

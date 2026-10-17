@@ -35,6 +35,7 @@ export const TASK_DIRS = Object.freeze({
   "23": "tasks/23-whale-watching-agent",
   "24": "tasks/24-gas-fee-optimizer",
   "25": "tasks/25-wallet-risk-checker",
+  "26": "tasks/26-audit-log-agent",
   "27": "tasks/27-dapp-support-agent",
 });
 

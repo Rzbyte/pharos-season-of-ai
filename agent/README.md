@@ -15,6 +15,7 @@ node dist/src/cli.js alert --store a.json  # Task 22: new transfers and conditio
 node dist/src/cli.js whales --store w.json # Task 23: tracked addresses, their changes and significant moves
 node dist/src/cli.js gas --store g.json    # Task 24: send now or wait, with the fee capped at the target
 node dist/src/cli.js risk --to 0x…         # Task 25: the recipient's history, checked before sending
+node dist/src/cli.js audit 0x… --hours 24  # Task 26: what an address did, in plain sentences
 node dist/src/cli.js explain 0x…           # Task 27: why a transaction failed
 npm test                                 # every test, offline
 ```
@@ -23,7 +24,7 @@ npm test                                 # every test, offline
 
 | Path | What it is |
 |---|---|
-| `src/core/chain-mcp.ts` | The Chain MCP client, on the official MCP SDK. It reaches the hosted endpoint over Streamable HTTP, the official server run locally over stdio, or any transport (tests). It records every JSON-RPC message, never an HTTP header. |
+| `src/core/chain-mcp.ts` | The Chain MCP client, on the official MCP SDK. It reaches the hosted endpoint over Streamable HTTP, the official server run locally over stdio, or any transport (tests). It records every JSON-RPC message, never an HTTP header. It can pace its calls under a rate (a long CLI run keeps under the hosted endpoint's 120 a minute). |
 | `src/core/chain.ts` | Typed wrappers for the official server's tools, each payload checked against the shape `vendor/pharos-mcp/src/server.ts` returns. Blocks are passed as 0x quantities. |
 | `src/core/networks.ts` | Pharos Mainnet and Atlantic: RPCs, chain IDs, explorers and token addresses from the [Pharos Skill Engine](https://github.com/PharosNetwork/pharos-skill-engine) (`a873387`), and the hosted Chain MCP. |
 | `src/core/abi.ts`, `amounts.ts` | Calls by signature (`"paused() returns (bool)"`) through viem; exact amounts in human units, with no floats. |
@@ -38,6 +39,7 @@ npm test                                 # every test, offline
 | `src/whale/` | Task 23, Whale-Watching Agent: watchlists (labelled addresses, official tokens with their significant amounts, a native amount), the store kept between runs (the cursor, each address as it was), the run (every address at one block, Transfer logs by any tracked address in two queries a page, significant moves, a report per address), presets, the proof verifier and the history check. |
 | `src/gas/` | Task 24, Gas Fee Optimizer: plans (a transaction, a target, the window, a first run's backfill, a deadline), the store kept between runs (the observed fees, since when it waits, what it sent), the run (observe, dry-run, decide, settings and costs, Atlantic sending), presets, the proof verifier (with the signed fee cap) and the history check. |
 | `src/risk/` | Task 25, Wallet Risk Checker: the counterparty of a planned transaction (code, delegation, nonce, balance) and its recent Transfer history with the sender in two queries a page, the signals (lookalikes, transfers of nothing, approvals to wallets, unlimited approvals, tokens to a token contract, never used, the dry run), the level and verdict, and the proof verifier. |
+| `src/audit/` | Task 26, Audit-Log Agent: periods (the last hours, two times, two blocks) placed in blocks by interpolating on block times, the address read before the period and at its end, its logs over every official token in two queries a page, the report (flows, counterparties, approvals, wrapping, transfers of nothing, balances reconciled, a timeline, sentences), and the proof verifier. |
 | `src/support/` | Task 27, dApp Support Agent: revert data decoded in plain language (Error, Panic, OpenZeppelin 5 errors), the explanation of a transaction by hash (receipt, replay before its block, code, token balance and allowance, out of gas, earlier in its block) or by description (Task 08's dry run), and the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |
