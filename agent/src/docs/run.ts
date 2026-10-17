@@ -18,7 +18,7 @@ import type { Address, Chain } from "../core/chain.js";
 import { DOCS_ORIGIN, DocsToolError, type DocsTools } from "../core/docs-mcp.js";
 import { AgentError, errorMessage } from "../core/errors.js";
 import { knownToken, NETWORKS, type NetworkId } from "../core/networks.js";
-import { addressesIn, functionsIn, hits, keywords, notCovered, readable, splitAnswer, symbolsIn, type DocsAddress, type DocsFunction, type DocsSource } from "./answer.js";
+import { addressesIn, functionsIn, hits, keywords, names, notCovered, readable, splitAnswer, symbolsIn, type DocsAddress, type DocsFunction, type DocsSource } from "./answer.js";
 
 export interface FunctionCall {
   name: string;
@@ -115,13 +115,6 @@ function choose(words: string[], wanted: NetworkId, inAnswer: DocsAddress[], inP
   const out: DocsAddress[] = [];
   for (const { a } of picked) if (!out.some((o) => o.address === a.address) && out.length < MAX_ADDRESSES) out.push(a);
   return out;
-}
-
-/** Whether a label names `text` (a symbol or a name): its words, in order, among the label's. */
-function names(label: string, text: string): boolean {
-  const words = (value: string) => value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-  const [l, t] = [words(label), words(text)];
-  return t.length > 0 && l.some((_, i) => t.every((w, j) => l[i + j] === w));
 }
 
 const what = (r: ChainReading) => (r.code === "delegated" ? "an account delegated to a contract (EIP-7702)" : "a contract");

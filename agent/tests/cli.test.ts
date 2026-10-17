@@ -664,3 +664,36 @@ describe("pharos-agent ask", () => {
     assert.match(long.stderr, /at most 300 characters/);
   });
 });
+
+describe("pharos-agent howto", () => {
+  // Made-up docs in the shape the Developer Docs MCP answers: how to send a token, and a registry page.
+  const REGISTRY = "https://docs.pharos.xyz/getting-started/token-registry";
+  const RECIPIENT = "0x1111111111111111111111111111111111111111";
+  let docs: FakeDocs;
+  before(async () => {
+    docs = await startFakeDocs(() => `Call \`transfer(address,uint256)\` on USDC, listed in the [Token Registry](${REGISTRY}). Pharos Mainnet's chain ID is 1672.\n\n# Sources\n\n- [Token Registry](${REGISTRY})`, { [REGISTRY]: "# Token Registry\n\n## Pharos Mainnet\n\n| Token | Address |\n| --- | --- |\n| USDC | 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 |\n" });
+  });
+  after(() => docs.close());
+
+  test("a how-to in words: the docs, the pieces beside the Skill Engine, the dry run, its cast commands; the proof verifies but for its two endpoints", async () => {
+    const proof = join(dir, "howto.json");
+    const run = await cli(["howto", "How", "do", "I", "send", "25", "USDC", "to", RECIPIENT, "--rpc", fake.url, "--docs-mcp", docs.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Question {5}How do I send 25 USDC to 0x1111111111111111111111111111111111111111\n/);
+    assert.match(run.stdout, /\n {3}2\. It asks to send 25 USDC from 0x912c…f647 to 0x1111…1111 on Pharos Mainnet\. The recipient and the amount are the question's; the sender is the example's\. {3}\[the question\]\n/);
+    assert.match(run.stdout, /\n {2}With the Skill Engine \(https:\/\/github\.com\/PharosNetwork\/pharos-skill-engine, a873387\), not run here:\n {4}cast estimate 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 "transfer\(address,uint256\)" 0x1111111111111111111111111111111111111111 25000000 --from 0x912c9aDe24D44d8922f0866D8Dcb079f1363f647 --rpc-url https:\/\/rpc\.pharos\.xyz\n {4}cast send .+ --private-key \$PRIVATE_KEY --rpc-url https:\/\/rpc\.pharos\.xyz\n/);
+    assert.match(run.stdout, /\n {2}Verdict {6}READY: Send 25 USDC from 0x912c…f647 to 0x1111…1111: ready\. The dry run at block 5,000,000 succeeds, for about [\d.]+ PROS in gas\. Nothing was sent: the hosted Chain MCP is read-only\.\n {2}2 Developer Docs MCP and \d+ Chain MCP calls\. Nothing was signed or sent\.\n/);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint", "  FAIL  Developer Docs MCP"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}no key material: /);
+  });
+
+  test("a bad value, or --execute on mainnet, is refused before anything runs", async () => {
+    const bad = await cli(["howto", "How do I send USDC?", "--from", "0x12", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /from must be a 0x address/);
+    const mainnet = await cli(["howto", "How do I send USDC?", "--execute", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(mainnet.code, 2);
+    assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
+  });
+});

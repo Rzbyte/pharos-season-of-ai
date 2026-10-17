@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { after, before, describe, test } from "node:test";
-import { DEFAULT_QUESTION, handle } from "../src/web.js";
+import { DEFAULT_HOW_TO, DEFAULT_QUESTION, handle } from "../src/web.js";
 import { defaultState, startFakeChain, type FakeChain } from "./fake-chain.js";
 import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
@@ -74,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 22 to 28\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 22 to 29\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -469,5 +469,48 @@ describe("GET /api/agent?task=13", () => {
     const down = await ask("task=13", "http://127.0.0.1:9/~gitbook/mcp");
     assert.equal(down.status, 502);
     assert.match(message(down), /^Could not reach the Developer Docs MCP at http:\/\/127\.0\.0\.1:9\/~gitbook\/mcp/);
+  });
+});
+
+describe("GET /api/agent?task=29", () => {
+  // Made-up docs in the shape the Developer Docs MCP answers: how to send a token, and a registry page.
+  const REGISTRY = "https://docs.pharos.xyz/getting-started/token-registry";
+  type Body = { result: { schema: string; verdict: string; action: { kind: string; account: { value: string; from: string }; amount: { value: string; from: string } } | null; grounding: { id: string; agrees: boolean | null }[]; prepared: { verdict: string } | null; skillEngine: { commands: { label: string }[] } | null }; inputs: Record<string, string>; calls: { tool: string }[]; docsCalls: { tool: string }[] };
+  let docs: FakeDocs;
+  before(async () => {
+    docs = await startFakeDocs(() => `Call \`transfer(address,uint256)\` on USDC, listed in the [Token Registry](${REGISTRY}).\n\n# Sources\n\n- [Token Registry](${REGISTRY})`, { [REGISTRY]: "# Token Registry\n\n## Pharos Mainnet\n\n| Token | Address |\n| --- | --- |\n| USDC | 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 |\n" });
+  });
+  after(() => docs.close());
+  const howto = (query: string) => handle(new URL(`http://agent.test/api/agent?${query}`), { chainMcpUrl, docsMcpUrl: docs.url, timeoutMs: 5000 });
+
+  test("the default question: the docs, the registry page for USDC's address, the transfer dry-run and its cast commands; shared 15 s", async () => {
+    const response = await howto("task=29");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 15);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.action?.kind, body.result.prepared?.verdict], ["pharos-agent/how-to/1", "ready", "erc20-transfer", "would-succeed"]);
+    assert.deepEqual(body.result.grounding.map((g) => [g.id, g.agrees]), [["chain-id", null], ["rpc", null], ["token", true], ["function", true]]);
+    assert.deepEqual(body.result.skillEngine?.commands.map((c) => c.label), ["Estimate its gas", "Send it", "The gas price"]);
+    assert.deepEqual(body.inputs, { q: DEFAULT_HOW_TO });
+    assert.deepEqual(body.docsCalls.map((c) => c.tool), ["askQuestion", "getPage"]);
+    assert.equal(body.calls.some((c) => c.tool === "send_raw_transaction"), false);
+  });
+
+  test("inputs over the question; one that would fail; bad input is a 400 before any call", async () => {
+    const body = (await howto(`task=29&from=${STRANGER}&amount=3`)).body as Body;
+    assert.deepEqual([body.result.action?.account, body.result.action?.amount, body.result.verdict], [{ value: STRANGER, from: "input" }, { value: "3", from: "input" }, "would-fail"]);
+    assert.deepEqual(body.inputs, { q: DEFAULT_HOW_TO, from: STRANGER, amount: "3" });
+    const [chainBefore, docsBefore] = [fake.requests.length, docs.requests.length];
+    for (const [query, pattern] of [
+      ["task=29&from=0x12", /from must be a 0x address/],
+      ["task=29&amount=-1", /amount/],
+      ["task=29&token=PEPE", /token must be PROS or an official Pharos Mainnet token/],
+      [`task=29&q=${"x".repeat(301)}`, /at most 300 characters/],
+    ] as const) {
+      const bad = await howto(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.deepEqual([fake.requests.length, docs.requests.length], [chainBefore, docsBefore], "nothing reached the chain or the docs");
   });
 });

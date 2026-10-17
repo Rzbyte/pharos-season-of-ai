@@ -41,6 +41,8 @@ import { runDigest } from "./digest/run.js";
 import { digestKey, emptyDigestStore } from "./digest/store.js";
 import { DOCS_MCP, DocsMcp } from "./core/docs-mcp.js";
 import { docsThenChain, parseQuestion } from "./docs/run.js";
+import { parseAction, type ActionInputs } from "./builder/action.js";
+import { howTo } from "./builder/run.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -477,6 +479,40 @@ async function docsChain(params: URLSearchParams, options: WebOptions): Promise<
   }
 }
 
+export const DEFAULT_HOW_TO = "How do I send USDC to another wallet on Pharos Mainnet?";
+
+/**
+ * Task 29: how to do something on Pharos Mainnet, answered by the Developer Docs MCP, then prepared:
+ * set beside the Skill Engine's values, dry-run through Chain MCP, and written as the Skill Engine's cast
+ * commands. Nothing is sent: the page holds no key and the hosted Chain MCP is read-only.
+ */
+async function builder(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  let question;
+  const inputs: ActionInputs = {};
+  try {
+    question = parseQuestion(params.get("q") ?? DEFAULT_HOW_TO);
+    for (const key of ["from", "to", "amount", "token"] as const) {
+      const value = params.get(key)?.trim();
+      if (value) inputs[key] = value;
+    }
+    parseAction(question, inputs, net);
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // askQuestion took about 8 s live (Task 04's proof); then a page or two and a dry run's 10 to 20 reads.
+  const docs = new DocsMcp(options.docsMcpUrl ?? DOCS_MCP, { budget: 4, timeoutMs: options.timeoutMs ?? 25_000 });
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 50, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await howTo(question, { docs, chain: new Chain(mcp, net), inputs, now: options.now });
+    return { status: 200, body: { result, inputs: { q: question, ...inputs }, calls: callLines(recorder.messages), docsCalls: callLines(docs.recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -504,8 +540,10 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await supportAgent(url.searchParams, options);
       case "28":
         return await digest(url.searchParams, options);
+      case "29":
+        return await builder(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 22 to 28.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 22 to 29.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

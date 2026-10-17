@@ -152,7 +152,9 @@ export function commonChecks(proof: ProofFile, expected: { task: string; capabil
   const chainId = first?.name === "get_chain_info" ? (first.payload as { chainId?: unknown } | null)?.chainId : undefined;
   add("chain checked first", chainId === expected.network.chainId, first ? `${first.name} reported chain ${String(chainId)}` : "no calls");
   const text = JSON.stringify(proof);
-  add("no key material", !/private[_ ]?key/i.test(text), "no private key field anywhere in the proof");
+  // A command may name the environment variable a key is kept in ($PRIVATE_KEY, as the Skill Engine's
+  // templates do); that is a name, not key material.
+  add("no key material", !/private[_ ]?key/i.test(text.replaceAll("$PRIVATE_KEY", "")), "no private key field anywhere in the proof");
   return checks;
 }
 

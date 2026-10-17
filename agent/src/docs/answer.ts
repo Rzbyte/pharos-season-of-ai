@@ -169,6 +169,13 @@ export const keywords = (question: string): string[] => [...new Set(question.toL
 /** How many of those words a label has, each as a whole word. */
 export const hits = (label: string, words: readonly string[]): number => words.filter((w) => new RegExp(`\\b${w}\\b`).test(label.toLowerCase())).length;
 
+/** Whether a label names `text` (a symbol or a name): its words, in order, among the label's. */
+export function names(label: string, text: string): boolean {
+  const words = (value: string) => value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  const [l, t] = [words(label), words(text)];
+  return t.length > 0 && l.some((_, i) => t.every((w, j) => l[i + j] === w));
+}
+
 /** Capitalised words that are not token symbols, for telling whether a label names one. */
 const NOT_SYMBOLS = new Set("ERC EVM USD NFT RPC API ABI URL DEX AMM EOA MCP SDK CLI JSON HTTP HTTPS UTC DAO CEX TVL APR APY OTC KYC AML FAQ PDF EIP BIP ZKP POS POW".split(" "));
 

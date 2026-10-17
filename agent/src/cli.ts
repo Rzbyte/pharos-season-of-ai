@@ -13,6 +13,7 @@
 //   pharos-agent audit [address] [--hours N | --since TIME [--until TIME] | --from-block N --to-block N]
 //   pharos-agent digest [token | address] [--every hour|day|week] [--periods N] [--store FILE] [--so-far]
 //   pharos-agent ask "question" [--network ID] [--docs-mcp URL]
+//   pharos-agent howto "question" [--from --to --amount --token] [--execute]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -70,6 +71,9 @@ import { digestHistoryCheck, verifyDigestProof } from "./digest/verify.js";
 import { DOCS_MCP, DocsMcp } from "./core/docs-mcp.js";
 import { docsThenChain, parseQuestion, type DocsChainResult } from "./docs/run.js";
 import { verifyDocsChainProof } from "./docs/verify.js";
+import { parseAction, type ActionInputs } from "./builder/action.js";
+import { howTo, type HowToResult } from "./builder/run.js";
+import { verifyHowToProof } from "./builder/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -199,6 +203,19 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       confirmed, a mismatch, no contract there, another network, nothing to call, or not in the docs.
       --docs-mcp URL   use this Developer Docs MCP endpoint instead of the official one (recorded in the proof)
       --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
+  pharos-agent howto "question" [options]                  Task 29, Doc-Grounded Builder Agent
+      How to do something on Pharos, answered from the official docs, then prepared through Chain MCP
+      and the Pharos Skill Engine: sending PROS or an official token, approving a spender, wrapping
+      PROS, or reading a balance. The Developer Docs MCP answers (askQuestion; the pages it cites are
+      read for a token's address); the chain ID, RPC URL, token address and function are set beside
+      the Skill Engine's; Task 08's dry run prepares it at one block; the Skill Engine's cast commands
+      are filled in. Values come from these options, else the question, else the example's (mainnet).
+      --from 0x…           the sender, the owner, or the address whose balance is read
+      --to 0x…             the recipient, or the spender (--spender works too)
+      --amount N --token SYMBOL   the amount, and an official token or the native one
+      --execute            Atlantic only: send it, signed with PRIVATE_KEY (--from defaults to its address)
+      --docs-mcp URL, --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist or gas plan, in run order,
@@ -1188,10 +1205,68 @@ async function askCommand(flags: Flags): Promise<number> {
   }
 }
 
+const HOW_TO_VERDICTS: Record<HowToResult["verdict"], string> = { ready: "READY", "would-fail": "WOULD FAIL", sent: "SENT", read: "READ", "not-prepared": "NOT PREPARED", "no-answer": "NOT IN THE DOCS" };
+
+function printHowTo(r: HowToResult): void {
+  out("Pharos Doc-Grounded Builder Agent");
+  out();
+  out(`  Question     ${r.question}`);
+  out(`  Docs MCP     ${r.docsMcp.where}`);
+  out(`  Network      ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP    ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Block        ${BigInt(r.block.number).toLocaleString("en-US")} · ${r.block.timestamp}`);
+  if (r.docs.answer) {
+    out();
+    out("  The docs say:");
+    for (const line of r.docs.answer.split("\n")) out(line.trim() ? `    ${line}` : "");
+    if (r.docs.sources.length) out(`  Sources: ${r.docs.sources.map((s) => s.url).join(", ")}`);
+  }
+  out();
+  r.steps.filter((step) => step.source !== "the verdict").forEach((step, i) => out(`  ${String(i + 1).padStart(2)}. ${step.text}   [${step.source}]`));
+  if (r.skillEngine) {
+    out();
+    out(`  With the Skill Engine (${r.skillEngine.repo}, ${r.skillEngine.commit.slice(0, 7)}), not run here:`);
+    for (const c of r.skillEngine.commands) out(`    ${c.command}`);
+  }
+  out();
+  out(`  Verdict      ${HOW_TO_VERDICTS[r.verdict]}: ${r.headline}`);
+  const sent = r.prepared?.submission;
+  out(`  ${r.toolCalls.docs} Developer Docs MCP and ${r.toolCalls.chain} Chain MCP calls. ${sent ? `Signed here and sent: ${sent.txHash}.` : "Nothing was signed or sent."}`);
+}
+
+async function howToCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  const question = parseQuestion(flags.positional.slice(1).join(" "));
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (--network atlantic-testnet).");
+  const signer = flags.execute ? signerFromEnv() : undefined;
+  const inputs: ActionInputs = { from: v.from ?? signer?.address, to: v.to ?? v.spender, amount: v.amount, token: v.token };
+  for (const key of Object.keys(inputs) as (keyof ActionInputs)[]) if (inputs[key] === undefined) delete inputs[key];
+  // The question and the inputs are checked before anything starts.
+  parseAction(question, inputs, net);
+  const trace = flags.verbose ? (line: string) => process.stderr.write(`  ${line}\n`) : undefined;
+  const docs = new DocsMcp(flags.docsMcp ?? DOCS_MCP, { budget: 4, trace });
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace, budget: 60 });
+  try {
+    const result = await howTo(question, { docs, chain: new Chain(mcp, net), inputs, block: flags.block, signer });
+    if (flags.proof) {
+      const proof: ProofFile = { ...proofFile({ task: "29", capability: "how-to", about: "One Doc-Grounded Builder Agent answer: the question and the values given (input); the docs' answer, the action, its pieces against the Skill Engine's, the dry run (and the send, on Atlantic), the Skill Engine's commands and the verdict (result); every JSON-RPC message exchanged with the Pharos Chain MCP server (transcript) and with the Pharos Developer Docs MCP (docsMcp), in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { question, inputs }, result }), docsMcp: { endpoint: docs.where, transcript: docs.recorder.messages } };
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printHowTo(result);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return result.prepared?.submission && !result.prepared.submission.matched ? 8 : 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1238,6 +1313,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "audit") return auditCommand(flags);
   if (command === "digest") return digestCommand(flags);
   if (command === "ask") return askCommand(flags);
+  if (command === "howto") return howToCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }
