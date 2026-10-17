@@ -128,7 +128,8 @@ describe("the Task 23 page in a browser", { skip }, () => {
   }
   /** "Check now", then wait for the run: the click marks the panel busy before the request starts. */
   const again = async (page) => {
-    await page.click("#again");
+    // Wait for the new answer itself: the panel is already settled from the last run when the click lands.
+    await Promise.all([page.waitForResponse((response) => new URL(response.url()).pathname === "/api/agent"), page.click("#again")]);
     await page.waitForFunction(settled);
   };
 

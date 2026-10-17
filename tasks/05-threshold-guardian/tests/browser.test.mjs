@@ -210,7 +210,8 @@ describe("the Task 05 page in a browser", { skip }, () => {
     const { page } = await open(`/?payer=${PAYER}&recipient=${RECIPIENT}&amount=7&maxGasGwei=3`);
     assert.deepEqual(requests, [{ task: "05", payer: PAYER, recipient: RECIPIENT, amount: "7", maxGasGwei: "3" }]);
     assert.equal(await page.inputValue("#f-amount"), "7");
-    await page.click("#again");
+    // Wait for the new answer itself: the panel is already settled from the last run when the click lands.
+    await Promise.all([page.waitForResponse((response) => new URL(response.url()).pathname === "/api/agent"), page.click("#again")]);
     await page.waitForFunction(() => document.getElementById("guard").getAttribute("aria-busy") === "false");
     assert.equal(requests.length, 2);
     // A half-filled address bar is ignored in favour of the example.

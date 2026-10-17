@@ -275,7 +275,8 @@ describe("the Task 08 page in a browser", { skip }, () => {
     const { page } = await open(`/?action=transfer&asset=USDC&from=${SENDER}&to=${RECIPIENT}&amount=7`);
     assert.deepEqual(requests, [{ task: "08", action: "transfer", asset: "USDC", from: SENDER, to: RECIPIENT, amount: "7" }]);
     assert.equal(await page.inputValue("#f-amount"), "7");
-    await page.click("#again");
+    // Wait for the new answer itself: the panel is already settled from the last run when the click lands.
+    await Promise.all([page.waitForResponse((response) => new URL(response.url()).pathname === "/api/agent"), page.click("#again")]);
     await page.waitForFunction(settled);
     assert.equal(requests.length, 2);
     const broken = await open("/?action=approve&asset=PROS&from=0x1&to=0x2&amount=1");
