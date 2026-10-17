@@ -20,6 +20,7 @@ node dist/src/cli.js explain 0x…           # Task 27: why a transaction failed
 node dist/src/cli.js digest usdc --every day --periods 2  # Task 28: a token's last two days, summed up
 node dist/src/cli.js ask "What is the USDC token address on Pharos Mainnet?"  # Task 13: the docs, then the chain
 node dist/src/cli.js howto "How do I wrap 0.5 PROS into WPROS?"  # Task 29: the docs' how-to, prepared
+node dist/src/cli.js pay "Pay alice 25 USDC" --contacts c.txt  # Task 17: a request in plain words, prepared
 npm test                                 # every test, offline
 ```
 
@@ -47,6 +48,7 @@ npm test                                 # every test, offline
 | `src/core/docs-mcp.ts` | The Pharos Developer Docs MCP client (`askQuestion`, `getPage`), called as Task 04's live proof recorded: stateless JSON-RPC POSTs answered as an event stream or JSON. It records every message for the proof, holds to a budget of calls, and replays a recorded run. |
 | `src/docs/` | Task 13, Docs MCP + Chain MCP Agent: reading a docs answer (its sources, the docs saying they do not cover it, contract addresses with the name and network their row or line gives, functions written with a return type), the run (the answer, the cited pages until an address fits and is on a page, the address's code and functions read at one block, the chain's own name against the docs' and the Skill Engine's, the verdict), and the proof verifier that replays both transcripts. |
 | `src/builder/` | Task 29, Doc-Grounded Builder Agent: the action a how-to question asks for (send, approve, wrap, a balance) with each value's origin, the docs' chain ID, RPC URL, token address and function set beside the Pharos Skill Engine's, the run (the docs' answer and cited pages, Task 08's dry run or a balance read at one block, Atlantic sending), the Skill Engine's `cast` templates and gas rule (quoted from `a873387`), and the proof verifier. |
+| `src/payment/` | Task 17, Natural-Language Payment Agent: the request read by a small grammar (verbs, amounts with their asset, recipients by address or an address book, "each" and "split", a note, a sender; any word not read refuses it), the flow (the sender's nonce, Task 08's dry run of each payment at one block, each asset's total against what the sender holds, the transactions to sign in nonce order with the Skill Engine's `cast send`, Atlantic sending in order), and the proof verifier. |
 | `src/support/` | Task 27, dApp Support Agent: revert data decoded in plain language (Error, Panic, OpenZeppelin 5 errors), the explanation of a transaction by hash (receipt, replay before its block, code, token balance and allowance, out of gas, earlier in its block) or by description (Task 08's dry run), and the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |

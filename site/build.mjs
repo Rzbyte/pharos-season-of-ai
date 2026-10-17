@@ -32,6 +32,7 @@ export const TASK_DIRS = Object.freeze({
   "09": "tasks/09-trend-watcher",
   "11": "tasks/11-policy-gatekeeper",
   "13": "tasks/13-docs-chain-agent",
+  "17": "tasks/17-natural-language-payment",
   "22": "tasks/22-on-chain-alert-bot",
   "23": "tasks/23-whale-watching-agent",
   "24": "tasks/24-gas-fee-optimizer",

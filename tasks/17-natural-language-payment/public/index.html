@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>17 · Natural-Language Payment Agent · Pharos Agent Lab</title>
+<meta name="description" content="Pharos Agent Lab, task 17: an agent that turns a payment request in plain words into a prepared payment flow on Pharos Mainnet: every payment read, each dry-run through Pharos Chain MCP, the totals against the sender's holdings, and the transactions to sign in nonce order.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#EFF1F2" media="(prefers-color-scheme: light)">
+<meta name="explorer" content="https://pharos.socialscan.io">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20width='16'%20height='16'%20rx='3'%20fill='%230113B7'/%3E%3Crect%20x='3'%20y='7'%20width='10'%20height='2'%20fill='%23FFFFFF'/%3E%3C/svg%3E">
+<script src="/assets/theme.js"></script>
+<link rel="preload" href="/assets/fonts/Geist-SemiBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/lab.css">
+<link rel="stylesheet" href="/assets/agent.css">
+<link rel="stylesheet" href="/assets/payments.css">
+<script type="module" src="/assets/payments.js"></script>
+</head>
+<body>
+<a class="skip" href="#answer-h">Skip to the answer</a>
+
+<!-- shell:header 17 -->
+<header class="shell">
+  <div class="rail shell-bar">
+    <a class="shell-home" data-lab-home><span class="brand-mark" aria-hidden="true"></span><span><b>Pharos</b> <span class="when-wide">Agent </span>Lab</span></a>
+    <nav class="shell-tasks" aria-label="Tasks">
+      <span class="shell-step" data-task-step="previous" role="img" aria-label="Previous task" aria-disabled="true"></span>
+      <span class="shell-count" data-task-count><span class="sr">Task </span><b>17</b> / 30</span>
+      <span class="shell-step" data-task-step="next" role="img" aria-label="Next task" aria-disabled="true"></span>
+    </nav>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme">
+      <span class="theme-icons" aria-hidden="true">
+        <svg class="when-dark" viewBox="0 0 16 16" focusable="false"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.25v1.5M8 13.25v1.5M1.25 8h1.5M13.25 8h1.5M3.2 3.2l1.06 1.06M11.74 11.74l1.06 1.06M3.2 12.8l1.06-1.06M11.74 4.26l1.06-1.06" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <svg class="when-light" viewBox="0 0 16 16" focusable="false"><path d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </span>
+    </button>
+  </div>
+</header>
+<!-- /shell:header -->
+
+<main id="main" class="rail page" data-api="/api/agent" data-task="17">
+  <header class="task-head">
+    <p class="label task-kicker"><span class="task-n">17</span><span>Natural-Language Payment Agent</span></p>
+    <h1 class="task-title">Say who to pay</h1>
+    <p class="task-via">Requests read into payments, each dry-run via <strong class="nowrap">Pharos Chain MCP</strong> and ready to sign</p>
+  </header>
+
+  <form class="ask" id="ask" novalidate>
+    <label class="field-label" for="f-request">Payment request</label>
+    <textarea class="input" id="f-request" name="request" rows="2" maxlength="500" placeholder="Pay alice 25 USDC and send 0.01 PROS to bob for lunch" autocomplete="off" required aria-describedby="h-request"></textarea>
+    <p class="field-hint" id="h-request">Pay, send, transfer, give or split; PROS or an official token; to an address or a name below. Say "each" or "split" for several recipients.</p>
+    <div class="ask-row">
+      <div class="ask-cell">
+        <label class="field-label" for="f-from">From <span class="optional">optional</span></label>
+        <input class="input" id="f-from" name="from" placeholder="0x…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="h-from">
+        <p class="field-hint" id="h-from">The sender. Empty: the example address.</p>
+      </div>
+      <div class="ask-cell">
+        <label class="field-label" for="f-contacts">Address book</label>
+        <textarea class="input" id="f-contacts" name="contacts" rows="3" wrap="off" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="h-contacts"></textarea>
+        <p class="field-hint" id="h-contacts">One name = 0x… a line. Example names for example addresses: edit them.</p>
+      </div>
+    </div>
+    <div class="ask-go"><button class="btn btn-primary" type="submit">Prepare</button></div>
+    <p class="examples"><span class="examples-label">Or try</span> <button class="action" id="ex-two" type="button">Two payments</button> <button class="action" id="ex-split" type="button">Split a bill</button> <button class="action" id="ex-each" type="button">Each the same</button></p>
+  </form>
+
+  <section class="panel run" id="answer" aria-labelledby="answer-h">
+    <div class="beacon" aria-hidden="true"></div>
+    <div class="run-head">
+      <h2 class="sr" id="answer-h" tabindex="-1">The prepared flow</h2>
+      <p class="status" id="status" role="status" data-tone="active"><span class="status-dot" aria-hidden="true"></span><span class="status-word" id="status-word">Preparing</span><span class="status-detail" id="status-detail">reading the request</span></p>
+      <button class="btn" id="again" type="button" aria-disabled="true"><span class="swap"><span>Prepare again</span><span>Preparing…</span></span></button>
+    </div>
+    <p class="meta" id="pin" hidden><span>Block <b id="pin-block">—</b></span><span>mined <b id="pin-time">—</b></span></p>
+    <p class="tx" id="asked" hidden></p>
+    <p class="note" id="why" hidden></p>
+    <p class="note" id="error" data-tone="error" hidden></p>
+    <noscript><p class="note">The agent answers from this page with JavaScript. One flow is at /api/agent?task=17&amp;request=… as JSON.</p></noscript>
+
+    <div class="run-body">
+      <div class="run-main" id="flow-box" hidden>
+        <h3 class="sub-title" id="payments-h">The payments <span class="sub-meta" id="sender"></span></h3>
+        <ol class="payments" id="payments" aria-labelledby="payments-h"></ol>
+
+        <div class="block">
+          <h3 class="sub-title" id="totals-h">In all</h3>
+          <ul class="totals" id="totals" aria-labelledby="totals-h"></ul>
+        </div>
+
+        <div class="block" id="sign-box" hidden>
+          <h3 class="sub-title" id="sign-h">To sign, in order</h3>
+          <p class="sign-meta" id="sign-meta"></p>
+          <pre class="cmd" id="sign-json"></pre>
+          <div class="actions"><button class="action copy" id="sign-copy" type="button" data-copy="idle"><span class="swap"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.75 5.75h6.5v6.5h-6.5zM3.75 10.25v-6.5h6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="swap"><span>Copy the transactions</span><span>Copied</span></span></button></div>
+          <p class="sr" id="copy-state" aria-live="polite"></p>
+        </div>
+      </div>
+      <details class="run-side trail-box" id="trail-box" hidden>
+        <summary class="trail-summary"><h3 class="sub-title" id="trail-h">How it got there <span class="sub-meta" id="trail-n"></span></h3><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
+        <ol class="trail" id="trail" aria-labelledby="trail-h"></ol>
+      </details>
+    </div>
+  </section>
+
+  <details class="disclosure" id="proof">
+    <summary><h2 class="disclosure-title" id="proof-h">Proof &amp; technical details</h2><span class="chev" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></summary>
+    <div class="disclosure-body">
+      <div class="proof-grid">
+        <div class="proof-col">
+          <h3 class="sub-title">How it prepares</h3>
+          <ol class="steps">
+            <li><span class="step-n">1</span><code class="step-k">read</code><span class="step-d">The request, by a small grammar, every word of it: pay, send, transfer, give or split; an amount with its asset; recipients by address or the address book's names; "each", "split", "for" a note, "from" a sender. A request not read whole is refused, with the words that were not</span></li>
+            <li><span class="step-n">2</span><code class="step-k">get_transaction_count</code><span class="step-d">The sender's next nonce at one block: the payments take it and the ones after, in order</span></li>
+            <li><span class="step-n">3</span><code class="step-k">eth_call · estimate_gas</code><span class="step-d">Each payment dry-run at the same block (Task 08): the balances it changes, the call from the sender, the gas and the fee</span></li>
+            <li><span class="step-n">4</span><code class="step-k">the flow</code><span class="step-d">Each asset in all against what the sender holds, PROS with every payment's maximum fee on top: the dry runs each start from the same balances, so together they must fit in them</span></li>
+            <li><span class="step-n">5</span><code class="step-k">prepared</code><span class="step-d">Each payment as the transaction a wallet signs, nonce by nonce, and as the Pharos Skill Engine's cast send. The CLI sends them on Atlantic with a key, in order, each against its receipt</span></li>
+          </ol>
+        </div>
+        <div class="proof-col">
+          <h3 class="sub-title">This flow's Chain MCP calls <span class="sub-meta" id="pin-calls"></span></h3>
+          <ol class="calls" id="calls"><li class="calls-empty">The calls of the latest flow appear here.</li></ol>
+          <div class="actions"><button class="action" id="json-toggle" type="button" aria-expanded="false" aria-controls="json">Show the result as JSON</button></div>
+          <pre class="json" id="json" hidden></pre>
+        </div>
+      </div>
+      <div class="proof-col">
+        <h3 class="sub-title">Run it yourself</h3>
+        <pre class="cmd"><code>cd agent &amp;&amp; npm ci
+printf 'alice = 0x…\nbob = 0x…\n' &gt; contacts.txt
+node dist/src/cli.js pay "Pay alice 25 USDC and send 0.01 PROS to bob for lunch" --contacts contacts.txt --proof flow.json
+node dist/src/cli.js pay "Split 2 USDC between alice and bob" --contacts contacts.txt --network atlantic-testnet --execute
+node dist/src/cli.js verify flow.json</code></pre>
+        <p class="prose">The verifier reads the request again and replays the recorded Chain MCP answers through the same code: the same calls give exactly the recorded payments, totals and verdict, and each sent transaction must be exactly its dry-run one, signed by the sender, in order. No language model reads the request: a request the grammar does not read whole is refused, never guessed at.</p>
+      </div>
+      <div class="proof-col">
+        <h3 class="sub-title" id="sources-h">Sources</h3>
+        <ul class="sources" aria-labelledby="sources-h">
+          <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/tasks/17-natural-language-payment" target="_blank" rel="noopener noreferrer"><span class="source-title">Task and proof</span><span class="source-meta">tasks/17-natural-language-payment</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="https://github.com/Rzbyte/pharos-season-of-ai/tree/main/agent/src/payment" target="_blank" rel="noopener noreferrer"><span class="source-title">Agent source</span><span class="source-meta">agent/src/payment</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="https://github.com/PharosNetwork/pharos-skill-engine/tree/a873387c9e34e9ae8e71360d43dc33329a335a24" target="_blank" rel="noopener noreferrer"><span class="source-title">Pharos Skill Engine</span><span class="source-meta">PharosNetwork/pharos-skill-engine · a873387</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="https://github.com/PharosNetwork/pharos-mcp" target="_blank" rel="noopener noreferrer"><span class="source-title">Pharos Chain MCP server</span><span class="source-meta">PharosNetwork/pharos-mcp</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 11l6-6M6 5h5v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens in a new tab</span></a></li>
+          <li><a href="/api/agent?task=17"><span class="source-title">API JSON</span><span class="source-meta">/api/agent?task=17</span><svg class="source-arrow" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a></li>
+        </ul>
+      </div>
+    </div>
+  </details>
+</main>
+
+<!-- shell:footer 17 -->
+<footer class="foot">
+  <div class="rail foot-inner">
+    <p class="foot-tag">Pharos Agent Lab<span class="foot-more"> · Season of AI</span></p>
+    <ul class="foot-links" aria-label="Elsewhere">
+      <li><a class="icon-link" href="https://github.com/Rzbyte/pharos-season-of-ai" target="_blank" rel="noopener noreferrer" aria-label="Source code on GitHub, opens in a new tab" title="GitHub"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a></li>
+      <li><a class="icon-link" href="https://docs.pharos.xyz/" target="_blank" rel="noopener noreferrer" aria-label="Pharos documentation, opens in a new tab" title="Pharos Docs"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" fill-rule="evenodd" d="M6 1.5h8.25L20 7.25V20.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-17a2 2 0 0 1 2-2Zm7.5 1.75V8.5h5.25L13.5 3.25ZM7.5 12h9v1.5h-9V12Zm0 3.5h9V17h-9v-1.5Zm0-7h3.5V10H7.5V8.5Z"/></svg></a></li>
+      <li><a class="icon-link" href="https://x.com/rzbyte_" target="_blank" rel="noopener noreferrer" aria-label="rzbyte_ on X, opens in a new tab" title="X"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a></li>
+    </ul>
+  </div>
+</footer>
+<!-- /shell:footer -->
+</body>
+</html>
