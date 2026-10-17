@@ -14,6 +14,7 @@ node dist/src/cli.js watch --store s.json  # Task 09: one observation per run, k
 node dist/src/cli.js alert --store a.json  # Task 22: new transfers and condition changes since the last run
 node dist/src/cli.js whales --store w.json # Task 23: tracked addresses, their changes and significant moves
 node dist/src/cli.js gas --store g.json    # Task 24: send now or wait, with the fee capped at the target
+node dist/src/cli.js explain 0x…           # Task 27: why a transaction failed
 npm test                                 # every test, offline
 ```
 
@@ -35,6 +36,7 @@ npm test                                 # every test, offline
 | `src/alert/` | Task 22, On-Chain Alert Bot: bots (transfer and state rules), the store kept between runs (the last block scanned, which conditions held, alerts not yet delivered), the run (Transfer logs from the cursor in pages, conditions compared with the last run), webhook delivery, presets, the proof verifier and the history check. |
 | `src/whale/` | Task 23, Whale-Watching Agent: watchlists (labelled addresses, official tokens with their significant amounts, a native amount), the store kept between runs (the cursor, each address as it was), the run (every address at one block, Transfer logs by any tracked address in two queries a page, significant moves, a report per address), presets, the proof verifier and the history check. |
 | `src/gas/` | Task 24, Gas Fee Optimizer: plans (a transaction, a target, the window, a first run's backfill, a deadline), the store kept between runs (the observed fees, since when it waits, what it sent), the run (observe, dry-run, decide, settings and costs, Atlantic sending), presets, the proof verifier (with the signed fee cap) and the history check. |
+| `src/support/` | Task 27, dApp Support Agent: revert data decoded in plain language (Error, Panic, OpenZeppelin 5 errors), the explanation of a transaction by hash (receipt, replay before its block, code, token balance and allowance, out of gas, earlier in its block) or by description (Task 08's dry run), and the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |
 

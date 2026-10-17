@@ -142,10 +142,13 @@ export function agentRunner({ task, panel, running, failed, render, onFail }) {
   };
   const show = (body) => {
     const { result } = body;
-    $("pin").hidden = false;
-    $("pin-block").textContent = group(result.block.number);
-    $("pin-time").textContent = clockTime(result.block.timestamp);
-    $("pin-time").title = result.block.timestamp;
+    // A result about no block (a transaction the network does not know, or still pending) pins none.
+    $("pin").hidden = !result.block;
+    if (result.block) {
+      $("pin-block").textContent = group(result.block.number);
+      $("pin-time").textContent = clockTime(result.block.timestamp);
+      $("pin-time").title = result.block.timestamp;
+    }
     $("pin-calls").textContent = `${result.toolCalls} calls`;
     $("error").hidden = true;
     renderCalls(body.calls);

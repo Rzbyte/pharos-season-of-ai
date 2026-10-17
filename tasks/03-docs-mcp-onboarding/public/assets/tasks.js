@@ -51,7 +51,7 @@ export const TASKS = Object.freeze([
   task("24", "Gas Fee Optimizer", { verb: "Time", tool: "Chain MCP", status: "built", purpose: "The fee watched block by block, and one transaction sent now or held for a cheaper one." }),
   task("25", "Wallet Risk Checker"),
   task("26", "Audit-Log Agent"),
-  task("27", "dApp Support Agent"),
+  task("27", "dApp Support Agent", { verb: "Explain", tool: "Chain MCP", status: "built", purpose: "Why a transaction failed, on request: the revert decoded, each finding with its source." }),
   task("28", "Weekly Digest Agent"),
   task("29", "Doc-Grounded Builder Agent"),
   task("30", "Multi-Protocol Aggregator", { tool: "Composition" }),
