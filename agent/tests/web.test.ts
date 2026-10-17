@@ -73,7 +73,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22 or 23\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22, 23 or 24\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -242,6 +242,50 @@ describe("GET /api/agent?task=23", () => {
       ["task=23&store=nope", /store must be JSON: \{ cursor, snapshots \}/],
       [`task=23&store=${encodeURIComponent(JSON.stringify({ cursor: "x" }))}`, /cursor must be a block number or null/],
       [`task=23&store=${encodeURIComponent(JSON.stringify({ cursor: null, snapshots: { [BUSIEST.toLowerCase()]: { block: "1", native: "x", nonce: "1", contract: false, tokens: {} } } }))}`, /needs a native balance and a nonce/],
+    ];
+    for (const [query, error] of cases) {
+      const response = await get(query);
+      assert.equal(response.status, 400, query);
+      assert.match(message(response), error, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=24", () => {
+  type Body = { result: { schema: string; decision: string; reason: string; window: { block: string; fee: string }[]; target: { shown: string }; settings: { shown: { maxFeePerGas: string } } | null; store: { waitingSince: string | null } }; inputs: Record<string, string> };
+  const half = (block: number) => `${block}:500000000:21000:30000000:${1_790_000_000 - (5_000_000 - block)}:b`;
+
+  test("a first run: earlier blocks read, the fee judged, the transaction priced; never cached", async () => {
+    const response = await get("task=24");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 0, "each answer depends on the observations sent");
+    const body = response.body as Body;
+    assert.equal(body.result.schema, "pharos-agent/gas-run/1");
+    assert.equal(body.result.window.length, 6);
+    assert.deepEqual([body.result.decision, body.result.reason], ["send", "The base fee has held at 1 gwei across 6 observations, so waiting saves nothing."]);
+    assert.deepEqual(body.inputs, { action: "transfer", asset: "USDC", from: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", to: "0xB2749BD12f19C24a2244176658F3dF3e48e79553", amount: "25", percentile: "25" });
+  });
+
+  test("the page's observations: cheaper ones earlier make it wait, capped at the target, and it remembers since when", async () => {
+    const response = await get(`task=24&series=${[4_999_960, 4_999_970, 4_999_980, 4_999_990].map(half).join(",")}`);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.window.length, body.result.decision, body.result.target.shown, body.result.settings?.shown.maxFeePerGas], [5, "wait", "0.5 gwei", "0.6 gwei"]);
+    assert.equal(body.result.store.waitingSince, "5000000");
+    const later = (await get(`task=24&series=${[4_999_960, 4_999_970].map(half).join(",")}&waitingSince=4999990&percentile=75`)).body as Body;
+    assert.deepEqual([later.result.decision, later.result.store.waitingSince], ["send", null]);
+  });
+
+  test("bad settings or bad observations are a 400, before any Chain MCP call", async () => {
+    const before = fake.requests.length;
+    const tooMany = Array.from({ length: 13 }, (_, i) => half(4_999_000 + i)).join(",");
+    const cases: [string, RegExp][] = [
+      ["task=24&percentile=30", /percentile must be 10, 25, 50 or 75/],
+      ["task=24&asset=DOGE", /asset must be PROS or one of/],
+      ["task=24&series=abc", /series lists earlier observations as block:fee:gasUsed:gasLimit:seconds:b/],
+      [`task=24&series=${tooMany}`, /At most 12 earlier observations/],
+      [`task=24&series=${half(4_999_990)},${half(4_999_980)}`, /in block order, one per block/],
+      ["task=24&waitingSince=soon", /waitingSince must be a block number/],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);

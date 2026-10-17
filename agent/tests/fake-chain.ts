@@ -32,6 +32,8 @@ export interface FakeChainState {
   /** Unix seconds of the head block; earlier blocks are one second apart. */
   headTime: bigint;
   baseFee: bigint | null;
+  /** A block's own base fee, by block number, where it differs from `baseFee`. */
+  baseFees?: Record<string, bigint>;
   gasPrice: bigint;
   priorityFee: bigint;
   native: Record<string, bigint>;
@@ -193,7 +195,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     eth_getBlockByNumber: ([tag]) => {
       const n = blockOf(tag);
       if (n > state.head) return null;
-      return { number: hex(n), hash: keccak256(word("uint256", n)), timestamp: hex(state.headTime - (state.head - n)), ...(state.baseFee !== null ? { baseFeePerGas: hex(state.baseFee) } : {}), gasUsed: "0x5208", gasLimit: "0x1c9c380", transactions: [] };
+      return { number: hex(n), hash: keccak256(word("uint256", n)), timestamp: hex(state.headTime - (state.head - n)), ...(state.baseFee !== null ? { baseFeePerGas: hex(state.baseFees?.[n.toString()] ?? state.baseFee) } : {}), gasUsed: "0x5208", gasLimit: "0x1c9c380", transactions: [] };
     },
     eth_getCode: ([address]) => state.code[lower(address)] ?? (state.tokens[lower(address)] ? "0x6080604052" : "0x"),
     eth_getStorageAt: () => word("uint256", 0n),

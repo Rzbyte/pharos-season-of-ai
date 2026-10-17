@@ -28,6 +28,9 @@ import { parseWatchlist } from "./whale/config.js";
 import { SAMPLE_ADDRESSES, USDC_WHALE_DEFAULTS, usdcWhales } from "./whale/presets.js";
 import { runWhales } from "./whale/run.js";
 import { parseWhaleStore, watchlistKey } from "./whale/store.js";
+import { parseGasPlan } from "./gas/config.js";
+import { runGasPlan } from "./gas/run.js";
+import { parseGasStore, planKey } from "./gas/store.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -286,6 +289,47 @@ async function whaleWatcher(params: URLSearchParams, options: WebOptions): Promi
   }
 }
 
+/** The most earlier fee observations the page sends for Task 24 (its window). */
+export const WEB_GAS_SERIES = 12;
+
+/** Task 24: one transaction (as Task 08 takes it) timed against the fees observed so far, which the page keeps. */
+async function gasOptimizer(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const parsed = requestFrom(params);
+  if ("status" in parsed) return parsed;
+  const { inputs: tx, request } = parsed;
+  const get = (key: string, fallback: string) => (params.get(key) ?? fallback).trim();
+  const percentile = get("percentile", "25");
+  if (!["10", "25", "50", "75"].includes(percentile)) return usage("percentile must be 10, 25, 50 or 75.");
+  // Earlier observations, oldest first: block:fee:gasUsed:gasLimit:seconds:source (b for a base fee, g for a gas price).
+  const series = get("series", "");
+  const entries = series ? series.split(",") : [];
+  if (entries.length > WEB_GAS_SERIES) return usage(`At most ${WEB_GAS_SERIES} earlier observations can be sent.`);
+  const observations = [];
+  for (const entry of entries) {
+    const match = /^(\d{1,12}):(\d{1,30}):(\d{1,20}):(\d{1,20}):(\d{1,12}):([bg])$/.exec(entry);
+    if (!match) return usage("series lists earlier observations as block:fee:gasUsed:gasLimit:seconds:b, separated by commas.");
+    observations.push({ block: match[1], fee: match[2], gasUsed: match[3], gasLimit: match[4], timestamp: new Date(Number(match[5]) * 1000).toISOString(), source: match[6] === "b" ? "base-fee" : "gas-price" });
+  }
+  const waitingSince = get("waitingSince", "");
+  if (waitingSince && !/^\d{1,12}$/.test(waitingSince)) return usage("waitingSince must be a block number.");
+  let plan;
+  try {
+    plan = parseGasPlan({ name: "Timed transaction", network: net.id, transaction: request.intent, target: { percentile: Number(percentile) }, window: WEB_GAS_SERIES, backfill: { samples: 5, spacing: 200 }, deadline: null });
+  } catch (error) {
+    return usage(errorMessage(error));
+  }
+  const store = parseGasStore({ schema: "pharos-agent/gas-store/1", plan: planKey(plan), observations, waitingSince: waitingSince || null, sent: null }, plan);
+  const recorder = new Recorder();
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runGasPlan(plan, store, { chain: new Chain(mcp, net), now: options.now });
+    return { status: 200, body: { result, inputs: { ...tx, percentile }, calls: callLines(recorder.messages) }, maxAge: 0 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -301,8 +345,10 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await alertBot(url.searchParams, options);
       case "23":
         return await whaleWatcher(url.searchParams, options);
+      case "24":
+        return await gasOptimizer(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22 or 23.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22, 23 or 24.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

@@ -7,6 +7,7 @@
 //   pharos-agent watch [preset | watcher.json] [--store FILE] [--execute]
 //   pharos-agent alert [preset | bot.json] [--store FILE] [--webhook URL]
 //   pharos-agent whales [preset | watchlist.json] [--store FILE]
+//   pharos-agent gas [preset | plan.json] [--store FILE] [--execute]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -45,6 +46,11 @@ import { WHALE_PRESETS } from "./whale/presets.js";
 import { MAX_MOVES, runWhales, type WhaleRun } from "./whale/run.js";
 import { emptyWhaleStore, parseWhaleStore } from "./whale/store.js";
 import { verifyWhaleProof, whaleHistoryCheck } from "./whale/verify.js";
+import { parseGasPlan } from "./gas/config.js";
+import { GAS_PRESETS } from "./gas/presets.js";
+import { runGasPlan, type GasRun } from "./gas/run.js";
+import { emptyGasStore, parseGasStore } from "./gas/store.js";
+import { gasHistoryCheck, verifyGasProof } from "./gas/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -111,9 +117,20 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --store FILE         what the watcher saw last run (default: whale-store.json)
       --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent gas [preset | plan.json] [options]           Task 24, Gas Fee Optimizer
+      Observes the fee (each block's base fee), keeps the observations across runs, and decides for one
+      transaction whether to send it now or wait: send when the fee is at or below the target (a
+      percentile of the observed fees, or a fixed fee) or the plan has waited past its deadline. Gives
+      the fee settings, capped at the target, and the cost now and at the target. Presets: usdc (Pharos
+      Mainnet, advice only), atlantic-usdc (testnet, from PRIVATE_KEY's address). A plan is JSON
+      (agent/src/gas/config.ts).
+      --store FILE         the observations kept between runs (default: gas-store.json)
+      --execute            Atlantic only: send it, with those settings, when the decision is to send
+      --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
-                              proofs of one watcher, alert bot or watchlist, in run order, are also
-                              checked as one history
+                              proofs of one watcher, alert bot, watchlist or gas plan, in run order,
+                              are also checked as one history
 
 Mainnet runs use the hosted Chain MCP (https://mcp.pharos.xyz/mcp, read-only). Atlantic runs start
 the official Pharos Chain MCP server (vendored, unmodified) locally over stdio.`;
@@ -702,10 +719,105 @@ async function whales(flags: Flags): Promise<number> {
   }
 }
 
+function printGas(run: GasRun, storePath: string): void {
+  const n = (value: string) => BigInt(value).toLocaleString("en-US");
+  const d = run.dryRun;
+  out(`Pharos Gas Fee Optimizer · ${run.plan}`);
+  out();
+  out(`  Network      ${run.network.name} (chain ${run.network.chainId})`);
+  out(`  Chain MCP    ${run.chainMcp.where}${run.chainMcp.server ? ` (${run.chainMcp.server})` : ""}`);
+  out(`  Block        ${n(run.block.number)} · ${run.block.timestamp}`);
+  out(`  Transaction  ${d.summary} (${d.verdict === "would-succeed" ? `would succeed${d.gas ? `, ${n(d.gas.gas)} gas` : ""}` : d.verdict === "cannot-pay" ? "cannot pay its fee" : "would revert"})`);
+  out(`  Store        ${storePath}`);
+  out();
+  const fresh = new Set(run.observed.map((o) => o.block));
+  for (const [index, o] of run.window.entries()) {
+    const full = BigInt(o.gasLimit) > 0n ? Number((BigInt(o.gasUsed) * 1000n) / BigInt(o.gasLimit)) / 10 : 0;
+    out(`  ${index === 0 ? "Observed    " : "            "} block ${n(o.block).padStart(11)}  ${formatGwei(BigInt(o.fee)).padStart(16)}  ${`${full}% full`.padStart(9)}${o.block === run.block.number ? "  now" : fresh.has(o.block) ? "  read now" : ""}`);
+  }
+  out(`  ${run.fee.source === "base-fee" ? "Base fee    " : "Gas price   "} now ${run.fee.shown.now} · lowest ${run.stats.shown.min} · median ${run.stats.shown.median} · highest ${run.stats.shown.max}`);
+  out(`  Target       ${run.target.shown}: ${run.target.how}`);
+  out(`  Decision     ${{ send: "SEND NOW", wait: "WAIT", blocked: "NOT SENDABLE", sent: "ALREADY SENT" }[run.decision]}: ${run.reason}`);
+  if (run.settings) out(`  Settings     maxFeePerGas ${run.settings.shown.maxFeePerGas} · maxPriorityFeePerGas ${run.settings.shown.maxPriorityFeePerGas}`);
+  const c = run.costs;
+  if (c) {
+    out(`  Cost         now ${c.shown.now} · at the target ${c.shown.atTarget}${BigInt(c.saving) > 0n ? ` · waiting saves ${c.shown.saving}` : ""}`);
+    out(`               at most ${c.shown.cappedMax} with this cap, against ${c.shown.standardMax} with the usual one (twice the base fee plus the priority fee)`);
+  }
+  const x = run.execution;
+  if (x) out(`  Sent         ${x.txHash} · ${x.status}${x.blockNumber ? ` in block ${n(x.blockNumber)}` : ""}${x.cost ? ` · cost ${formatAmount(BigInt(x.cost), 18, 8)} ${network(run.network.id).nativeSymbol}` : ""}`);
+  else if (run.notSent) out(`  Sent         ${run.notSent}`);
+  out();
+  out(`  ${run.toolCalls} Chain MCP calls.`);
+}
+
+async function gasPlan(flags: Flags): Promise<number> {
+  let key: Signer | undefined;
+  const keySigner = () => (key ??= signerFromEnv());
+  const name = flags.positional[1] ?? "usdc";
+  const preset = GAS_PRESETS[name];
+  let text: string;
+  if (preset) text = JSON.stringify(preset());
+  else {
+    try {
+      text = await readFile(name, "utf8");
+    } catch {
+      throw new AgentError("usage", `No gas plan preset or file "${name}".`, "Presets: usdc (mainnet), atlantic-usdc (testnet, from PRIVATE_KEY's address). Or pass a path to a gas plan JSON file.");
+    }
+  }
+  // "$SIGNER" stands for the address of PRIVATE_KEY.
+  if (text.includes("$SIGNER")) {
+    if (!process.env.PRIVATE_KEY) throw new AgentError("usage", `"${name}" sends from your own wallet ($SIGNER), so it needs PRIVATE_KEY (an Atlantic testnet key) for the address.`, "export PRIVATE_KEY=0x... (never commit it)");
+    text = text.replaceAll("$SIGNER", keySigner().address);
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (error) {
+    throw new AgentError("usage", `${name} is not valid JSON: ${errorMessage(error)}`);
+  }
+  const plan = parseGasPlan(json);
+  const net = network(plan.network);
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (network: atlantic-testnet).");
+  const storePath = flags.store ?? "gas-store.json";
+  let saved: string | null = null;
+  try {
+    saved = await readFile(storePath, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") throw new AgentError("usage", `The store ${storePath} cannot be read: ${errorMessage(error)}`);
+  }
+  let stored: unknown = null;
+  if (saved !== null) {
+    try {
+      stored = JSON.parse(saved);
+    } catch (error) {
+      throw new AgentError("usage", `The store ${storePath} is not valid JSON: ${errorMessage(error)}`);
+    }
+  }
+  const store = stored === null ? emptyGasStore(plan) : parseGasStore(stored, plan);
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 120 });
+  try {
+    const run = await runGasPlan(plan, store, { chain: new Chain(mcp, net), block: flags.block, signer: flags.execute ? keySigner() : undefined });
+    await writeFile(`${storePath}.tmp`, `${JSON.stringify(run.store, null, 2)}\n`);
+    await rename(`${storePath}.tmp`, storePath);
+    if (flags.proof) {
+      const proof = proofFile({ task: "24", capability: "gas-optimizer", about: "One Gas Fee Optimizer run: the plan and the store it started from (input), the observations, the decision, the fee settings and costs, the dry run, any transaction sent and the store it left (result), and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>, or several in run order.", mcp, network: net, startedAt: started, input: { plan: json, store }, result: run });
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(run, null, 2));
+    else printGas(run, storePath);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return run.execution && !run.execution.matched ? 8 : 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -721,7 +833,7 @@ async function verify(flags: Flags): Promise<number> {
     proofs.push(proof);
   }
   // Several runs of one watcher or bot, in order: one history, each run from the store the last one left.
-  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck, "whale-watcher": whaleHistoryCheck };
+  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck, "whale-watcher": whaleHistoryCheck, "gas-optimizer": gasHistoryCheck };
   const historyOf = histories[proofs[0]?.capability ?? ""];
   if (proofs.length > 1 && historyOf && proofs.every((p) => p.capability === proofs[0]!.capability)) {
     const history = historyOf(proofs);
@@ -746,6 +858,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "watch") return watch(flags);
   if (command === "alert") return alert(flags);
   if (command === "whales") return whales(flags);
+  if (command === "gas") return gasPlan(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

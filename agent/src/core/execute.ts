@@ -33,18 +33,28 @@ export interface Sent {
   receipt: Receipt | null;
 }
 
+/** Fee settings chosen by the caller (Task 24 caps the fee at its target) instead of the standard ones. */
+export interface FeeSettings {
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+}
+
 /**
  * Sign `tx` with a nonce and fees read through Chain MCP, broadcast it with send_raw_transaction, and
  * poll for its receipt (45 polls, 2 s apart, by default). The gas limit is the estimate plus 20 %; the
- * fee cap is twice the latest base fee plus the priority fee (twice the gas price without a base fee).
+ * fee cap is twice the latest base fee plus the priority fee (twice the gas price without a base fee),
+ * unless `fees` are given.
  */
-export async function signAndSend(chain: Chain, signer: Signer, tx: { to: Address; data?: Hex; value?: bigint; gasEstimate: bigint }, options: { polls?: number; pollMs?: number } = {}): Promise<Sent> {
+export async function signAndSend(chain: Chain, signer: Signer, tx: { to: Address; data?: Hex; value?: bigint; gasEstimate: bigint }, options: { polls?: number; pollMs?: number; fees?: FeeSettings } = {}): Promise<Sent> {
   if (chain.network.id !== "atlantic-testnet") throw new AgentError("execution", "Executing is limited to the Atlantic testnet.");
   const nonce = Number(await chain.nonce(signer.address, "pending"));
-  const latest = await chain.block("latest");
-  const { gasPrice, priorityFee } = await chain.gasPrice();
-  const maxPriorityFeePerGas = priorityFee;
-  const maxFeePerGas = latest.baseFeePerGas !== null ? latest.baseFeePerGas * 2n + priorityFee : gasPrice * 2n;
+  let fees = options.fees;
+  if (!fees) {
+    const latest = await chain.block("latest");
+    const { gasPrice, priorityFee } = await chain.gasPrice();
+    fees = { maxPriorityFeePerGas: priorityFee, maxFeePerGas: latest.baseFeePerGas !== null ? latest.baseFeePerGas * 2n + priorityFee : gasPrice * 2n };
+  }
+  const { maxFeePerGas, maxPriorityFeePerGas } = fees;
   const gasLimit = (tx.gasEstimate * 12n) / 10n;
   const raw = await signer.sign({ chainId: chain.network.chainId, nonce, to: tx.to, data: tx.data, value: tx.value, gas: gasLimit, maxFeePerGas, maxPriorityFeePerGas });
   const hash = await chain.sendRaw(raw);

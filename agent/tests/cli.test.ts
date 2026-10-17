@@ -430,3 +430,48 @@ describe("pharos-agent whales", () => {
   });
 });
 
+describe("pharos-agent gas", () => {
+  // Its own chain: five earlier base fees and the head's, the fee coming down between runs.
+  const RECIPIENT = "0xb2749bd12f19c24a2244176658f3df3e48e79553";
+  const GWEI = 10n ** 9n;
+  let chain: FakeChain;
+  before(async () => {
+    chain = await startFakeChain(defaultState({ baseFee: GWEI, baseFees: { "4999000": GWEI, "4999200": 11n * GWEI / 10n, "4999400": 14n * GWEI / 10n, "4999600": 9n * GWEI / 10n, "4999800": 12n * GWEI / 10n, "5000000": 13n * GWEI / 10n }, priorityFee: GWEI / 10n, native: { [PAYER]: 10n ** 18n }, tokens: { [USDC]: { decimals: 6, balances: { [PAYER]: 1_000_000_000n, [RECIPIENT]: 0n } } } }));
+  });
+  after(() => chain.close());
+
+  test("two runs, one store: wait while the fee is high, then send when it reaches the target; the proofs verify as one history", async () => {
+    const store = join(dir, "gas-store.json");
+    const proofs = [1, 2].map((n) => join(dir, `gas-${n}.json`));
+    const first = await cli(["gas", "--store", store, "--rpc", chain.url, "--proof", proofs[0]!]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.match(first.stdout, /\n {2}Transaction {2}Send 25 USDC from 0x912c…f647 to 0xB274…9553 \(would succeed, 51,234 gas\)\n/);
+    assert.match(first.stdout, /\n {2}Observed {5}block +4,999,000 +1 gwei +0% full {2}read now\n/);
+    assert.match(first.stdout, /\n {15}block +5,000,000 +1\.3 gwei +0% full {2}now\n/);
+    assert.match(first.stdout, /\n {2}Base fee {5}now 1\.3 gwei · lowest 0\.9 gwei · median 1\.1 gwei · highest 1\.4 gwei\n {2}Target {7}1 gwei: the 25th percentile of the last 12 observations\n {2}Decision {5}WAIT: The base fee, 1\.3 gwei, is above the target, 1 gwei/);
+    assert.match(first.stdout, /\n {2}Settings {5}maxFeePerGas 1\.1 gwei · maxPriorityFeePerGas 0\.1 gwei\n {2}Cost {9}now 0\.00007172 PROS · at the target 0\.00005635 PROS · waiting saves 0\.00001537 PROS\n/);
+    assert.match(first.stdout, /\n {2}Sent {9}Nothing was signed or sent: on Pharos Mainnet the optimizer only advises\.\n/);
+    chain.state.head += 10n;
+    chain.state.headTime += 10n;
+    chain.state.baseFees!["5000010"] = 95n * GWEI / 100n;
+    const second = await cli(["gas", "--store", store, "--rpc", chain.url, "--proof", proofs[1]!]);
+    assert.equal(second.code, 0, second.stderr);
+    assert.match(second.stdout, /\n {2}Decision {5}SEND NOW: The base fee, 0\.95 gwei, is at or below the target, 0\.95 gwei/);
+    assert.match(second.stdout, /\n {2}Settings {5}maxFeePerGas 1\.05 gwei · maxPriorityFeePerGas 0\.1 gwei\n/);
+    const saved = JSON.parse(await readFile(store, "utf8"));
+    assert.deepEqual([saved.observations.length, saved.waitingSince], [7, null]);
+    const verified = await cli(["verify", ...proofs]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint", "  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}one history: 2 runs, each from the store the last one left: wait, send\n/);
+  });
+
+  test("refusals before anything runs: --execute on mainnet, an Atlantic preset without a key", async () => {
+    const mainnet = await cli(["gas", "--execute", "--store", join(dir, "never.json"), "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(mainnet.code, 2);
+    assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
+    const keyless = await cli(["gas", "atlantic-usdc", "--store", join(dir, "never.json")]);
+    assert.equal(keyless.code, 2);
+    assert.match(keyless.stderr, /"atlantic-usdc" sends from your own wallet \(\$SIGNER\), so it needs PRIVATE_KEY/);
+  });
+});
+

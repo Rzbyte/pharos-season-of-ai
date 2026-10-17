@@ -14,7 +14,7 @@ import { decodeCall, ERC20, encodeCall, isTrueWord } from "../core/abi.js";
 import { formatAmount, formatGwei } from "../core/amounts.js";
 import type { Address, BlockHeader, Chain, Hex } from "../core/chain.js";
 import { AgentError, errorMessage } from "../core/errors.js";
-import { signAndSend, type Signer } from "../core/execute.js";
+import { signAndSend, type FeeSettings, type Signer } from "../core/execute.js";
 import { knownToken, type Network } from "../core/networks.js";
 import { quoteGas, simulate, type GasQuote, type Simulation } from "../core/simulate.js";
 import { encodeIntent, parseCallSignature, type Intent } from "./intent.js";
@@ -287,12 +287,12 @@ const selfTransfer = (intent: Intent) => (intent.kind === "erc20-transfer" || in
  * prediction (Atlantic only). For a caller that decides between the dry run and the send, such as the
  * policy gatekeeper.
  */
-export async function submitDryRun(chain: Chain, run: DryRun, signer: Signer, wait?: DryRunOptions["wait"]): Promise<Submission> {
+export async function submitDryRun(chain: Chain, run: DryRun, signer: Signer, wait?: DryRunOptions["wait"], fees?: FeeSettings): Promise<Submission> {
   if (chain.network.id !== "atlantic-testnet") throw new AgentError("execution", "Submitting is limited to the Atlantic testnet; on mainnet the dry run is the whole job.");
   if (signer.address.toLowerCase() !== run.tx.from.toLowerCase()) throw new AgentError("execution", `The key's address ${signer.address} is not the sender ${run.tx.from}.`);
   if (run.verdict !== "would-succeed" || !run.gas) throw new AgentError("execution", `Only a transaction that would succeed is sent; this one ${run.verdict === "cannot-pay" ? "cannot pay its fee" : "would revert"}.`);
   const nativeOut = selfTransfer(run.intent) && run.intent.kind === "native-transfer" ? 0n : BigInt(run.tx.value);
-  return submit(chain, signer, wait, { to: run.tx.to, data: run.tx.data, value: BigInt(run.tx.value) }, run.gas, run.outcome, nativeOut);
+  return submit(chain, signer, { ...wait, fees }, { to: run.tx.to, data: run.tx.data, value: BigInt(run.tx.value) }, run.gas, run.outcome, nativeOut);
 }
 
 /** A transaction in words: "Send 25 USDC from 0x912c…f647 to 0xB274…9553". */
@@ -315,7 +315,7 @@ export function describeIntent(intent: Intent, net: Network): string {
  * predicted amount, an allowance must be exactly the approved one, and the sender's native balance
  * must drop by exactly the value plus the fee the receipt reports.
  */
-async function submit(chain: Chain, signer: Signer, wait: DryRunOptions["wait"], tx: { to: Address; data: Hex; value: bigint }, gas: GasQuote, outcome: Line[], nativeOut: bigint): Promise<Submission> {
+async function submit(chain: Chain, signer: Signer, wait: (DryRunOptions["wait"] & { fees?: FeeSettings }) | undefined, tx: { to: Address; data: Hex; value: bigint }, gas: GasQuote, outcome: Line[], nativeOut: bigint): Promise<Submission> {
   const sent = await signAndSend(chain, signer, { to: tx.to, data: tx.data === "0x" ? undefined : tx.data, value: tx.value, gasEstimate: BigInt(gas.gas) }, wait);
   const base: Submission = { txHash: sent.hash, nonce: sent.nonce, status: "pending", blockNumber: null, gasUsed: null, effectiveGasPrice: null, cost: null, comparisons: [], matched: false };
   const receipt = sent.receipt;
