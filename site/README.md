@@ -19,6 +19,7 @@ One Vercel project, one domain: the repository root (`vercel.json`, `package.jso
 | `/tasks/25` | `tasks/25-wallet-risk-checker/public/index.html` |
 | `/tasks/26` | `tasks/26-audit-log-agent/public/index.html` |
 | `/tasks/27` | `tasks/27-dapp-support-agent/public/index.html` |
+| `/tasks/28` | `tasks/28-weekly-digest-agent/public/index.html` |
 | `/assets/*` | every deployment's `public/assets/`, merged |
 | `/api/state`, `/api/inspect`, `/api/explain` | Task 01's handlers |
 | `/api/events` | Task 02's handler |

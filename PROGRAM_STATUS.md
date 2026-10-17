@@ -10,11 +10,13 @@ commit on `main`.
 
 ## Next action
 
-Task 28, Weekly Digest Agent, on branch `task-28-weekly-digest-agent`. Official statement: *"Produces a
-periodic summary of wallet or protocol activity."* It builds on Task 26's report over a period
-(`agent/src/audit/`: periods placed in blocks, the address read at two blocks, logs over every official
-token, sentences) and the store kept between runs (`agent/src/alert/`, `agent/src/whale/`), so each
-run summarises the blocks since the last one. After that, follow the [build order](#build-order).
+Task 13, Docs MCP + Chain MCP Agent, on branch `task-13-docs-chain-agent`. Official statement: *"Uses
+Developer Docs MCP and Chain MCP together, for example understanding a function and then calling it."*
+It builds on Task 04's Developer Docs MCP client and answer gate (`tasks/04-doc-search-cli/`, proven
+live) and the agent's Chain MCP reads (`agent/src/core/`): a question answered from the official docs,
+then the call it describes made through Chain MCP, each step with its source. Only addresses and
+functions the docs or the Skill Engine name; nothing invented. After that, follow the
+[build order](#build-order).
 
 ## User actions required
 
@@ -34,13 +36,14 @@ run summarises the blocks since the last one. After that, follow the [build orde
    - All three report `meta.transport` `docs-mcp`.
 
    If C comes back `answered`, keep that JSON: it is a real regression. The lab at `/` should read
-   "14 / 30 built". `/tasks/05` should open with a guardian decision, `/tasks/08` with a dry-run
+   "15 / 30 built". `/tasks/05` should open with a guardian decision, `/tasks/08` with a dry-run
    verdict, `/tasks/09` with a first observation, `/tasks/11` with a gatekeeper decision,
    `/tasks/22` with an alert bot run over the last 1,000 blocks, `/tasks/23` with the four
    tracked addresses and their holdings, `/tasks/24` with a send-or-wait decision and six
    base fees, `/tasks/25` with a verdict on Task 08's example recipient (its lookalike example
    should say Do not send whenever the example sender has a partner in the last 2,000 blocks),
-   `/tasks/26` with the example address's last hour as a report, and `/tasks/27` with a 5,000,000 USDC transfer explained as it would fail. Its
+   `/tasks/26` with the example address's last hour as a report, `/tasks/28` with USDC hour by hour,
+   and `/tasks/27` with a 5,000,000 USDC transfer explained as it would fail. Its
    "A real transfer from Task 02" example should say it succeeded in block 20,250,972.
 2. **Optional, speeds up everything: network access for Claude sessions.** In the cloud
    environment's settings (Network access, Allowed domains), add:
@@ -94,7 +97,11 @@ run summarises the blocks since the last one. After that, follow the [build orde
    node dist/src/cli.js audit --proof ../tasks/26-audit-log-agent/proof/last-hour.json
    node dist/src/cli.js audit 0x936564245B69f5a293b42cbd752E0eE3bb68b470 --hours 6 --proof ../tasks/26-audit-log-agent/proof/six-hours.json
    node dist/src/cli.js verify ../tasks/26-audit-log-agent/proof/last-hour.json ../tasks/26-audit-log-agent/proof/six-hours.json
-   cd .. && git add tasks/*/proof && git commit -m "Live proofs: Tasks 05, 08, 09, 11 and 22 to 27" && git push origin main
+   # Task 28 (mainnet, read-only, no key): USDC hour by hour; a wallet's day, run again a day later
+   node dist/src/cli.js digest usdc --every hour --periods 3 --so-far --proof ../tasks/28-weekly-digest-agent/proof/usdc-hours.json
+   node dist/src/cli.js digest 0x912c9aDe24D44d8922f0866D8Dcb079f1363f647 --every day --store ../tasks/28-weekly-digest-agent/proof/wallet-store.json --proof ../tasks/28-weekly-digest-agent/proof/wallet-day-1.json
+   node dist/src/cli.js verify ../tasks/28-weekly-digest-agent/proof/usdc-hours.json ../tasks/28-weekly-digest-agent/proof/wallet-day-1.json
+   cd .. && git add tasks/*/proof && git commit -m "Live proofs: Tasks 05, 08, 09, 11 and 22 to 28" && git push origin main
    ```
 
    Optionally, Tasks 05, 08 and 11 can also send on Atlantic. Use a testnet key holding at least 3 USDC
@@ -111,6 +118,10 @@ run summarises the blocks since the last one. After that, follow the [build orde
    prediction. The third sends 1 testnet USDC to the example recipient, the only address its policy
    allows. The fourth sends 1 testnet USDC to the example recipient once the base fee is at or below
    the median of its observations (run it again until it says Sent), with the fee capped there.
+
+   A day after the Task 28 wallet run, run its line again with `--proof
+   ../tasks/28-weekly-digest-agent/proof/wallet-day-2.json`, then verify `wallet-day-1.json` and
+   `wallet-day-2.json` together: one history, the day digested once.
 
    If you know the hash of a failed Pharos Mainnet transaction, Task 27 can explain it as a third
    proof: `node dist/src/cli.js explain 0x<hash> --proof ../tasks/27-dapp-support-agent/proof/failed.json`.
@@ -169,15 +180,15 @@ Pharos protocol addresses not yet verified.
 | 02 | Event / Log Monitor | DONE | `get_logs` monitor, dedup | `305daf4` | pass | live, verified, 2026-10-14 | on site (not checkable here) | [ready](tasks/02-event-log-monitor/SUBMISSION.md); submitted | none |
 | 03 | Docs MCP Onboarding | DONE | onboarding evidence page | `305daf4` | pass | Drive proof + video | on site (not checkable here) | [ready](tasks/03-docs-mcp-onboarding/SUBMISSION.md); submitted | none |
 | 04 | Doc-Search CLI | DONE | Docs MCP `askQuestion` + source gate (EN/ID) | `26c64fe` | pass | live, verified, 2026-10-15 | main not deployed yet | [ready](tasks/04-doc-search-cli/SUBMISSION.md) | user action 1 |
-| 05 | Threshold Guardian | BLOCKED | six conditions at one block, rule, simulated action; Atlantic execution with re-check (`agent/src/guardian`); page on the shared agent layer | main, "Task 05:" | pass: agent 158 (shared); page 6, browser 8 | pending the first live run | in main, not deployed yet | [ready](tasks/05-threshold-guardian/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 05 | Threshold Guardian | BLOCKED | six conditions at one block, rule, simulated action; Atlantic execution with re-check (`agent/src/guardian`); page on the shared agent layer | main, "Task 05:" | pass: agent 169 (shared); page 6, browser 8 | pending the first live run | in main, not deployed yet | [ready](tasks/05-threshold-guardian/SUBMISSION.md) | user action 3 (live proof), then DONE |
 | 06 | Saga Executor | NOT STARTED | dependent steps with retry and rollback | | | | | | |
 | 07 | Arbitrage Scanner | NOT STARTED | two-source rates net of fees | | | | | | needs verified Pharos DEX sources |
-| 08 | Dry-Run Executor | BLOCKED | a transfer, approval or call: state read at one block, `eth_call` from the sender, `estimate_gas` and fee cap, before → after per balance, warnings; Atlantic `--submit` diffed against the receipt (`agent/src/dryrun`) | main, "Task 08:" | pass: agent 158 (shared); page 7, browser 11 | pending the first live run | in main, not deployed yet | [ready](tasks/08-dry-run-executor/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 09 | Trend Watcher | BLOCKED | one observation per run kept in a store across runs (CLI file, page's browser storage); falling, rising, % change or sustained over the last N since the last action; acts once per trend with a Task 08 dry run; proofs chain run to run (`verify` checks one history) (`agent/src/trend`) | main, "Task 09:" | pass: agent 158 (shared); page 7, browser 9; site 22 | pending the first live runs | in main, not deployed yet | [ready](tasks/09-trend-watcher/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 08 | Dry-Run Executor | BLOCKED | a transfer, approval or call: state read at one block, `eth_call` from the sender, `estimate_gas` and fee cap, before → after per balance, warnings; Atlantic `--submit` diffed against the receipt (`agent/src/dryrun`) | main, "Task 08:" | pass: agent 169 (shared); page 7, browser 11 | pending the first live run | in main, not deployed yet | [ready](tasks/08-dry-run-executor/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 09 | Trend Watcher | BLOCKED | one observation per run kept in a store across runs (CLI file, page's browser storage); falling, rising, % change or sustained over the last N since the last action; acts once per trend with a Task 08 dry run; proofs chain run to run (`verify` checks one history) (`agent/src/trend`) | main, "Task 09:" | pass: agent 169 (shared); page 7, browser 9; site 22 | pending the first live runs | in main, not deployed yet | [ready](tasks/09-trend-watcher/SUBMISSION.md) | user action 3 (live proof), then DONE |
 | 10 | Batch Executor | NOT STARTED | bundle independent actions | | | | | | |
-| 11 | Policy Gatekeeper | BLOCKED | a transfer or approval against a policy at one block: asset and counterparty allowlists, per-action and window limits (window from the sender's Transfer logs via `get_logs`), hours at the block's time, gas cap, Task 08 dry run; fail-closed; Atlantic `--execute` (`agent/src/policy`) | main, "Task 11:" | pass: agent 158 (shared); page 8, browser 9 | pending the first live run | in main, not deployed yet | [ready](tasks/11-policy-gatekeeper/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 11 | Policy Gatekeeper | BLOCKED | a transfer or approval against a policy at one block: asset and counterparty allowlists, per-action and window limits (window from the sender's Transfer logs via `get_logs`), hours at the block's time, gas cap, Task 08 dry run; fail-closed; Atlantic `--execute` (`agent/src/policy`) | main, "Task 11:" | pass: agent 169 (shared); page 8, browser 9 | pending the first live run | in main, not deployed yet | [ready](tasks/11-policy-gatekeeper/SUBMISSION.md) | user action 3 (live proof), then DONE |
 | 12 | Skill + Chain MCP Flow | NOT STARTED | Skill Engine skill + Chain MCP | | | | | | |
-| 13 | Docs MCP + Chain MCP Agent | NOT STARTED | understand via docs, then call | | | | | | |
+| 13 | Docs MCP + Chain MCP Agent | NOT STARTED | understand via docs, then call | | | | | | next action |
 | 14 | Portfolio Assistant | NOT STARTED | balances, positions, yields Q&A | | | | | | needs verified protocol sources |
 | 15 | Yield Optimizer | NOT STARTED | compare yields, rebalance | | | | | | needs verified protocol sources |
 | 16 | Liquidation Watchdog | NOT STARTED | lending risk warnings | | | | | | needs a verified lending protocol |
@@ -186,13 +197,13 @@ Pharos protocol addresses not yet verified.
 | 19 | Invoice-to-Payment Agent | NOT STARTED | invoice → prepared payment | | | | | | |
 | 20 | X402 Paywalled API | NOT STARTED | paid endpoint + facilitator + paying client | | | | | | live payment needs funded wallets |
 | 21 | X402 Agent Buyer | NOT STARTED | buys x402 data within a budget | | | | | | after 20 |
-| 22 | On-Chain Alert Bot | BLOCKED | transfer rules from `get_logs` (token, sender, recipient, smallest amount) from a cursor kept between runs, each transfer once; state rules (the guardian's conditions) alerting when they start and stop; CLI store file and webhook delivery with retry; the page keeps the store in browser storage; proofs chain run to run (`agent/src/alert`) | main, "Task 22:" | pass: agent 158 (shared); page 7, browser 10; site 23 | pending the first live runs | in main, not deployed yet | [ready](tasks/22-on-chain-alert-bot/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 23 | Whale-Watching Agent | BLOCKED | labelled addresses read at one block (native, nonce, official tokens, code once); their transfers since a cursor from `get_logs`, two OR-topic queries a page; significant moves (transfers over an amount, native balance changes over another between runs) surfaced once, the rest summed per address; CLI store file, the page's in browser storage; proofs chain run to run (`agent/src/whale`) | main, "Task 23:" | pass: agent 158 (shared); page 7, browser 9; site 24 | pending the first live runs | in main, not deployed yet | [ready](tasks/23-whale-watching-agent/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 24 | Gas Fee Optimizer | BLOCKED | the base fee observed per run and kept (a first run reads five earlier blocks); one transaction dry-run and timed: send at or below a target (a percentile of the observations, or a fixed fee) or past a deadline, else wait; fee settings capped at the target, costs now, at the target and at most; Atlantic `--execute` sends once, the proof checks the signed fee cap (`agent/src/gas`) | main, "Task 24:" | pass: agent 158 (shared); page 7, browser 9; site 25 | pending the first live runs | in main, not deployed yet | [ready](tasks/24-gas-fee-optimizer/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 25 | Wallet Risk Checker | BLOCKED | the counterparty of a planned transaction (recipient, spender or contract) at one block: code (wallet, contract, EIP-7702 delegate), nonce, balance; its recent Transfer history with the sender from `get_logs`, two queries a page; signals with severity and tool: a lookalike of a real partner, transfers of nothing (never counted as dealings), approval to a wallet, unlimited approval, tokens to a token contract, zero address, never used, contract recipient, delegated, the dry run; do not send, check first or looks fine (`agent/src/risk`) | main, "Task 25:" | pass: agent 158 (shared); page 7, browser 9; site 27 | pending the first live runs | in main, not deployed yet | [ready](tasks/25-wallet-risk-checker/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 26 | Audit-Log Agent | BLOCKED | an address over a selected period (the last hours, two times, two blocks), placed in blocks by interpolating on block times; read at the block before and the last block (PROS, nonce, official tokens, code); its logs over every official token, two queries a page (Transfer, Approval, WETH-style Deposit/Withdrawal from it, Transfer to it); plain sentences: transactions sent, flows and counterparties, approvals, transfers of nothing, balances reconciled with the logs, a timeline; 20,000 blocks on the page, 100,000 in the CLI, paced under 120 calls a minute (`agent/src/audit`) | main, "Task 26:" | pass: agent 158 (shared); page 7, browser 8; site 28 | pending the first live runs | in main, not deployed yet | [ready](tasks/26-audit-log-agent/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 27 | dApp Support Agent | BLOCKED | why a transaction failed, by hash: receipt, call replayed before its block for the revert, decoded (Error, Panic, OpenZeppelin 5 errors with token amounts), code, token balance and allowance, out of gas, earlier in its block, each finding with its tool, a fix; by description: Task 08's dry run; no language model (`agent/src/support`) | main, "Task 27:" | pass: agent 158 (shared); page 7, browser 7; site 26 | pending the first live runs | in main, not deployed yet | [ready](tasks/27-dapp-support-agent/SUBMISSION.md) | user action 3 (live proof), then DONE |
-| 28 | Weekly Digest Agent | NOT STARTED | periodic activity summary | | | | | | next action |
+| 22 | On-Chain Alert Bot | BLOCKED | transfer rules from `get_logs` (token, sender, recipient, smallest amount) from a cursor kept between runs, each transfer once; state rules (the guardian's conditions) alerting when they start and stop; CLI store file and webhook delivery with retry; the page keeps the store in browser storage; proofs chain run to run (`agent/src/alert`) | main, "Task 22:" | pass: agent 169 (shared); page 7, browser 10; site 23 | pending the first live runs | in main, not deployed yet | [ready](tasks/22-on-chain-alert-bot/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 23 | Whale-Watching Agent | BLOCKED | labelled addresses read at one block (native, nonce, official tokens, code once); their transfers since a cursor from `get_logs`, two OR-topic queries a page; significant moves (transfers over an amount, native balance changes over another between runs) surfaced once, the rest summed per address; CLI store file, the page's in browser storage; proofs chain run to run (`agent/src/whale`) | main, "Task 23:" | pass: agent 169 (shared); page 7, browser 9; site 24 | pending the first live runs | in main, not deployed yet | [ready](tasks/23-whale-watching-agent/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 24 | Gas Fee Optimizer | BLOCKED | the base fee observed per run and kept (a first run reads five earlier blocks); one transaction dry-run and timed: send at or below a target (a percentile of the observations, or a fixed fee) or past a deadline, else wait; fee settings capped at the target, costs now, at the target and at most; Atlantic `--execute` sends once, the proof checks the signed fee cap (`agent/src/gas`) | main, "Task 24:" | pass: agent 169 (shared); page 7, browser 9; site 25 | pending the first live runs | in main, not deployed yet | [ready](tasks/24-gas-fee-optimizer/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 25 | Wallet Risk Checker | BLOCKED | the counterparty of a planned transaction (recipient, spender or contract) at one block: code (wallet, contract, EIP-7702 delegate), nonce, balance; its recent Transfer history with the sender from `get_logs`, two queries a page; signals with severity and tool: a lookalike of a real partner, transfers of nothing (never counted as dealings), approval to a wallet, unlimited approval, tokens to a token contract, zero address, never used, contract recipient, delegated, the dry run; do not send, check first or looks fine (`agent/src/risk`) | main, "Task 25:" | pass: agent 169 (shared); page 7, browser 9; site 27 | pending the first live runs | in main, not deployed yet | [ready](tasks/25-wallet-risk-checker/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 26 | Audit-Log Agent | BLOCKED | an address over a selected period (the last hours, two times, two blocks), placed in blocks by interpolating on block times; read at the block before and the last block (PROS, nonce, official tokens, code); its logs over every official token, two queries a page (Transfer, Approval, WETH-style Deposit/Withdrawal from it, Transfer to it); plain sentences: transactions sent, flows and counterparties, approvals, transfers of nothing, balances reconciled with the logs, a timeline; 20,000 blocks on the page, 100,000 in the CLI, paced under 120 calls a minute (`agent/src/audit`) | main, "Task 26:" | pass: agent 169 (shared); page 7, browser 8; site 28 | pending the first live runs | in main, not deployed yet | [ready](tasks/26-audit-log-agent/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 27 | dApp Support Agent | BLOCKED | why a transaction failed, by hash: receipt, call replayed before its block for the revert, decoded (Error, Panic, OpenZeppelin 5 errors with token amounts), code, token balance and allowance, out of gas, earlier in its block, each finding with its tool, a fix; by description: Task 08's dry run; no language model (`agent/src/support`) | main, "Task 27:" | pass: agent 169 (shared); page 7, browser 7; site 26 | pending the first live runs | in main, not deployed yet | [ready](tasks/27-dapp-support-agent/SUBMISSION.md) | user action 3 (live proof), then DONE |
+| 28 | Weekly Digest Agent | BLOCKED | periodic summaries on the UTC calendar (hours, days, weeks from Monday) of a protocol (an official token's every transfer: volume, senders and recipients, the largest, top movers, mints and burns) or a wallet (its transfers and approvals over every official token); periods placed with `get_block`, logs read once, each period against the one before and its busiest part named; supply or holdings at the newest block, nothing else in the past; a store so a scheduled run digests each period once, proofs verified as one history; page hour by hour (`agent/src/digest`) | main, "Task 28:" | pass: agent 169 (shared); page 7, browser 6; site 29 | pending the first live runs | in main, not deployed yet | [ready](tasks/28-weekly-digest-agent/SUBMISSION.md) | user action 3 (live proof), then DONE |
 | 29 | Doc-Grounded Builder Agent | NOT STARTED | docs how-to, then perform/prepare | | | | | | |
 | 30 | Multi-Protocol Aggregator | NOT STARTED | across more than one protocol | | | | | | needs verified protocol sources |
 

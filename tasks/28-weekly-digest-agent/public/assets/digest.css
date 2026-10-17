@@ -1,0 +1,22 @@
+/* Task 28 workspace: the digest agent. The run panel, form and proof are shared by the agent pages
+   (agent.css); this adds the hours, newest first (each one's lead sentence, the rest, its blocks; the hour
+   so far marked), and beside them the transfers an hour as bars and what holds now. */
+@layer task {
+  .periods { border-top: 1px solid var(--line); }
+  .period { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-3) 0 var(--space-3) var(--space-3); border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+  .period[data-open="true"] { border-left-color: var(--accent); }
+  .period p { margin: 0; overflow-wrap: anywhere; }
+  .period-lead { font-size: var(--fs-body); font-weight: 600; color: var(--text); line-height: 1.45; max-width: 68ch; }
+  .period-line { font-size: var(--fs-small); color: var(--text-2); line-height: 1.5; max-width: 68ch; }
+  .period-meta { font-size: var(--fs-meta); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+  .bars { display: grid; gap: var(--space-2); margin: 0 0 var(--space-4); padding: 0; list-style: none; }
+  .bar { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); font-size: var(--fs-meta); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .bar-track { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .bar-fill { display: block; height: 100%; border-radius: 99px; background: var(--text-2); }
+  .bar[data-open="true"] .bar-fill { background: var(--accent); }
+  .bar-n { min-width: 3ch; text-align: right; color: var(--text); }
+
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .examples-label { margin-right: var(--space-1); }
+}

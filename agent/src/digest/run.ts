@@ -252,7 +252,9 @@ export async function runDigest(subject: Subject, every: Every, store: DigestSto
   // Now, at the newest block.
   const now: DigestRun["now"] = { supply: null, supplyShown: null, holdings: [] };
   if (subject.kind === "token") {
-    const supply = decodeCall(ERC20.totalSupply, await chain.call({ to: subject.token.address, data: encodeCall(ERC20.totalSupply, []) }, head.number)) as bigint;
+    const data = await chain.call({ to: subject.token.address, data: encodeCall(ERC20.totalSupply, []) }, head.number);
+    if (data === "0x") throw new AgentError("unexpected", `The ${subject.token.symbol} contract answered nothing at block ${group(head.number)}: it has no code there.`);
+    const supply = decodeCall(ERC20.totalSupply, data) as bigint;
     [now.supply, now.supplyShown] = [supply.toString(), amount(supply, subject.token.decimals)];
   }
   else {

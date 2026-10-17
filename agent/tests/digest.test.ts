@@ -218,6 +218,9 @@ describe("a periodic digest", () => {
     const fake = await chain();
     try {
       await assert.rejects(digest(fake, TOKEN, "hour", { periods: 11 }), /periods must be a whole number from 1 to 10/);
+      // An official token with no contract at the newest block is a broken chain, not a zero supply.
+      const WPROS = net.tokens.find((t) => t.symbol === "WPROS")!;
+      await assert.rejects(digest(fake, { kind: "token", token: WPROS }, "hour"), (e: unknown) => e instanceof AgentError && /The WPROS contract answered nothing at block 5,000,000: it has no code there\./.test(e.message));
       const { proof } = await digest(fake, TOKEN, "hour", { periods: 1 });
       const logIds = new Set(proof.transcript.filter((m) => m.direction === "client->server" && JSON.stringify(m.message).includes('"name":"get_logs"')).map((m) => (m.message as { id: number }).id));
       const answer = proof.transcript.find((m) => m.direction === "server->client" && "id" in m.message && logIds.has(m.message.id as number) && JSON.stringify(m.message).includes("6acfc0"))!;

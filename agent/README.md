@@ -17,6 +17,7 @@ node dist/src/cli.js gas --store g.json    # Task 24: send now or wait, with the
 node dist/src/cli.js risk --to 0x…         # Task 25: the recipient's history, checked before sending
 node dist/src/cli.js audit 0x… --hours 24  # Task 26: what an address did, in plain sentences
 node dist/src/cli.js explain 0x…           # Task 27: why a transaction failed
+node dist/src/cli.js digest usdc --every day --periods 2  # Task 28: a token's last two days, summed up
 npm test                                 # every test, offline
 ```
 
@@ -40,6 +41,7 @@ npm test                                 # every test, offline
 | `src/gas/` | Task 24, Gas Fee Optimizer: plans (a transaction, a target, the window, a first run's backfill, a deadline), the store kept between runs (the observed fees, since when it waits, what it sent), the run (observe, dry-run, decide, settings and costs, Atlantic sending), presets, the proof verifier (with the signed fee cap) and the history check. |
 | `src/risk/` | Task 25, Wallet Risk Checker: the counterparty of a planned transaction (code, delegation, nonce, balance) and its recent Transfer history with the sender in two queries a page, the signals (lookalikes, transfers of nothing, approvals to wallets, unlimited approvals, tokens to a token contract, never used, the dry run), the level and verdict, and the proof verifier. |
 | `src/audit/` | Task 26, Audit-Log Agent: periods (the last hours, two times, two blocks) placed in blocks by interpolating on block times, the address read before the period and at its end, its logs over every official token in two queries a page, the report (flows, counterparties, approvals, wrapping, transfers of nothing, balances reconciled, a timeline, sentences), and the proof verifier. |
+| `src/digest/` | Task 28, Weekly Digest Agent: the UTC calendar (hours, days, weeks from Monday), subjects (an official token, or a wallet), the run (periods and their parts placed in blocks, logs read once, figures, comparisons and sentences, the supply or holdings now), the store kept between runs so each period is digested once, the proof verifier and the history check. |
 | `src/support/` | Task 27, dApp Support Agent: revert data decoded in plain language (Error, Panic, OpenZeppelin 5 errors), the explanation of a transaction by hash (receipt, replay before its block, code, token balance and allowance, out of gas, earlier in its block) or by description (Task 08's dry run), and the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |

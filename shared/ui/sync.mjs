@@ -31,6 +31,7 @@ export const TARGETS = [
   "tasks/25-wallet-risk-checker/public",
   "tasks/26-audit-log-agent/public",
   "tasks/27-dapp-support-agent/public",
+  "tasks/28-weekly-digest-agent/public",
 ];
 export const ASSETS = ["lab.css", "lab.js", "theme.js", "tasks.js"];
 /** The agent pages (Task 05 onward) also share the run layer: agent.js and agent.css. */

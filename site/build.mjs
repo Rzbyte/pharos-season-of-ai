@@ -37,6 +37,7 @@ export const TASK_DIRS = Object.freeze({
   "25": "tasks/25-wallet-risk-checker",
   "26": "tasks/26-audit-log-agent",
   "27": "tasks/27-dapp-support-agent",
+  "28": "tasks/28-weekly-digest-agent",
 });
 
 /**
