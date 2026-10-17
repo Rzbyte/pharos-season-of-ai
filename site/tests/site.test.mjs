@@ -17,7 +17,7 @@ import { createSiteServer } from "../serve.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const at = (path) => pathToFileURL(join(REPO, path)).href;
-const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/09": "09 · Trend Watcher", "/tasks/11": "11 · Policy Gatekeeper", "/tasks/22": "22 · On-Chain Alert Bot", "/tasks/23": "23 · Whale-Watching Agent", "/tasks/24": "24 · Gas Fee Optimizer", "/tasks/25": "25 · Wallet Risk Checker", "/tasks/26": "26 · Audit-Log Agent", "/tasks/27": "27 · dApp Support Agent", "/tasks/28": "28 · Weekly Digest Agent" };
+const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/09": "09 · Trend Watcher", "/tasks/11": "11 · Policy Gatekeeper", "/tasks/13": "13 · Docs MCP + Chain MCP Agent", "/tasks/22": "22 · On-Chain Alert Bot", "/tasks/23": "23 · Whale-Watching Agent", "/tasks/24": "24 · Gas Fee Optimizer", "/tasks/25": "25 · Wallet Risk Checker", "/tasks/26": "26 · Audit-Log Agent", "/tasks/27": "27 · dApp Support Agent", "/tasks/28": "28 · Weekly Digest Agent" };
 
 let out;
 let site;
@@ -61,7 +61,11 @@ before(async () => {
       probe.close(() => startHttpServer(loadConfig({ MCP_TRANSPORT: "http", MCP_PORT: String(port), PHAROS_RPC_URL: chain05.url, PHAROS_CHAIN_ID: "1672", RATE_LIMIT_PER_MINUTE: "0" })).then((server) => resolve({ server, url: `http://127.0.0.1:${port}/mcp` }), reject));
     });
   });
-  fakes.push(chain01, ai, chain02, docs, chain05, { close: () => new Promise((resolve) => (official.server.closeAllConnections?.(), official.server.close(resolve))) });
+  // Task 13 also asks the agent's stand-in Developer Docs MCP, whose made-up registry lists USDC.
+  const { startFakeDocs } = await import(at("agent/dist/tests/fake-docs.js"));
+  const REGISTRY = "https://docs.pharos.xyz/getting-started/token-registry";
+  const docs13 = await startFakeDocs(() => `USDC is listed in the [Token Registry](${REGISTRY}).\n\n# Sources\n\n- [Token Registry](${REGISTRY})`, { [REGISTRY]: "# Token Registry\n\n## Pharos Mainnet\n\n| Token | Address |\n| --- | --- |\n| USDC | 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 |\n" });
+  fakes.push(chain01, ai, chain02, docs, chain05, docs13, { close: () => new Promise((resolve) => (official.server.closeAllConnections?.(), official.server.close(resolve))) });
 
   const handler = async (path, args) => (await import(at(path))).createHandler(args);
   const apis = {
@@ -70,7 +74,7 @@ before(async () => {
     explain: await handler(`${TASK_DIRS["01"]}/api/explain.js`, { apiKey: "sk-site-test", providerUrl: ai.url, log: () => undefined }),
     events: await handler(`${TASK_DIRS["02"]}/api/events.js`, chain02.url),
     search: await handler(`${TASK_DIRS["04"]}/api/search.js`, { mcpUrl: docs.url }),
-    agent: await handler("agent/api/agent.js", { chainMcpUrl: official.url }),
+    agent: await handler("agent/api/agent.js", { chainMcpUrl: official.url, docsMcpUrl: docs13.url }),
   };
   const counted = Object.fromEntries(Object.entries(apis).map(([name, fn]) => [name, (req, res) => (apiHits.push(name), fn(req, res))]));
   site = await createSiteServer({ root: out, apis: counted });
@@ -142,7 +146,7 @@ describe("routes", () => {
         const response = await get(variant);
         assert.equal(response.status, 200, variant);
         assert.match(response.headers.get("content-type"), /^text\/html/);
-        assert.match(await response.text(), new RegExp(`<title>${title}`), variant);
+        assert.ok((await response.text()).includes(`<title>${title}`), variant);
       }
     }
   });
@@ -163,7 +167,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 49, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 51, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
@@ -173,11 +177,11 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
-    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28"]);
+    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28"]);
   });
 });
 
@@ -335,6 +339,17 @@ describe("APIs on the one domain", () => {
     assert.match((await bad.json()).error.message, /hours must be a whole number from 1 to 5/);
   });
 
+  test("Task 13: /api/agent?task=13 asks the Developer Docs MCP, then reads what it names through Chain MCP; cached a minute", async () => {
+    const response = await get("/api/agent?task=13");
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "public, s-maxage=60, stale-while-revalidate=60");
+    const body = await response.json();
+    assert.deepEqual([body.result.schema, body.result.verdict, body.docsCalls.map((call) => call.tool)], ["pharos-agent/docs-chain/1", "confirmed", ["askQuestion", "getPage"]]);
+    const bad = await get("/api/agent?task=13&q=");
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error.message, /Ask a question about a Pharos contract/);
+  });
+
   test("Task 27: /api/agent?task=27 explains a transaction through Chain MCP; an unknown hash is said so, uncached", async () => {
     const response = await get(`/api/agent?task=27&hash=0x${"5".repeat(64)}`);
     assert.equal(response.status, 200);
@@ -397,7 +412,7 @@ describe("the site in a browser", { skip }, () => {
       menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
@@ -423,10 +438,12 @@ describe("the site in a browser", { skip }, () => {
     await page.waitForURL(`${base}/tasks/09`);
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/11`);
-    // 12 to 21 are still planned: from 11 the arrow goes to 22.
+    // 12 and 14 to 21 are still planned: from 11 the arrow goes to 13, then to 22.
+    await page.click('[data-task-step="next"]');
+    await page.waitForURL(`${base}/tasks/13`);
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/22`);
-    assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/11");
+    assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/13");
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/23`);
     await page.click('[data-task-step="next"]');
@@ -473,8 +490,8 @@ describe("the site in a browser", { skip }, () => {
     await page.context().close();
   });
 
-  test("Tasks 05, 08, 09, 11 and 22 to 28 at /tasks/NN run the agent through /api/agent on this domain", async () => {
-    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/09", "watch", /^Watching$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/], ["/tasks/22", "watch", /^Watching$/], ["/tasks/23", "watch", /^Watching$/], ["/tasks/24", "gas", /^Send now$/], ["/tasks/25", "check", /^Check first$/], ["/tasks/26", "report", /^(Quiet|Active)$/], ["/tasks/27", "answer", /^Would fail$/], ["/tasks/28", "digest", /^Quiet$/]]) {
+  test("Tasks 05, 08, 09, 11, 13 and 22 to 28 at /tasks/NN run the agent through /api/agent on this domain", async () => {
+    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/09", "watch", /^Watching$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/], ["/tasks/13", "answer", /^Confirmed$/], ["/tasks/22", "watch", /^Watching$/], ["/tasks/23", "watch", /^Watching$/], ["/tasks/24", "gas", /^Send now$/], ["/tasks/25", "check", /^Check first$/], ["/tasks/26", "report", /^(Quiet|Active)$/], ["/tasks/27", "answer", /^Would fail$/], ["/tasks/28", "digest", /^Quiet$/]]) {
       const before = apiHits.filter((name) => name === "agent").length;
       const { page, problems } = await open(path);
       await page.waitForFunction((id) => document.getElementById(id).getAttribute("aria-busy") === "false", panel, { timeout: 15_000 });

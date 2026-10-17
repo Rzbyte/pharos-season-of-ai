@@ -18,6 +18,7 @@ node dist/src/cli.js risk --to 0x…         # Task 25: the recipient's history,
 node dist/src/cli.js audit 0x… --hours 24  # Task 26: what an address did, in plain sentences
 node dist/src/cli.js explain 0x…           # Task 27: why a transaction failed
 node dist/src/cli.js digest usdc --every day --periods 2  # Task 28: a token's last two days, summed up
+node dist/src/cli.js ask "What is the USDC token address on Pharos Mainnet?"  # Task 13: the docs, then the chain
 npm test                                 # every test, offline
 ```
 
@@ -42,6 +43,8 @@ npm test                                 # every test, offline
 | `src/risk/` | Task 25, Wallet Risk Checker: the counterparty of a planned transaction (code, delegation, nonce, balance) and its recent Transfer history with the sender in two queries a page, the signals (lookalikes, transfers of nothing, approvals to wallets, unlimited approvals, tokens to a token contract, never used, the dry run), the level and verdict, and the proof verifier. |
 | `src/audit/` | Task 26, Audit-Log Agent: periods (the last hours, two times, two blocks) placed in blocks by interpolating on block times, the address read before the period and at its end, its logs over every official token in two queries a page, the report (flows, counterparties, approvals, wrapping, transfers of nothing, balances reconciled, a timeline, sentences), and the proof verifier. |
 | `src/digest/` | Task 28, Weekly Digest Agent: the UTC calendar (hours, days, weeks from Monday), subjects (an official token, or a wallet), the run (periods and their parts placed in blocks, logs read once, figures, comparisons and sentences, the supply or holdings now), the store kept between runs so each period is digested once, the proof verifier and the history check. |
+| `src/core/docs-mcp.ts` | The Pharos Developer Docs MCP client (`askQuestion`, `getPage`), called as Task 04's live proof recorded: stateless JSON-RPC POSTs answered as an event stream or JSON. It records every message for the proof, holds to a budget of calls, and replays a recorded run. |
+| `src/docs/` | Task 13, Docs MCP + Chain MCP Agent: reading a docs answer (its sources, the docs saying they do not cover it, contract addresses with the name and network their row or line gives, functions written with a return type), the run (the answer, the cited pages until an address fits and is on a page, the address's code and functions read at one block, the chain's own name against the docs' and the Skill Engine's, the verdict), and the proof verifier that replays both transcripts. |
 | `src/support/` | Task 27, dApp Support Agent: revert data decoded in plain language (Error, Panic, OpenZeppelin 5 errors), the explanation of a transaction by hash (receipt, replay before its block, code, token balance and allowance, out of gas, earlier in its block) or by description (Task 08's dry run), and the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |

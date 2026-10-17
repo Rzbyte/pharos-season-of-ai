@@ -35,7 +35,7 @@ export const TASKS = Object.freeze([
   task("10", "Batch Executor"),
   task("11", "Policy Gatekeeper", { verb: "Gate", tool: "Chain MCP", status: "built", purpose: "A payment checked against a written policy at one block: limits, allowlists, hours." }),
   task("12", "Skill + Chain MCP Flow"),
-  task("13", "Docs MCP + Chain MCP Agent"),
+  task("13", "Docs MCP + Chain MCP Agent", { verb: "Ask", tool: "Docs + Chain MCP", status: "built", purpose: "A question answered from the official docs, then checked and called on chain." }),
   task("14", "Portfolio Assistant"),
   task("15", "Yield Optimizer"),
   task("16", "Liquidation Watchdog"),
