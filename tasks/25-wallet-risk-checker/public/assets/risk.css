@@ -1,0 +1,21 @@
+/* Task 25 workspace: the wallet risk checker. The run panel, form and proof are shared by the agent
+   pages (agent.css); this adds the signals, worst first (its level, what it is, its source, what it
+   means), and the examples under them. */
+@layer task {
+  .signals { border-top: 1px solid var(--line); }
+  .signal { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px var(--space-2); align-items: baseline; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); border-left: 2px solid transparent; }
+  .signal[data-severity="high"] { border-left-color: var(--error); }
+  .signal[data-severity="medium"] { border-left-color: var(--warning); }
+  .signal-level { grid-row: 1; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 99px; font-size: var(--fs-label); color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; }
+  .signal[data-severity="high"] .signal-level { border-color: var(--error); color: var(--error); }
+  .signal[data-severity="medium"] .signal-level { border-color: var(--warning); color: var(--warning); }
+  .signal-title { grid-row: 1; min-width: 0; font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .signal-tool { grid-row: 1; font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); text-align: right; }
+  .signal-detail { grid-row: 2; grid-column: 1 / -1; font-size: var(--fs-small); color: var(--text-2); overflow-wrap: anywhere; }
+  .signals-empty { color: var(--text-3); font-size: var(--fs-meta); }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .examples-label { margin-right: var(--space-1); }
+  #main .signal-tool { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+  /* A long list of tools wraps under the title on narrow panels. */
+  @container panel (max-width: 419px) { .signal-tool { grid-row: 3; grid-column: 1 / -1; text-align: left; } }
+}

@@ -21,6 +21,8 @@ const TRADER = "0x1F3546a29EeC2102c8d52E21a45114124014c85C";
 /** Made up: the first and last four characters of TRADER, nothing else. */
 const LOOKALIKE = getAddress(`0x1f35${"0".repeat(32)}c85c`);
 const POISONER = "0x2222222222222222222222222222222222222222";
+/** Made up too: what a poisoner would send from, the trader's start and end around other characters. */
+const POISONED = getAddress(`0x1f35${"a".repeat(32)}c85c`);
 const WALLET = "0x3333333333333333333333333333333333333333";
 const VAULT = "0xC0FFEE0000000000000000000000000000000001";
 const DELEGATED = "0x4444444444444444444444444444444444444444";
@@ -72,7 +74,8 @@ describe("checking a counterparty before a transaction", () => {
     try {
       const { result, proof, calls } = await check(fake, transfer(TRADER));
       assert.deepEqual(result.counterparty, { address: TRADER, code: "none", delegate: null, nonce: "12", balance: "500000000000000000", balanceShown: "0.5 PROS", token: null });
-      assert.deepEqual(result.history, { from: "4998001", to: "5000000", pages: 4, token: "USDC", transfers: 5, withSender: 3, zeroValue: 0, lookalikes: [] });
+      // The poisoner's transfers of nothing are no dealings: it is not one of the sender's partners.
+      assert.deepEqual(result.history, { from: "4998001", to: "5000000", pages: 4, token: "USDC", transfers: 5, withSender: 3, zeroValue: 0, lookalikes: [], partners: [] });
       assert.deepEqual(ids(result), [["known", "info"]]);
       assert.deepEqual([result.level, result.verdict, result.headline], ["low", "looks-fine", "Low risk: nothing suspicious found. Send 25 USDC from 0x912c…f647 to 0x1F35…c85C."]);
       const either = [PAYER, TRADER].map((a) => `0x${"0".repeat(24)}${lower(a).slice(2)}`);
@@ -90,7 +93,7 @@ describe("checking a counterparty before a transaction", () => {
       assert.deepEqual(ids(result), [["lookalike", "high"], ["never-used", "medium"]]);
       // Checksummed, the lookalike's letters differ in case: the eye skips that too.
       assert.equal(result.signals[0]!.detail, "0x1f35…c85c starts and ends like 0x1F35…c85C, which the sender dealt with 3 times in the last 2,000 blocks, but it is a different address. Address poisoning copies the start and end of an address its victim uses.");
-      assert.deepEqual(result.history?.lookalikes, [{ address: TRADER, times: 3 }]);
+      assert.deepEqual([result.history?.lookalikes, result.history?.partners], [[{ address: TRADER, times: 3 }], [{ address: TRADER, times: 3 }]]);
       assert.deepEqual([result.level, result.verdict], ["high", "do-not-send"]);
       assert.match(result.headline, /^High risk: do not send\. Send 25 USDC from 0x912c…f647 to 0x1f35…c85c\. 0x1f35…c85c starts and ends like/);
       assert.deepEqual((await verifyRiskProof(proof)).filter((c) => !c.ok), []);
@@ -106,6 +109,21 @@ describe("checking a counterparty before a transaction", () => {
       assert.deepEqual(ids(result).slice(0, 1), [["zero-value", "high"]]);
       assert.equal(result.signals[0]!.detail, "2 USDC transfers of nothing between the sender and 0x2222…2222 in the last 2,000 blocks: that is how address poisoning plants a lookalike in a wallet's history.");
       assert.equal(result.history?.withSender, 0, "transfers of nothing are not dealings");
+    } finally {
+      await fake.close();
+    }
+  });
+
+  test("after poisoning: the real partner is not taken for a lookalike of the poisoner's address, which is", async () => {
+    const fake = await mainnet();
+    try {
+      // A transfer of nothing from an address made to look like the trader's plants it in the sender's history.
+      fake.state.transfers.push({ token: USDC, from: POISONED, to: PAYER, amount: 0n, block: HEAD - 10n });
+      const real = (await check(fake, transfer(TRADER))).result;
+      assert.deepEqual([ids(real), real.verdict], [[["known", "info"]], "looks-fine"]);
+      const poisoned = (await check(fake, transfer(POISONED))).result;
+      assert.deepEqual(ids(poisoned), [["lookalike", "high"], ["zero-value", "high"]]);
+      assert.deepEqual([poisoned.history?.partners, poisoned.verdict], [[{ address: TRADER, times: 3 }], "do-not-send"]);
     } finally {
       await fake.close();
     }

@@ -7,8 +7,9 @@
 //   3. Its recent history with the sender: the token's Transfer logs over the last `blocks` blocks
 //      (get_logs, pages of at most 1,000 blocks, two queries a page: sent by either, received by
 //      either). From them: the transfers between the two, zero-value transfers between them (what
-//      address poisoning leaves), and every address the sender dealt with, to catch a lookalike: the
-//      same first and last four characters as one of them, but a different address.
+//      address poisoning leaves), and every address the sender moved tokens with, to catch a lookalike:
+//      the same first and last four characters as one of them, but a different address. Transfers of
+//      nothing are not dealings, so a real partner is never taken for a lookalike of its poisoner.
 //   4. What the transaction does: an approval to a wallet, an unlimited approval, tokens sent to a token
 //      contract, the zero address, a never-used address; and Task 08's dry run at the same block.
 //   5. A risk level from the worst signal, and a verdict: do not send, check first, or it looks fine.
@@ -39,14 +40,23 @@ export interface RiskReport {
   evaluatedAt: string;
   transaction: { summary: string; kind: Intent["kind"]; from: Address; counterparty: Address; role: "recipient" | "spender" | "contract" };
   counterparty: { address: Address; code: "none" | "contract" | "delegated"; delegate: Address | null; nonce: string; balance: string; balanceShown: string; token: string | null };
-  /** The history scanned: the blocks, the token, and what it held. */
-  history: { from: string; to: string; pages: number; token: string; transfers: number; withSender: number; zeroValue: number; lookalikes: { address: Address; times: number }[] } | null;
+  /**
+   * The history scanned: the blocks, the token, and what it held. `partners` are the addresses the
+   * sender moved the token with most often, apart from the counterparty (at most three): what a
+   * lookalike would copy.
+   */
+  history: { from: string; to: string; pages: number; token: string; transfers: number; withSender: number; zeroValue: number; lookalikes: Partner[]; partners: Partner[] } | null;
   signals: Signal[];
   level: "high" | "medium" | "low";
   verdict: "do-not-send" | "check-first" | "looks-fine";
   dryRun: { verdict: string; reason: string | null };
   headline: string;
   toolCalls: number;
+}
+
+export interface Partner {
+  address: Address;
+  times: number;
 }
 
 export interface RiskOptions {
@@ -113,17 +123,18 @@ export async function checkRisk(intent: Intent, options: RiskOptions): Promise<R
     const transfers = [...seen.values()];
     const between = transfers.filter((t) => (same(t.sender, from) && same(t.recipient, counterparty)) || (same(t.sender, counterparty) && same(t.recipient, from)));
     const zeroValue = between.filter((t) => t.amount === 0n).length;
-    // Everyone the sender dealt with, and how often, apart from the counterparty itself.
-    const dealt = new Map<string, { address: Address; times: number }>();
+    // Everyone the sender moved tokens with, and how often, apart from the counterparty itself.
+    const dealt = new Map<string, Partner>();
     for (const t of transfers) {
       const other = same(t.sender, from) ? t.recipient : same(t.recipient, from) ? t.sender : null;
-      if (!other || same(other, counterparty) || same(other, from)) continue;
+      if (!other || t.amount === 0n || same(other, counterparty) || same(other, from)) continue;
       const entry = dealt.get(other.toLowerCase()) ?? { address: other, times: 0 };
       entry.times += 1;
       dealt.set(other.toLowerCase(), entry);
     }
-    const lookalikes = [...dealt.values()].filter((d) => looksLike(d.address, counterparty)).sort((a, b) => b.times - a.times);
-    history = { from: start.toString(), to: at.toString(), pages, token: token.symbol, transfers: transfers.length, withSender: between.length - zeroValue, zeroValue, lookalikes };
+    const ranked = [...dealt.values()].sort((a, b) => b.times - a.times);
+    const lookalikes = ranked.filter((d) => looksLike(d.address, counterparty));
+    history = { from: start.toString(), to: at.toString(), pages, token: token.symbol, transfers: transfers.length, withSender: between.length - zeroValue, zeroValue, lookalikes, partners: ranked.slice(0, 3) };
     const span = `the last ${blocks.toLocaleString("en-US")} blocks`;
     for (const look of lookalikes.slice(0, 3)) add({ id: "lookalike", severity: "high", title: "Looks like an address the sender uses", detail: `${short(counterparty)} starts and ends like ${short(look.address)}, which the sender dealt with ${look.times} ${look.times === 1 ? "time" : "times"} in ${span}, but it is a different address. Address poisoning copies the start and end of an address its victim uses.`, tool: "get_logs" });
     if (zeroValue) add({ id: "zero-value", severity: "high", title: "Zero-value transfers with the sender", detail: `${zeroValue} ${token.symbol} ${zeroValue === 1 ? "transfer" : "transfers"} of nothing between the sender and ${short(counterparty)} in ${span}: that is how address poisoning plants a lookalike in a wallet's history.`, tool: "get_logs" });
