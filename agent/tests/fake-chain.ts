@@ -9,6 +9,9 @@ import { decodeFunctionData, encodeAbiParameters, encodeErrorResult, keccak256, 
 
 export interface FakeToken {
   decimals: number;
+  /** What symbol() and name() answer; a token without them reverts those calls. */
+  symbol?: string;
+  name?: string;
   paused?: boolean;
   /** Addresses a transfer may not come from or go to (Circle's USDC has such a list). */
   blacklist?: string[];
@@ -63,6 +66,8 @@ export interface FakeChainState {
   past?: Record<string, FakeWorld>;
   /** A block's timestamp, where blocks are not one second apart. */
   timeOf?: (block: bigint) => bigint;
+  /** Contracts (lowercase address) that answer calls by their 4-byte selector with fixed return data. */
+  answers?: Record<string, Record<string, Hex>>;
 }
 
 export interface FakeReceipt {
@@ -98,6 +103,8 @@ const ERC20 = parseAbi([
   "function transfer(address to, uint256 amount) returns (bool)",
   "function approve(address spender, uint256 amount) returns (bool)",
   "function allowance(address owner, address spender) view returns (uint256)",
+  "function symbol() view returns (string)",
+  "function name() view returns (string)",
 ]);
 const ERROR_ABI = parseAbi(["error Error(string)"]);
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -167,6 +174,12 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
         return word("uint256", token.balances[lower(decoded.args[0])] ?? 0n);
       case "decimals":
         return word("uint8", token.decimals);
+      case "symbol":
+      case "name": {
+        const text = decoded.functionName === "symbol" ? token.symbol : token.name;
+        if (text === undefined) throw new Revert("unknown function");
+        return word("string", text);
+      }
       case "paused":
         return word("bool", token.paused === true);
       case "totalSupply":
@@ -206,6 +219,8 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     if (value > 0n && from && (world.native[from] ?? 0n) < value) throw new RpcFailure(-32000, "insufficient funds for gas * price + value");
     const reverts = state.reverts?.[to];
     if (reverts) throw new Revert("custom", reverts);
+    const answer = state.answers?.[to]?.[(tx.data ?? "0x").slice(0, 10).toLowerCase()];
+    if (answer) return answer;
     if (world.tokens[to] && tx.data && tx.data !== "0x") return tokenCall(world, to, tx.data, from, apply);
     if (apply && value > 0n && from) {
       world.native[from] = (world.native[from] ?? 0n) - value;

@@ -3,8 +3,9 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { after, before, describe, test } from "node:test";
-import { handle } from "../src/web.js";
+import { DEFAULT_QUESTION, handle } from "../src/web.js";
 import { defaultState, startFakeChain, type FakeChain } from "./fake-chain.js";
+import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
 const USDC = "0xc879c018db60520f4355c26ed1a6d572cdac1815";
 const PAYER = "0x912c9ade24d44d8922f0866d8dcb079f1363f647";
@@ -73,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 22 to 28\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 22 to 28\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -421,5 +422,52 @@ describe("GET /api/agent?task=28", () => {
       assert.match(message(bad), pattern, query);
     }
     assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=13", () => {
+  // Made-up docs in the shape the Developer Docs MCP answers: a registry page that lists USDC on mainnet.
+  const REGISTRY = "https://docs.pharos.xyz/getting-started/token-registry";
+  const cited = `\n\n# Sources\n\n- [Token Registry](${REGISTRY})`;
+  type Body = { result: { schema: string; question: string; verdict: string; headline: string; docs: { status: string; answer: string | null; pages: string[] }; readings: { address: string; code: string; agrees: boolean | null }[] }; inputs: Record<string, string>; calls: { tool: string }[]; docsCalls: { tool: string; args: Record<string, unknown>; ok: boolean }[] };
+  let docs: FakeDocs;
+  before(async () => {
+    fake.state.tokens[USDC]!.symbol = "USDC";
+    docs = await startFakeDocs((q) => (/usdc/i.test(q) ? `USDC is listed in the [Token Registry](${REGISTRY}).${cited}` : `I cannot find information about that in the Pharos Developer Docs.${cited}`), { [REGISTRY]: `# Token Registry\n\n## Pharos Mainnet\n\n| Token | Address |\n| --- | --- |\n| USDC | 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 |\n` });
+  });
+  after(async () => {
+    delete fake.state.tokens[USDC]!.symbol;
+    await docs.close();
+  });
+  const ask = (query: string, docsMcpUrl = docs.url) => handle(new URL(`http://agent.test/api/agent?${query}`), { chainMcpUrl, docsMcpUrl, timeoutMs: 5000 });
+
+  test("the default question: the docs, then the chain; the docs calls listed beside the chain calls; cached a minute", async () => {
+    const response = await ask("task=13");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 60);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.question, body.result.verdict, body.result.docs.answer, body.result.docs.pages], ["pharos-agent/docs-chain/1", DEFAULT_QUESTION, "confirmed", "USDC is listed in the Token Registry.", [REGISTRY]]);
+    assert.deepEqual(body.result.readings.map((r) => [r.address, r.code, r.agrees]), [["0xC879C018dB60520F4355C26eD1a6D572cdAC1815", "contract", true]]);
+    assert.deepEqual(body.inputs, { q: DEFAULT_QUESTION });
+    assert.deepEqual(body.docsCalls, [{ tool: "askQuestion", args: { question: DEFAULT_QUESTION, goal: "Find the Pharos contract or function this question is about: its address, its network, and what it returns." }, ok: true }, { tool: "getPage", args: { url: REGISTRY }, ok: true }]);
+    assert.deepEqual(body.calls.map((c) => c.tool), ["get_chain_info", "get_block_number", "get_block", "get_code", "eth_call", "eth_call", "eth_call", "eth_call"]);
+  });
+
+  test("a question the docs do not cover reads nothing but the block; a bad question is a 400 before any call; an unreachable docs MCP a 502", async () => {
+    const uncovered = (await ask(`task=13&q=${encodeURIComponent("How do I stake on Solana?")}`)).body as Body;
+    assert.deepEqual([uncovered.result.verdict, uncovered.result.docs.status, uncovered.calls.map((c) => c.tool)], ["no-answer", "no_answer", ["get_chain_info", "get_block_number", "get_block"]]);
+    const [chainBefore, docsBefore] = [fake.requests.length, docs.requests.length];
+    for (const [query, pattern] of [
+      ["task=13&q=", /Ask a question about a Pharos contract/],
+      [`task=13&q=${"x".repeat(301)}`, /at most 300 characters/],
+    ] as const) {
+      const bad = await ask(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.deepEqual([fake.requests.length, docs.requests.length], [chainBefore, docsBefore], "nothing reached the chain or the docs");
+    const down = await ask("task=13", "http://127.0.0.1:9/~gitbook/mcp");
+    assert.equal(down.status, 502);
+    assert.match(message(down), /^Could not reach the Developer Docs MCP at http:\/\/127\.0\.0\.1:9\/~gitbook\/mcp/);
   });
 });

@@ -28,6 +28,8 @@ export interface ProofFile<Input = unknown, Result = unknown> {
   input: Input;
   result: Result;
   transcript: RecordedMessage[];
+  /** A run that also asked the Developer Docs MCP (Task 13): its endpoint and every message, in order. */
+  docsMcp?: { endpoint: string; transcript: RecordedMessage[] };
 }
 
 export function proofFile<Input, Result>(fields: { task: string; capability: string; about: string; mcp: ChainMcp; network: Network; startedAt: Date; input: Input; result: Result }): ProofFile<Input, Result> {

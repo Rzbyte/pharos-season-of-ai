@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { defaultState, startFakeChain, type FakeChain } from "./fake-chain.js";
+import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 const USDC = "0xc879c018db60520f4355c26ed1a6d572cdac1815";
@@ -625,5 +626,41 @@ describe("pharos-agent digest", () => {
     const both = await cli(["digest", "--store", store, "--periods", "2", "--rpc", "http://127.0.0.1:9"]);
     assert.equal(both.code, 2);
     assert.match(both.stderr, /--periods is for a run without a store/);
+  });
+});
+
+describe("pharos-agent ask", () => {
+  // Made-up docs in the shape the Developer Docs MCP answers: the answer names a page that lists USDC.
+  const REGISTRY = "https://docs.pharos.xyz/getting-started/token-registry";
+  let docs: FakeDocs;
+  before(async () => {
+    fake.state.tokens[USDC]!.symbol = "USDC";
+    docs = await startFakeDocs(() => `USDC is listed in the [Token Registry](${REGISTRY}).\n\n# Sources\n\n- [Token Registry](${REGISTRY})`, { [REGISTRY]: "# Token Registry\n\n## Pharos Mainnet\n\n| Token | Address |\n| --- | --- |\n| USDC | 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 |\n" });
+  });
+  after(async () => {
+    delete fake.state.tokens[USDC]!.symbol;
+    await docs.close();
+  });
+
+  test("a question in words, answered from the docs, then checked on chain; the proof verifies but for its two endpoints", async () => {
+    const proof = join(dir, "ask.json");
+    const run = await cli(["ask", "What", "is", "the", "USDC", "token", "address", "on", "Pharos", "Mainnet?", "--rpc", fake.url, "--docs-mcp", docs.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Question {5}What is the USDC token address on Pharos Mainnet\?\n {2}Docs MCP {5}http:\/\/127\.0\.0\.1:\d+\/~gitbook\/mcp\n/);
+    assert.match(run.stdout, /\n {2}The docs say:\n {4}USDC is listed in the Token Registry\.\n {2}Sources: https:\/\/docs\.pharos\.xyz\/getting-started\/token-registry\n/);
+    assert.match(run.stdout, /\n {3}3\. The docs give 0xC879C018dB60520F4355C26eD1a6D572cdAC1815 as "USDC" on Pharos Mainnet\. {3}\[docs page \/getting-started\/token-registry\]\n/);
+    assert.match(run.stdout, /\n {2}Verdict {6}CONFIRMED: The docs give 0xC879…1815 as "USDC", and Pharos Mainnet agrees: a contract whose symbol\(\) is USDC, with 6 decimals and 1,000 USDC in supply\.\n {2}2 Developer Docs MCP and 8 Chain MCP calls\. Nothing was signed or sent\.\n/);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint", "  FAIL  Developer Docs MCP"]);
+    assert.match(verified.stdout, /\n {2}PASS {2}answer recomputed from the recorded responses: 2 docs and 8 chain calls replayed; the answer, every reading and the verdict identical\n/);
+  });
+
+  test("no question, or one too long, is refused before anything runs", async () => {
+    const none = await cli(["ask", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(none.code, 2);
+    assert.match(none.stderr, /Ask a question about a Pharos contract/);
+    const long = await cli(["ask", "x".repeat(301), "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(long.code, 2);
+    assert.match(long.stderr, /at most 300 characters/);
   });
 });

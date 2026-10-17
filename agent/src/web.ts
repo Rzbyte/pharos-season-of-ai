@@ -1,7 +1,7 @@
 // The agent over HTTP: one serverless function (GET /api/agent?task=NN&...) for every task the agent
 // powers, so the site stays one project within Vercel's function limits. Each task validates its own
 // parameters strictly; nothing here signs or holds a key, and the only Chain MCP endpoint is the hosted
-// one (tests pass a local one).
+// one, the only Developer Docs MCP the official one (tests pass local ones).
 import { isAddress } from "viem";
 import { parseAmount, parseGasPrice } from "./core/amounts.js";
 import { Chain } from "./core/chain.js";
@@ -39,10 +39,14 @@ import { EXAMPLE_PAYER } from "./guardian/presets.js";
 import { parseSubject, subjectName } from "./digest/config.js";
 import { runDigest } from "./digest/run.js";
 import { digestKey, emptyDigestStore } from "./digest/store.js";
+import { DOCS_MCP, DocsMcp } from "./core/docs-mcp.js";
+import { docsThenChain, parseQuestion } from "./docs/run.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
   chainMcpUrl?: string;
+  /** The Developer Docs MCP endpoint; only tests change it. */
+  docsMcpUrl?: string;
   timeoutMs?: number;
   now?: () => Date;
 }
@@ -446,6 +450,33 @@ async function digest(params: URLSearchParams, options: WebOptions): Promise<Web
   }
 }
 
+export const DEFAULT_QUESTION = "What is the USDC token address on Pharos Mainnet?";
+
+/**
+ * Task 13: a question about a Pharos contract, answered by the Developer Docs MCP, then checked on Pharos
+ * Mainnet through Chain MCP. The docs calls are listed beside the chain calls.
+ */
+async function docsChain(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  let question;
+  try {
+    question = parseQuestion(params.get("q") ?? DEFAULT_QUESTION);
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // An askQuestion answer took about 8 s live (Task 04's proof); then at most two pages and 24 chain reads.
+  const docs = new DocsMcp(options.docsMcpUrl ?? DOCS_MCP, { budget: 4, timeoutMs: options.timeoutMs ?? 25_000 });
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await docsThenChain(question, { docs, chain: new Chain(mcp, net), now: options.now });
+    return { status: 200, body: { result, inputs: { q: question }, calls: callLines(recorder.messages), docsCalls: callLines(docs.recorder.messages) }, maxAge: 60 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -457,6 +488,8 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await trendWatcher(url.searchParams, options);
       case "11":
         return await gatekeeper(url.searchParams, options);
+      case "13":
+        return await docsChain(url.searchParams, options);
       case "22":
         return await alertBot(url.searchParams, options);
       case "23":
@@ -472,7 +505,7 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
       case "28":
         return await digest(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 22 to 28.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 22 to 28.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

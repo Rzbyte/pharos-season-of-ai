@@ -12,6 +12,7 @@
 //   pharos-agent risk [kind] --from --to --amount ... [--blocks N]
 //   pharos-agent audit [address] [--hours N | --since TIME [--until TIME] | --from-block N --to-block N]
 //   pharos-agent digest [token | address] [--every hour|day|week] [--periods N] [--store FILE] [--so-far]
+//   pharos-agent ask "question" [--network ID] [--docs-mcp URL]
 //   pharos-agent verify FILE...
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -66,6 +67,9 @@ import { parseEvery, parseSubject, subjectName } from "./digest/config.js";
 import { MAX_PERIODS, MAX_RUN_BLOCKS, runDigest, type DigestRun, type PeriodDigest } from "./digest/run.js";
 import { digestKey, emptyDigestStore, parseDigestStore } from "./digest/store.js";
 import { digestHistoryCheck, verifyDigestProof } from "./digest/verify.js";
+import { DOCS_MCP, DocsMcp } from "./core/docs-mcp.js";
+import { docsThenChain, parseQuestion, type DocsChainResult } from "./docs/run.js";
+import { verifyDocsChainProof } from "./docs/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -186,12 +190,23 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       A week of a protocol is about 480 get_logs calls: minutes, paced under the hosted endpoint's 120 a
       minute, and a proof of tens of megabytes. --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent ask "question" [options]                    Task 13, Docs MCP + Chain MCP Agent
+      A question about a Pharos contract, answered from the official docs, then checked on chain. The
+      Developer Docs MCP answers it (askQuestion); the contract addresses, networks and functions come
+      from that answer, or from the docs pages it cites (getPage, at most two). Chain MCP then reads each
+      address's code, calls the functions the docs give, and, where it is a token, the standard ERC-20
+      views, to set beside what the docs call it and the Skill Engine's token list. The verdict:
+      confirmed, a mismatch, no contract there, another network, nothing to call, or not in the docs.
+      --docs-mcp URL   use this Developer Docs MCP endpoint instead of the official one (recorded in the proof)
+      --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist or gas plan, in run order,
                               are also checked as one history
 
 Mainnet runs use the hosted Chain MCP (https://mcp.pharos.xyz/mcp, read-only). Atlantic runs start
-the official Pharos Chain MCP server (vendored, unmodified) locally over stdio.`;
+the official Pharos Chain MCP server (vendored, unmodified) locally over stdio. The docs come from the
+Pharos Developer Docs MCP (https://docs.pharos.xyz/~gitbook/mcp).`;
 
 interface Flags {
   positional: string[];
@@ -202,6 +217,7 @@ interface Flags {
   block?: bigint;
   proof?: string;
   chainMcp?: string;
+  docsMcp?: string;
   rpc?: string;
   submit: boolean;
   store?: string;
@@ -233,7 +249,7 @@ function parseFlags(argv: string[]): Flags {
       const value = argv[++i];
       if (!value || !/^https?:\/\/\S+$/.test(value)) throw new AgentError("usage", "--webhook must be an http(s) URL.");
       flags.webhook = value;
-    } else if (arg === "--block" || arg === "--proof" || arg === "--chain-mcp" || arg === "--rpc") {
+    } else if (arg === "--block" || arg === "--proof" || arg === "--chain-mcp" || arg === "--docs-mcp" || arg === "--rpc") {
       const value = argv[++i];
       if (!value) throw new AgentError("usage", `${arg} needs a value.`);
       if (arg === "--block") {
@@ -243,6 +259,7 @@ function parseFlags(argv: string[]): Flags {
       else {
         if (!/^https?:\/\/\S+$/.test(value)) throw new AgentError("usage", `${arg} must be an http(s) URL.`);
         if (arg === "--chain-mcp") flags.chainMcp = value;
+        else if (arg === "--docs-mcp") flags.docsMcp = value;
         else flags.rpc = value;
       }
     } else if (arg.startsWith("--")) throw new AgentError("usage", `Unknown option ${arg}. See pharos-agent --help.`);
@@ -1125,10 +1142,56 @@ async function digestCommand(flags: Flags): Promise<number> {
   }
 }
 
+const VERDICTS: Record<DocsChainResult["verdict"], string> = { confirmed: "CONFIRMED", mismatch: "MISMATCH", "no-contract": "NO CONTRACT", "other-network": "OTHER NETWORK", "nothing-to-call": "NOTHING TO CALL", "no-answer": "NOT IN THE DOCS" };
+
+function printDocsChain(r: DocsChainResult): void {
+  out("Pharos Docs MCP + Chain MCP Agent");
+  out();
+  out(`  Question     ${r.question}`);
+  out(`  Docs MCP     ${r.docsMcp.where}`);
+  out(`  Network      ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP    ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Block        ${BigInt(r.block.number).toLocaleString("en-US")} · ${r.block.timestamp}`);
+  if (r.docs.answer) {
+    out();
+    out("  The docs say:");
+    for (const line of r.docs.answer.split("\n")) out(line.trim() ? `    ${line}` : "");
+    if (r.docs.sources.length) out(`  Sources: ${r.docs.sources.map((s) => s.url).join(", ")}`);
+  }
+  out();
+  r.steps.forEach((step, i) => out(`  ${String(i + 1).padStart(2)}. ${step.text}   [${step.source}]`));
+  out();
+  out(`  Verdict      ${VERDICTS[r.verdict]}: ${r.headline}`);
+  out(`  ${r.toolCalls.docs} Developer Docs MCP and ${r.toolCalls.chain} Chain MCP calls. Nothing was signed or sent.`);
+}
+
+async function askCommand(flags: Flags): Promise<number> {
+  const net = network(flags.values.network ?? "pharos-mainnet");
+  // The question in one argument, or in several words without quotes.
+  const question = parseQuestion(flags.positional.slice(1).join(" "));
+  const trace = flags.verbose ? (line: string) => process.stderr.write(`  ${line}\n`) : undefined;
+  const docs = new DocsMcp(flags.docsMcp ?? DOCS_MCP, { budget: 4, trace });
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace, budget: 40 });
+  try {
+    const result = await docsThenChain(question, { docs, chain: new Chain(mcp, net), block: flags.block });
+    if (flags.proof) {
+      const proof: ProofFile = { ...proofFile({ task: "13", capability: "docs-chain", about: "One Docs MCP + Chain MCP Agent answer: the question (input); the docs' answer, the contracts it names, what the chain says of each and the verdict (result); every JSON-RPC message exchanged with the Pharos Chain MCP server (transcript) and with the Pharos Developer Docs MCP (docsMcp), in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { question }, result }), docsMcp: { endpoint: docs.where, transcript: docs.recorder.messages } };
+      await writeFile(flags.proof, `${JSON.stringify(proof, null, 2)}\n`);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printDocsChain(result);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1174,6 +1237,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "risk") return riskCommand(flags);
   if (command === "audit") return auditCommand(flags);
   if (command === "digest") return digestCommand(flags);
+  if (command === "ask") return askCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }
