@@ -1010,3 +1010,80 @@ describe("pharos-agent buy", () => {
     }
   });
 });
+
+describe("pharos-agent batch", () => {
+  const RECIPIENT = "0xB2749BD12f19C24a2244176658F3dF3e48e79553";
+  const STAFF = "0x1F3546a29EeC2102c8d52E21a45114124014c85C";
+  const SPENDER = "0x3333333333333333333333333333333333333333";
+
+  test("the example on mainnet: merged, independent, one nonce sequence, the savings counted; the proof verifies but for its endpoint", async () => {
+    const proofPath = join(dir, "batch", "mainnet.json");
+    const run = await cli(["batch", "--rpc", fake.url, "--proof", proofPath]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Sender {7}0x912c9aDe24D44d8922f0866D8Dcb079f1363f647 \(the example's\), next nonce \d+\n {2}Batch {8}4 actions; merged: lines 1, 3 into transaction 1\n/);
+    assert.match(run.stdout, /\n {3}1\. Send 30 USDC to 0xB274…9553 \(lines 1, 3\), rent; utilities\n {6}in the plan: would succeed, [\d,]+ gas, nonce \d+\n/);
+    assert.match(run.stdout, /\n {2}Independent {2}ok {3}One sender: Every action is signed by 0x912c…f647/);
+    assert.match(run.stdout, /\n {15}ok {3}USDC: The 2 sends take 40 USDC in all; 0x912c…f647 holds 1,000 USDC, enough in any order\.\n/);
+    assert.match(run.stdout, /\n {2}Savings {6}21 Chain MCP calls for the plan; its dry runs one by one ask 36\. 3 transactions for 4 lines\.\n/);
+    assert.match(run.stdout, /\n {2}Verdict {6}READY: Ready: 4 actions in 3 transactions \(lines 1 and 3 merged\), independent/);
+    assert.match(run.stdout, /\n {2}To sign {6}\[\{"chainId":1672,"nonce":\d+,"to":"0xC879C018dB60520F4355C26eD1a6D572cdAC1815"/);
+    const verified = await cli(["verify", proofPath]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /PASS {2}calls counted: 21 calls before any send/);
+  });
+
+  test("a batch from a file or standard input; not a batch: exit 9; refused before anything runs", async () => {
+    const file = join(dir, "batch.txt");
+    await writeFile(file, `approve 100 USDC for ${SPENDER}\nrevoke USDC for ${SPENDER}\n`);
+    const twice = await cli(["batch", file, "--rpc", fake.url]);
+    assert.equal(twice.code, 9, twice.stderr);
+    assert.match(twice.stdout, /\n {2}Verdict {6}NOT A BATCH: Not a batch: lines 1 and 2 both set 0x3333…3333's USDC allowance/);
+    const piped = await new Promise<{ code: number | null; stdout: string }>((resolve) => {
+      const child = spawn(process.execPath, [CLI, "batch", "-", "--no-merge", "--rpc", fake.url], { env: { PATH: process.env.PATH ?? "" } });
+      let stdout = "";
+      child.stdout.on("data", (chunk) => (stdout += chunk));
+      child.once("exit", (code) => resolve({ code, stdout }));
+      child.stdin.end(`send 1 USDC to ${RECIPIENT}\nsend 2 USDC to ${RECIPIENT}\n`);
+    });
+    assert.equal(piped.code, 0, piped.stdout);
+    assert.match(piped.stdout, /\n {2}Batch {8}2 actions \(--no-merge\)\n/);
+    for (const [args, pattern, env] of [
+      [["batch", file, "--execute"], /--execute is limited to the Atlantic testnet/, { PRIVATE_KEY: KEY }],
+      [["batch", "--network", "atlantic-testnet"], /On Atlantic, give the batch/, {}],
+      [["batch", join(dir, "nowhere.txt")], /The batch .*nowhere\.txt cannot be read/, {}],
+      [["batch", "--from", "0x12"], /--from must be a 0x address/, {}],
+      [["batch", file, "extra"], /batch takes one batch/, {}],
+    ] as const) {
+      const run = await cli([...args, "--rpc", "http://127.0.0.1:9"], env);
+      assert.equal(run.code, 2, `${args.join(" ")}: ${run.stderr}`);
+      assert.match(run.stderr, pattern, args.join(" "));
+    }
+    const unread = join(dir, "unread.txt");
+    await writeFile(unread, "send 1 USDC\n");
+    const refused = await cli(["batch", unread, "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(refused.code, 2);
+    assert.match(refused.stderr, /Line 1 cannot be read: "send 1 USDC"/);
+  });
+
+  test("--execute on Atlantic: sent back to back, every value compared; the proof fully verifies", async () => {
+    const TUSDC = "0xe0be08c77f415f577a1b3a9ad7a1df1479564ec8";
+    const atlantic = await startFakeChain(defaultState({ chainId: 688689, mineOnPoll: true, native: { [KEY_ADDRESS]: 10n ** 18n }, tokens: { [TUSDC]: { decimals: 6, balances: { [KEY_ADDRESS]: 5_000_000n } } } }));
+    try {
+      const file = join(dir, "atlantic-batch.txt");
+      await writeFile(file, `send 1 USDC to ${RECIPIENT} # rent\nsend 0.5 USDC to ${STAFF}\nsend 0.001 PHRS to ${STAFF}\n`);
+      const proofPath = join(dir, "batch", "atlantic.json");
+      const run = await cli(["batch", file, "--network", "atlantic-testnet", "--execute", "--rpc", atlantic.url, "--proof", proofPath], { PRIVATE_KEY: KEY });
+      assert.equal(run.code, 0, run.stderr + run.stdout);
+      assert.match(run.stdout, /\n {2}Sent {9}3 back to back from nonce 0, in blocks 5,000,001 to 5,000,001 \(1\); \d+ Chain MCP calls\n/);
+      assert.match(run.stdout, /\n {15}ok {3}Sender USDC: predicted −1\.5 USDC, actual −1\.5 USDC\n/);
+      assert.match(run.stdout, /\n {2}Verdict {6}SENT: Sent: 3 transactions back to back, nonces 0 to 2, all in block 5,000,001/);
+      const proof = await readFile(proofPath, "utf8");
+      assert.ok(!proof.toLowerCase().includes(KEY.slice(2)), "no key is in the proof");
+      const verified = await cli(["verify", proofPath]);
+      assert.equal(verified.code, 0, verified.stdout);
+      assert.match(verified.stdout, /PASS {2}sent back to back: 3 sent, with no receipt asked between two sends/);
+    } finally {
+      await atlantic.close();
+    }
+  });
+});

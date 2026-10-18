@@ -100,6 +100,9 @@ import { verifyX402Proof } from "./x402/verify.js";
 import { buy, runBuyer, type BuyerRun } from "./buyer/run.js";
 import { verifyBuyerProof } from "./buyer/verify.js";
 import { productRoutes, transferIntent } from "./x402/products.js";
+import { EXAMPLE_BATCH, MAX_BATCH, readBatch } from "./batch/read.js";
+import { runBatch, type BatchRun } from "./batch/run.js";
+import { verifyBatchProof } from "./batch/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -344,6 +347,22 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --network ID, --json, --proof, --verbose, --chain-mcp, --rpc   as above
       Exits with 9 unless the transfer is ready to sign.
 
+  pharos-agent batch [FILE|-] [options]                    Task 10, Batch Executor
+      Several independent actions from one sender, one a line ("send 25 USDC to 0x…", "send 0.01
+      PROS to 0x…", "approve 100 USDC for 0x…", "revoke USDC for 0x…", "wrap 0.5 PROS"; "#" starts a
+      note), bundled into one optimized flow. Sends of one asset to one address are merged; the batch
+      is shown to be independent (every balance covers all it takes in any order, no allowance set
+      twice) or refused; each transaction is dry-run at one block, the reads they share made once;
+      one that would revert alone is left out. The plan is one nonce sequence with one fee quote.
+      At most 10 actions, one transaction each, as the Pharos Skill Engine's batch transfer sends
+      them without a contract. Without FILE, the example batch; "-" reads standard input.
+      --from 0x…           the sender (default: the example sender, or PRIVATE_KEY's with --execute)
+      --no-merge           keep every send its own transaction
+      --execute            Atlantic only: sign with PRIVATE_KEY and send them back to back, then
+                           check every balance and allowance the batch changed against the prediction
+      --block N, --network ID, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+      Exits with 9 unless every action is ready (or sent), 8 when a send did not go as planned.
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist, gas plan, digest or
                               recurring schedule, in run order,
@@ -368,17 +387,19 @@ interface Flags {
   store?: string;
   webhook?: string;
   soFar: boolean;
+  noMerge: boolean;
   values: Record<string, string>;
 }
 
 function parseFlags(argv: string[]): Flags {
-  const flags: Flags = { positional: [], help: false, json: false, execute: false, verbose: false, submit: false, soFar: false, values: {} };
+  const flags: Flags = { positional: [], help: false, json: false, execute: false, verbose: false, submit: false, soFar: false, noMerge: false, values: {} };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
     if (arg === "--help" || arg === "-h") flags.help = true;
     else if (arg === "--json") flags.json = true;
     else if (arg === "--submit") flags.submit = true;
     else if (arg === "--so-far") flags.soFar = true;
+    else if (arg === "--no-merge") flags.noMerge = true;
     else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods", "--contacts", "--payees", "--price", "--cap", "--port", "--facilitator", "--budget", "--vendor", "--api"].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new AgentError("usage", `${arg} needs a value.`);
@@ -1885,10 +1906,76 @@ async function buyCommand(flags: Flags): Promise<number> {
   }
 }
 
+const BATCH_VERDICTS: Record<BatchRun["verdict"], string> = { ready: "READY", partial: "PARTLY READY", "would-fail": "WOULD FAIL", dependent: "NOT A BATCH", short: "SHORT", sent: "SENT", "partly-sent": "PARTLY SENT" };
+const TX_STATES: Record<BatchRun["txs"][number]["state"], string> = { planned: "in the plan", "left-out": "left out", dependent: "not independent" };
+
+function printBatch(r: BatchRun): void {
+  const n = (value: string | number | bigint) => BigInt(value).toLocaleString("en-US");
+  out("Pharos Batch Executor");
+  out();
+  out(`  Network      ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP    ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Block        ${n(r.block.number)} · ${r.block.timestamp}`);
+  out(`  Sender       ${r.sender.address} (${{ input: "given", key: "PRIVATE_KEY's", example: "the example's" }[r.sender.from]})${r.nonce === null ? "" : `, next nonce ${r.nonce}`}`);
+  out(`  Batch        ${r.actions.length} ${r.actions.length === 1 ? "action" : "actions"}${r.merged.length ? `; merged: ${r.merged.map((m) => `lines ${m.lines.join(", ")} into transaction ${m.into}`).join("; ")}` : ""}${r.merge ? "" : " (--no-merge)"}`);
+  for (const t of r.txs) {
+    out();
+    out(`  ${String(t.n).padStart(2)}. ${t.summary} (line${t.lines.length === 1 ? "" : "s"} ${t.lines.join(", ")})${t.notes.length ? `, ${t.notes.join("; ")}` : ""}`);
+    out(`      ${TX_STATES[t.state]}: ${t.dryRun.verdict === "would-succeed" ? "would succeed" : t.dryRun.verdict === "would-revert" ? "would revert" : "cannot pay"}${t.dryRun.gas ? `, ${n(t.dryRun.gas.gas)} gas` : ""}${t.tx ? `, nonce ${t.tx.nonce}` : ""}${t.reason ? `: ${t.reason}` : ""}`);
+    if (t.submission) out(`      sent: ${t.submission.txHash ?? "refused"}, ${t.submission.status}${t.submission.blockNumber ? ` in block ${n(t.submission.blockNumber)}` : ""}${t.submission.error ? ` (${t.submission.error})` : ""}`);
+  }
+  out();
+  r.independence.forEach((c, k) => out(`  ${k === 0 ? "Independent " : "            "} ${c.ok ? "ok  " : "no  "} ${c.what}: ${c.detail}`));
+  if (r.fees) out(`  Fees         one quote for all, ${r.fees.shown}: about ${r.fees.expectedShown}, at most ${r.fees.maxShown}`);
+  out(`  Savings      ${r.savings.calls} Chain MCP calls for the plan; its dry runs one by one ask ${r.savings.oneByOne}. ${r.savings.transactions} ${r.savings.transactions === 1 ? "transaction" : "transactions"} for ${r.savings.lines} ${r.savings.lines === 1 ? "line" : "lines"}${r.savings.leftOut ? `, ${r.savings.leftOut} left out` : ""}.`);
+  if (r.execution) {
+    out(`  Sent         ${r.execution.sent} back to back from nonce ${r.execution.nonce}${r.execution.blocks ? `, in blocks ${n(r.execution.blocks.first)} to ${n(r.execution.blocks.last)} (${r.execution.blocks.span})` : ""}; ${r.execution.calls} Chain MCP calls`);
+    for (const c of r.execution.comparisons) out(`               ${c.match ? "ok  " : "DIFF"} ${c.what}: predicted ${c.predicted}, actual ${c.actual}`);
+  }
+  out(`  Verdict      ${BATCH_VERDICTS[r.verdict]}: ${r.headline}`);
+  const txs = r.txs.filter((t) => t.tx);
+  if (txs.length && !r.execution) out(`  To sign      ${JSON.stringify(txs.map((t) => t.tx))}`);
+  out(`  ${r.toolCalls} Chain MCP calls. ${r.execution ? `Signed here and sent: ${r.txs.filter((t) => t.submission?.txHash).map((t) => t.submission!.txHash).join(", ") || "nothing"}.` : "Nothing was signed or sent."}`);
+}
+
+async function batchCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  if (flags.positional.length > 2) throw new AgentError("usage", 'batch takes one batch: a file of its lines, or "-" for standard input (none: the example).');
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (--network atlantic-testnet).");
+  const source = flags.positional[1];
+  if (!source && net.id !== "pharos-mainnet") throw new AgentError("usage", "On Atlantic, give the batch: a file of its lines, or \"-\" for standard input.");
+  const text = source ? await readText(source, "The batch") : EXAMPLE_BATCH;
+  if (v.from !== undefined && !isAddress(v.from)) throw new AgentError("usage", "--from must be a 0x address (40 hex characters; a mixed-case one with a valid checksum).");
+  // The batch is read whole before anything starts, and the key only then.
+  readBatch(text, net, CLI_MAX_BATCH);
+  const signer = flags.execute ? signerFromEnv() : undefined;
+  const from = v.from ? getAddress(v.from) : undefined;
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 400, pace: endpointFor(net, flags).kind === "hosted" ? { calls: 100 } : undefined });
+  try {
+    const result = await runBatch(text, { chain: new Chain(mcp, net), from, block: flags.block, merge: !flags.noMerge, signer, maxActions: CLI_MAX_BATCH });
+    if (flags.proof) {
+      const proof = proofFile({ task: "10", capability: "batch-executor", about: "One Batch Executor run: the batch, the sender and whether sends were merged (input); every action read from it, the transactions planned, each dry-run at one block with the reads they share made once, the independence checks, the fee quote, the savings counted, the transactions to sign and the verdict, with each send on Atlantic and the batch compared with its prediction (result); and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { batch: text, ...(from ? { from } : {}), merge: !flags.noMerge, maxActions: CLI_MAX_BATCH }, result });
+      await writeJson(flags.proof, proof);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printBatch(result);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    if (result.verdict === "partly-sent" || (result.execution && !result.execution.matched)) return 8;
+    return (result.verdict === "ready" || result.verdict === "sent") && !result.savings.leftOut ? 0 : 9;
+  } finally {
+    await mcp.close();
+  }
+}
+
+/** The CLI takes longer batches than the page: as many as the Skill Engine sends one transaction each. */
+const CLI_MAX_BATCH = MAX_BATCH;
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof, "recurring-payments": verifyRecurringProof, "x402-payment": verifyX402Proof, "x402-buyer": verifyBuyerProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof, "recurring-payments": verifyRecurringProof, "x402-payment": verifyX402Proof, "x402-buyer": verifyBuyerProof, "batch-executor": verifyBatchProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1941,6 +2028,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "recurring") return recurringCommand(flags);
   if (command === "x402") return x402Command(flags);
   if (command === "buy") return buyCommand(flags);
+  if (command === "batch") return batchCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

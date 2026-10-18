@@ -25,6 +25,8 @@ export interface FakeToken {
    * used, as "authorizer:nonce". A token without it reverts those calls.
    */
   eip3009?: { version: string; used?: Record<string, boolean> };
+  /** A wrapped native token, as WETH9 is: deposit() payable credits the sender one for one. */
+  wrapsNative?: boolean;
 }
 
 /** Any other log already on the chain (an Approval, a Deposit…), at `block`: eth_getLogs answers it as is. */
@@ -75,6 +77,12 @@ export interface FakeChainState {
   timeOf?: (block: bigint) => bigint;
   /** Contracts (lowercase address) that answer calls by their 4-byte selector with fixed return data. */
   answers?: Record<string, Record<string, Hex>>;
+  /**
+   * Transactions sent wait for the next block until a receipt is asked for, which mines every one waiting
+   * into it: transactions sent back to back land in one block, as on a chain whose blocks are not yet full.
+   * Otherwise each transaction sent is mined at once, in a block of its own.
+   */
+  mineOnPoll?: boolean;
 }
 
 export interface FakeReceipt {
@@ -116,6 +124,7 @@ const ERC20 = parseAbi([
   "function authorizationState(address authorizer, bytes32 nonce) view returns (bool)",
   "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
   "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, bytes signature)",
+  "function deposit() payable",
 ]);
 const AUTHORIZATION = { TransferWithAuthorization: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "value", type: "uint256" }, { name: "validAfter", type: "uint256" }, { name: "validBefore", type: "uint256" }, { name: "nonce", type: "bytes32" }] } as const;
 const ERROR_ABI = parseAbi(["error Error(string)"]);
@@ -154,6 +163,19 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
   const requests: FakeChain["requests"] = [];
   const receipts = new Map<string, FakeReceipt>();
   const transactions = new Map<string, Record<string, unknown>>();
+  // With mineOnPoll: transactions applied but not yet in a block, mined together by the next receipt asked for.
+  const waiting: { hash: string; receipt: FakeReceipt; applied: Omit<FakeTransfer, "block">[] }[] = [];
+  const mine = () => {
+    if (!waiting.length) return;
+    state.head += 1n;
+    state.headTime += 1n;
+    for (const w of waiting) {
+      receipts.set(w.hash, { ...w.receipt, blockNumber: hex(state.head) });
+      transactions.set(w.hash, { ...transactions.get(w.hash), blockNumber: hex(state.head) });
+      for (const transfer of w.applied) state.transfers.push({ ...transfer, block: state.head });
+    }
+    waiting.length = 0;
+  };
   const blockOf = (tag: unknown): bigint => {
     if (tag === undefined || tag === "latest" || tag === "pending" || tag === "safe" || tag === "finalized") return state.head;
     if (tag === "earliest") return 0n;
@@ -173,7 +195,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     }
     return found ? found[1] : state;
   };
-  const tokenCall = async (world: World, to: string, data: Hex, from: string | undefined, apply: boolean): Promise<Hex> => {
+  const tokenCall = async (world: World, to: string, data: Hex, from: string | undefined, apply: boolean, value = 0n): Promise<Hex> => {
     const token = world.tokens[to]!;
     let decoded;
     try {
@@ -238,6 +260,16 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
         }
         return "0x";
       }
+      case "deposit": {
+        if (!token.wrapsNative) throw new Revert("unknown function");
+        const sender = lower(from ?? "0x0000000000000000000000000000000000000000");
+        if (apply) {
+          world.native[sender] = (world.native[sender] ?? 0n) - value;
+          world.native[to] = (world.native[to] ?? 0n) + value;
+          token.balances[sender] = (token.balances[sender] ?? 0n) + value;
+        }
+        return "0x";
+      }
       case "transfer": {
         if (token.paused) throw new Revert("Pausable: paused");
         const sender = lower(from ?? "0x0000000000000000000000000000000000000000");
@@ -261,7 +293,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     if (reverts) throw new Revert("custom", reverts);
     const answer = state.answers?.[to]?.[(tx.data ?? "0x").slice(0, 10).toLowerCase()];
     if (answer) return answer;
-    if (world.tokens[to] && tx.data && tx.data !== "0x") return tokenCall(world, to, tx.data, from, apply);
+    if (world.tokens[to] && tx.data && tx.data !== "0x") return tokenCall(world, to, tx.data, from, apply, value);
     if (apply && value > 0n && from) {
       world.native[from] = (world.native[from] ?? 0n) - value;
       world.native[to] = (world.native[to] ?? 0n) + value;
@@ -302,7 +334,10 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
         .filter((log) => BigInt(log.blockNumber) >= from && BigInt(log.blockNumber) <= to && (addresses === null || addresses.includes(log.address)))
         .filter((log) => (f.topics ?? []).every((want, i) => matches(log.topics[i], want)));
     },
-    eth_getTransactionReceipt: ([hash]) => receipts.get(lower(hash)) ?? null,
+    eth_getTransactionReceipt: ([hash]) => {
+      if (state.mineOnPoll) mine();
+      return receipts.get(lower(hash)) ?? null;
+    },
     eth_getTransactionByHash: ([hash]) => transactions.get(lower(hash)) ?? null,
     eth_sendRawTransaction: async ([raw]) => {
       const serialized = raw as Hex;
@@ -315,7 +350,8 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       let status: "0x1" | "0x0" = "0x1";
       const logs: unknown[] = [];
       const applied: Omit<FakeTransfer, "block">[] = [];
-      history.set(state.head, structuredClone({ native: state.native, nonces: state.nonces, tokens: state.tokens }));
+      // The state before the block: with mineOnPoll, before the first transaction waiting for it.
+      if (!state.mineOnPoll || !history.has(state.head)) history.set(state.head, structuredClone({ native: state.native, nonces: state.nonces, tokens: state.tokens }));
       try {
         await execute(state, { from, to: tx.to ?? undefined, data: tx.data, value: tx.value }, true);
         if (state.tokens[lower(tx.to)] && tx.data) {
@@ -332,10 +368,15 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       }
       state.native[from] = (state.native[from] ?? 0n) - fee;
       state.nonces[from] = (state.nonces[from] ?? 0n) + 1n;
+      const hash = keccak256(serialized);
+      if (state.mineOnPoll) {
+        transactions.set(hash, { hash, from, to: lower(tx.to), input: tx.data ?? "0x", value: hex(tx.value ?? 0n), gas: hex(tx.gas ?? 0n), nonce: hex(BigInt(tx.nonce ?? 0)), blockNumber: null, maxFeePerGas: hex(tx.maxFeePerGas ?? 0n), maxPriorityFeePerGas: hex(tx.maxPriorityFeePerGas ?? 0n), type: "0x2", chainId: hex(BigInt(state.chainId)) });
+        waiting.push({ hash, receipt: { transactionHash: hash, blockNumber: "0x0", status, gasUsed: hex(gasUsed), effectiveGasPrice: hex(state.baseFee ?? state.gasPrice), from: from as Hex, to: lower(tx.to) as Hex, logs, cumulativeGasUsed: hex(gasUsed), type: "0x2" }, applied });
+        return hash;
+      }
       state.head += 1n;
       state.headTime += 1n;
       for (const transfer of applied) state.transfers.push({ ...transfer, block: state.head });
-      const hash = keccak256(serialized);
       transactions.set(hash, { hash, from, to: lower(tx.to), input: tx.data ?? "0x", value: hex(tx.value ?? 0n), gas: hex(tx.gas ?? 0n), nonce: hex(BigInt(tx.nonce ?? 0)), blockNumber: hex(state.head), maxFeePerGas: hex(tx.maxFeePerGas ?? 0n), maxPriorityFeePerGas: hex(tx.maxPriorityFeePerGas ?? 0n), type: "0x2", chainId: hex(BigInt(state.chainId)) });
       receipts.set(hash, { transactionHash: hash, blockNumber: hex(state.head), status, gasUsed: hex(gasUsed), effectiveGasPrice: hex(state.baseFee ?? state.gasPrice), from: from as Hex, to: lower(tx.to) as Hex, logs, cumulativeGasUsed: hex(gasUsed), type: "0x2" });
       return hash;

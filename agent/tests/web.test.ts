@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { after, before, describe, test } from "node:test";
-import { DEFAULT_CONTACTS, DEFAULT_HOW_TO, DEFAULT_INVOICE, DEFAULT_PAYEES, DEFAULT_PAYMENT, DEFAULT_QUESTION, DEFAULT_SCHEDULE, handle } from "../src/web.js";
+import { DEFAULT_BATCH, DEFAULT_CONTACTS, DEFAULT_HOW_TO, DEFAULT_INVOICE, DEFAULT_PAYEES, DEFAULT_PAYMENT, DEFAULT_QUESTION, DEFAULT_SCHEDULE, handle } from "../src/web.js";
 import { defaultState, startFakeChain, type FakeChain } from "./fake-chain.js";
 import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
@@ -74,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17 to 29\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08 to 11, 13, 17 to 29\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -705,5 +705,42 @@ describe("GET /api/agent?task=18", () => {
     const late = await get("task=18&since=2025-01-01");
     assert.equal(late.status, 400);
     assert.match(message(late), /Without a store, a run counts from a day in the last year/);
+  });
+});
+
+describe("GET /api/agent?task=10", () => {
+  type Body = { result: { schema: string; verdict: string; batch: string; sender: { address: string; from: string }; merge: boolean; merged: { lines: number[] }[]; txs: { summary: string; state: string; tx: { nonce: number } | null }[]; independence: { what: string; ok: boolean }[]; savings: { calls: number; oneByOne: number; transactions: number } }; inputs: Record<string, unknown>; calls: { tool: string }[] };
+
+  test("the example batch: merged, independent, the transactions to sign in one nonce sequence; nothing sent; shared 15 s", async () => {
+    const response = await get("task=10");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 15);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.batch, body.result.sender.from, body.result.merge], ["pharos-agent/batch/1", "ready", DEFAULT_BATCH, "example", true]);
+    assert.deepEqual(body.result.merged.map((m) => m.lines), [[1, 3]]);
+    assert.deepEqual(body.result.txs.map((t) => [t.summary, t.state, typeof t.tx?.nonce]), [["Send 30 USDC to 0xB274…9553", "planned", "number"], ["Send 10 USDC to 0x1F35…c85C", "planned", "number"], ["Send 0.01 PROS to 0x1F35…c85C", "planned", "number"]]);
+    assert.deepEqual(body.result.independence.map((c) => c.ok), [true, true, true, true]);
+    assert.ok(body.result.savings.calls < body.result.savings.oneByOne, "the shared reads save calls");
+    assert.equal(body.result.savings.calls, body.calls.length);
+    assert.deepEqual(body.inputs, { batch: DEFAULT_BATCH, merge: true });
+    assert.equal(body.calls.some((c) => c.tool === "send_raw_transaction"), false);
+  });
+
+  test("a batch of your own, unmerged, from a sender you name; bad input refused before any call", async () => {
+    const mine = (await get(`task=10&batch=${encodeURIComponent(`send 1 USDC to ${STRANGER}\nsend 2 USDC to ${STRANGER}`)}&merge=0&from=${PAYER}`)).body as Body;
+    assert.deepEqual([mine.result.verdict, mine.result.txs.length, mine.result.sender.from, mine.inputs.merge], ["ready", 2, "input", false]);
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      [`task=10&batch=${encodeURIComponent("swap 1 USDC")}`, /Line 1 starts with "swap"/],
+      [`task=10&batch=${encodeURIComponent(Array.from({ length: 7 }, () => `send 1 USDC to ${STRANGER}`).join("\n"))}`, /A batch is at most 6 actions here; this one has 7\./],
+      ["task=10&batch=%20", /The batch is empty/],
+      ["task=10&from=0x12", /from must be a 0x address/],
+      ["task=10&merge=yes", /merge must be 1/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
   });
 });

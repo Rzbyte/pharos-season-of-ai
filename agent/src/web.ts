@@ -52,6 +52,8 @@ import { readSchedule } from "./recurring/schedule.js";
 import { runX402 } from "./x402/run.js";
 import { runBuyer } from "./buyer/run.js";
 import { transferIntent } from "./x402/products.js";
+import { EXAMPLE_BATCH, readBatch } from "./batch/read.js";
+import { runBatch } from "./batch/run.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -727,6 +729,40 @@ async function agentBuyer(params: URLSearchParams, options: WebOptions): Promise
   }
 }
 
+/** The page's batch: what /tasks/10 plans first, and the API's when none is given. */
+export const DEFAULT_BATCH = EXAMPLE_BATCH;
+/** The page plans a batch of at most this many actions; the CLI takes more. */
+export const WEB_MAX_BATCH = 6;
+
+/**
+ * Task 10: a batch of independent actions from one sender, planned on Pharos Mainnet: merged, shown to
+ * be independent or refused, each transaction dry-run at one block with the reads they share made once,
+ * one nonce sequence and one fee quote. Nothing is signed or sent here.
+ */
+async function batchPlan(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const batch = params.get("batch") ?? DEFAULT_BATCH;
+  const fromText = params.get("from")?.trim() || undefined;
+  const mergeText = params.get("merge")?.trim();
+  try {
+    readBatch(batch, net, WEB_MAX_BATCH);
+    if (fromText !== undefined && !isAddress(fromText)) throw new AgentError("usage", "from must be a 0x address (40 hex characters; a mixed-case one with a valid checksum).");
+    if (mergeText !== undefined && mergeText !== "0" && mergeText !== "1") throw new AgentError("usage", "merge must be 1 (merge sends of one asset to one address) or 0.");
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // Six transactions of about four reads of their own, and the ten or so they share: about forty.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 60, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runBatch(batch, { chain: new Chain(mcp, net), from: fromText ? getAddress(fromText) : undefined, merge: mergeText !== "0", maxActions: WEB_MAX_BATCH, now: options.now });
+    return { status: 200, body: { result, inputs: { batch, ...(fromText ? { from: fromText } : {}), merge: mergeText !== "0" }, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -736,6 +772,8 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await dryRun(url.searchParams, options);
       case "09":
         return await trendWatcher(url.searchParams, options);
+      case "10":
+        return await batchPlan(url.searchParams, options);
       case "11":
         return await gatekeeper(url.searchParams, options);
       case "13":
@@ -767,7 +805,7 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
       case "29":
         return await builder(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17 to 29.");
+        return usage("Unknown task. Use ?task=05, 08 to 11, 13, 17 to 29.");
     }
   } catch (error) {
     if (error instanceof AgentError) {
