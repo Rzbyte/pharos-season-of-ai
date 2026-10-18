@@ -74,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17 to 20, 22 to 29\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17 to 29\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -620,6 +620,48 @@ describe("GET /api/agent?task=20", () => {
       ["task=20&cap=-1", /cap must be a number of USDC/],
       ["task=20&to=0x12", /to must be a 0x address/],
       [`task=20&to=${USDC}`, /cannot be the token's own contract/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=21", () => {
+  type Body = { result: { schema: string; verdict: string; reason: string; payer: { key: string }; api: { where: string; settles: boolean; payTo: string }; plan: { product: string; status: string; price: { shown: string } | null }[]; ledger: { committed: { shown: string }; settled: { shown: string } }; job: { summary: string }; budget: { shown: string } }; inputs: Record<string, string>; calls: { tool: string }[] };
+  // For these, the chain's USDC is an EIP-3009 token, as Circle's is.
+  before(() => {
+    Object.assign(fake.state.tokens[USDC]!, { name: "USD Coin", symbol: "USDC", eip3009: { version: "2" } });
+  });
+  after(() => {
+    for (const key of ["name", "symbol", "eip3009"] as const) delete fake.state.tokens[USDC]![key];
+  });
+
+  test("the example job: the prices asked, the plan, the risk check's payment signed by a key made for the request and refused on chain; not done; shared 15 s", async () => {
+    const response = await get("task=21");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 15);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.reason, body.result.payer.key, body.result.api.where, body.result.api.settles, body.result.job.summary, body.result.budget.shown], ["pharos-agent/x402-buyer/1", "not-done", "the API refused the payment for the risk check: the payer does not hold the amount", "new", "in-process", false, "Send 25 USDC from 0x912c…f647 to 0xB274…9553", "0.01 USDC"]);
+    assert.deepEqual(body.result.plan.map((p) => [p.product, p.status, p.price?.shown]), [["risk", "refused", "0.005 USDC"], ["dryrun", "over-budget", "0.003 USDC"]]);
+    assert.deepEqual([body.result.ledger.committed.shown, body.result.ledger.settled.shown], ["0.005 USDC", "0 USDC"]);
+    assert.deepEqual(body.inputs, { asset: "USDC", from: "0x912c9aDe24D44d8922f0866D8Dcb079f1363f647", to: "0xB2749BD12f19C24a2244176658F3dF3e48e79553", amount: "25", budget: "0.01" });
+    assert.equal(body.calls.some((c) => c.tool === "send_raw_transaction"), false);
+  });
+
+  test("a budget too small for the check: nothing signed; bad input refused before any call", async () => {
+    const small = (await get("task=21&budget=0.001")).body as Body;
+    assert.deepEqual([small.result.verdict, small.result.reason, small.result.ledger.committed.shown], ["not-done", "the risk check costs 0.005 USDC, more than the 0.001 USDC left of the budget", "0 USDC"]);
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      ["task=21&asset=DOGE", /asset must be PROS or one of/],
+      ["task=21&from=0x12", /The sender \(from\) must be a 0x address/],
+      ["task=21&amount=0", /more than zero/],
+      ["task=21&budget=lots", /budget must be a number of USDC/],
+      ["task=21&budget=0", /budget must be more than zero/],
+      ["task=21&budget=2000000", /budget is at most 1,000,000 USDC here/],
     ] as const) {
       const bad = await get(query);
       assert.equal(bad.status, 400, query);

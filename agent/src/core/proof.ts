@@ -89,13 +89,17 @@ const canonical = (value: unknown): string => JSON.stringify(value, (_key, v) =>
  * (same tool, same arguments), so the code under replay has to ask for precisely what the live run asked.
  */
 export class ReplayMcp {
-  private next = 0;
+  private next: number;
 
+  /** `from`: the recorded call to start at, for code that ran partway through a run (its count of calls still counts from the run's start). */
   constructor(
     private readonly calls: readonly RecordedCall[],
     readonly where: string,
     readonly server: { name: string; version: string } | undefined,
-  ) {}
+    from = 0,
+  ) {
+    this.next = from;
+  }
 
   get toolCalls(): number {
     return this.next;

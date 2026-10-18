@@ -914,3 +914,99 @@ describe("pharos-agent x402", () => {
     }
   });
 });
+
+describe("pharos-agent buy", () => {
+  // For these, the chain's USDC is an EIP-3009 token, as Circle's is.
+  before(() => {
+    Object.assign(fake.state.tokens[USDC]!, { name: "USD Coin", symbol: "USDC", eip3009: { version: "2" } });
+  });
+  after(() => {
+    for (const key of ["name", "symbol", "eip3009"] as const) delete fake.state.tokens[USDC]![key];
+  });
+  // The well-known Hardhat/Anvil test key #2, as the API's facilitator's: public, only ever used here on a fake chain.
+  const FACILITATOR_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+  const FACILITATOR = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
+  const TUSDC = "0xe0be08c77f415f577a1b3a9ad7a1df1479564ec8";
+  const TRADER = "0x1F3546a29EeC2102c8d52E21a45114124014c85C";
+  // The buyer's USDC and PHRS, the facilitator's PHRS, and a history with the trader: its check looks fine.
+  const atlanticChain = () => startFakeChain(defaultState({ chainId: 688689, headTime: BigInt(Math.floor(Date.now() / 1000)), native: { [FACILITATOR]: 10n ** 18n, [KEY_ADDRESS]: 10n ** 18n }, tokens: { [TUSDC]: { decimals: 6, name: "USD Coin", symbol: "USDC", eip3009: { version: "2" }, balances: { [KEY_ADDRESS]: 30_000_000n } } }, transfers: [{ token: TUSDC, from: KEY_ADDRESS, to: TRADER.toLowerCase(), amount: 5_000_000n, block: 4_999_000n }] }));
+
+  test("on mainnet: the prices asked, the plan, the first purchase refused on chain; exit 9; the proof verifies but for its endpoint", async () => {
+    const proofPath = join(dir, "buyer", "mainnet.json");
+    const run = await cli(["buy", "--rpc", fake.url, "--proof", proofPath]);
+    assert.equal(run.code, 9, run.stderr);
+    assert.match(run.stdout, /\n {2}Job {10}Send 25 USDC from 0x912c…f647 to 0xB274…9553\n {2}Budget {7}0\.01 USDC, paid by a key made for this run, holding nothing: 0x[0-9a-fA-F]{40}\n {2}API {10}in this process \(its facilitator verifies only\), paid to 0x1F3546a29EeC2102c8d52E21a45114124014c85C\n/);
+    assert.match(run.stdout, /\n {2}Plan\n {4}1\. \/risk {4}0\.005 USDC {3}refused: the payer does not hold the amount\n {4}2\. \/dryrun {2}0\.003 USDC {3}not bought: the API refused the payment for the risk check: the payer does not hold the amount\n/);
+    assert.match(run.stdout, /\n {2}Verdict {6}NOT DONE: Not done: Send 25 USDC from 0x912c…f647 to 0xB274…9553: the API refused the payment for the risk check: the payer does not hold the amount\. Nothing bought; 0\.005 USDC signed for of the 0\.01 USDC budget, 0 USDC settled\.\n/);
+    const verified = await cli(["verify", proofPath]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /PASS {2}nothing sent: the API's facilitator holds no key: no transaction sent/);
+  });
+
+  test("--execute on Atlantic: the check and the dry run bought and settled, the transfer ready to sign; the proof fully verifies", async () => {
+    const atlantic = await atlanticChain();
+    try {
+      const proofPath = join(dir, "buyer", "atlantic.json");
+      const run = await cli(["buy", "--network", "atlantic-testnet", "--execute", "--to", TRADER, "--rpc", atlantic.url, "--proof", proofPath], { PRIVATE_KEY: KEY, FACILITATOR_PRIVATE_KEY: FACILITATOR_KEY });
+      assert.equal(run.code, 0, run.stderr + run.stdout);
+      assert.match(run.stdout, /\n {2}API {10}in this process \(its facilitator settles with 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC\), paid to 0x1F3546a29EeC2102c8d52E21a45114124014c85C\n/);
+      assert.match(run.stdout, /\n {2}Ledger {7}0\.008 USDC signed for, 0\.008 USDC settled, 0\.002 USDC left\n {2}To sign {6}\{"from":"0x70997970C51812dc3A010C7d01b50e0d17dc79C8","to":"0xE0BE08c77f415F577A1B3A9aD7a1Df1479564ec8","data":"0xa9059cbb/);
+      assert.match(run.stdout, /\n {2}Verdict {6}READY: Ready to sign: Send 25 USDC from 0x7099…79C8 to 0x1F35…c85C\./);
+      assert.equal(atlantic.state.tokens[TUSDC]!.balances[TRADER.toLowerCase()], 8_000n, "the API (paid to the sample address) received 0.008 USDC");
+      const proof = await readFile(proofPath, "utf8");
+      for (const key of [KEY, FACILITATOR_KEY]) assert.ok(!proof.toLowerCase().includes(key.slice(2)), "no key is in the proof");
+      const verified = await cli(["verify", proofPath]);
+      assert.equal(verified.code, 0, verified.stdout);
+      assert.match(verified.stdout, /PASS {2}answers recomputed: risk and dryrun, each recomputed from its recorded calls/);
+    } finally {
+      await atlantic.close();
+    }
+  });
+
+  test("--api: bought from x402 serve over HTTP, settled by its facilitator; ready", async () => {
+    const atlantic = await atlanticChain();
+    const child = spawn(process.execPath, [CLI, "x402", "serve", "--network", "atlantic-testnet", "--execute", "--port", "0", "--rpc", atlantic.url], { env: { PATH: process.env.PATH ?? "", FACILITATOR_PRIVATE_KEY: FACILITATOR_KEY } });
+    let stdout = "";
+    const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+    try {
+      const url = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`no URL in time: ${stdout}`)), 30_000);
+        child.stdout.on("data", (chunk) => {
+          stdout += chunk;
+          const found = /Serving {6}(http:\/\/127\.0\.0\.1:\d+)[^]*Stop it {6}Ctrl-C\n/.exec(stdout);
+          if (found) {
+            clearTimeout(timer);
+            resolve(found[1]!);
+          }
+        });
+        void exited.then((code) => reject(new Error(`exited ${code}`)));
+      });
+      assert.match(stdout, /\n {15}GET http:\/\/127\.0\.0\.1:\d+\/risk\?asset=…&from=…&to=…&amount=…, 0\.005 USDC a request\n/);
+      const run = await cli(["buy", "--network", "atlantic-testnet", "--execute", "--to", TRADER, "--api", url], { PRIVATE_KEY: KEY });
+      assert.equal(run.code, 0, run.stdout + run.stderr);
+      assert.match(run.stdout, new RegExp(`\\n {2}API {10}${url.replace(/[.]/g, "\\.")}\\n`));
+      assert.match(run.stdout, /\n {2}Verdict {6}READY: /);
+      assert.match(run.stdout, /\n {2}Settled: 0x[0-9a-f]{64}, 0x[0-9a-f]{64}\.\n$/);
+    } finally {
+      child.kill("SIGTERM");
+      await exited;
+      await atlantic.close();
+    }
+  });
+
+  test("refused before anything runs: --execute off Atlantic, a proof of an API elsewhere, a vendor for one, a bad budget or recipient", async () => {
+    for (const [args, pattern, env] of [
+      [["buy", "--execute"], /--execute is limited to the Atlantic testnet/, { PRIVATE_KEY: KEY }],
+      [["buy", "--api", "http://127.0.0.1:9", "--proof", join(dir, "nope.json")], /A proof records the API's Chain MCP calls/, {}],
+      [["buy", "--api", "http://127.0.0.1:9", "--vendor", TRADER], /--vendor is for the API in this process/, {}],
+      [["buy", "--api", "ftp://x"], /--api must be an http\(s\) URL/, {}],
+      [["buy", "--budget", "lots"], /--budget must be a number of USDC/, {}],
+      [["buy", "--to", "0x12"], /The recipient \(to\) must be a 0x address/, {}],
+      [["buy", "--token", "DOGE"], /asset must be PROS or one of/, {}],
+    ] as const) {
+      const run = await cli([...args, "--rpc", "http://127.0.0.1:9"], env);
+      assert.equal(run.code, 2, `${args.join(" ")}: ${run.stderr}`);
+      assert.match(run.stderr, pattern, args.join(" "));
+    }
+  });
+});

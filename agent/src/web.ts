@@ -50,6 +50,8 @@ import { readInvoice } from "./invoice/read.js";
 import { runRecurring } from "./recurring/run.js";
 import { readSchedule } from "./recurring/schedule.js";
 import { runX402 } from "./x402/run.js";
+import { runBuyer } from "./buyer/run.js";
+import { transferIntent } from "./x402/products.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -687,6 +689,44 @@ async function x402Payment(params: URLSearchParams, options: WebOptions): Promis
   }
 }
 
+export const DEFAULT_BUYER_BUDGET = "0.01";
+
+/**
+ * Task 21: the X402 Agent Buyer on Pharos Mainnet, live: its job (check a planned transfer before it is
+ * sent), its budget in USDC, and the API it buys from (Task 20's, here in the same function: /risk and
+ * /dryrun, its facilitator verifying through the hosted Chain MCP). It asks the prices, plans within the
+ * budget and signs the first purchase with a key made for the request, which holds nothing: the
+ * facilitator refuses it on chain, and the job is not done. Nothing settles here; the CLI completes the
+ * job on Atlantic.
+ */
+async function agentBuyer(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const usdc = net.tokens.find((t) => t.symbol === "USDC")!;
+  const get = (key: string, fallback: string) => params.get(key)?.trim() || fallback;
+  const job = { asset: get("asset", "USDC"), from: get("from", EXAMPLE_PAYER), to: get("to", EXAMPLE_RECIPIENT), amount: get("amount", "25") };
+  const budget = get("budget", DEFAULT_BUYER_BUDGET);
+  let intent;
+  try {
+    intent = transferIntent(new URLSearchParams(job), net);
+    if (!/^\d+(\.\d+)?$/.test(budget)) throw new AgentError("usage", "budget must be a number of USDC, like 0.01.");
+    const raw = parseAmount(budget, usdc.decimals, "budget");
+    if (raw === 0n) throw new AgentError("usage", "budget must be more than zero.");
+    if (raw > WEB_MAX_PRICE * 10n ** BigInt(usdc.decimals)) throw new AgentError("usage", `budget is at most ${WEB_MAX_PRICE.toLocaleString("en-US")} USDC here.`);
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // The asset's reads, then the facilitator's check of the first purchase: about sixteen.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runBuyer({ chain: new Chain(mcp, net), job: intent, budget, now: options.now });
+    return { status: 200, body: { result, inputs: { ...job, budget }, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -708,6 +748,8 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await invoicePayment(url.searchParams, options);
       case "20":
         return await x402Payment(url.searchParams, options);
+      case "21":
+        return await agentBuyer(url.searchParams, options);
       case "22":
         return await alertBot(url.searchParams, options);
       case "23":
@@ -725,7 +767,7 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
       case "29":
         return await builder(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17 to 20, 22 to 29.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17 to 29.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

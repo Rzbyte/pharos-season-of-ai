@@ -22,7 +22,7 @@ interface X402Input {
   asset?: string;
 }
 
-interface Authorization {
+export interface Authorization {
   from: Address;
   to: Address;
   value: string;
@@ -132,35 +132,8 @@ export async function verifyX402Proof(proof: ProofFile): Promise<Check[]> {
   if (!result.facilitator.settles) {
     add("nothing sent", sends.length === 0 && !result.settle?.success, sends.length ? `${sends.length} transactions sent by a facilitator that only verifies` : "a facilitator without a key: no transaction sent");
   } else if (result.settle?.success && auth) {
-    const raw = sends.length === 1 ? (sends[0]!.args.rawTransaction as Hex) : null;
-    let detail = sends.length === 1 ? "" : `${sends.length} transactions sent, not one`;
-    let ok = false;
-    if (raw) {
-      const tx = parseTransaction(raw);
-      const from = await recoverTransactionAddress({ serializedTransaction: raw as never });
-      const hash = keccak256(raw);
-      const receipt = calls.filter((c) => c.name === "get_transaction_receipt" && same(c.args.hash, hash) && c.payload !== null && !c.isError).at(-1)?.payload as { status?: string; logs?: { address: string; topics: Hex[]; data: Hex }[] } | undefined;
-      const transfer = receipt?.logs?.some((log) => {
-        if (!same(log.address, result.asset.address)) return false;
-        try {
-          const { args } = decodeEventLog({ abi: TRANSFER, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
-          return same(args.from, auth.from) && same(args.to, auth.to) && args.value === BigInt(auth.value);
-        } catch {
-          return false;
-        }
-      });
-      const conditions = [
-        [tx.chainId === net.chainId && same(tx.to, result.asset.address) && (tx.value ?? 0n) === 0n, "not a call to the asset on this chain"],
-        [same(from, result.facilitator.address), `signed by ${from}, not the facilitator`],
-        [decodedAuthorization(tx.data ?? "0x", auth, payload!.signature!), "not transferWithAuthorization of exactly the signed authorization"],
-        [same((sends[0]!.payload as { txHash?: unknown }).txHash, hash) && same(result.settle.transaction, hash), "its hash is not the one settled"],
-        [receipt?.status === "0x1" && transfer === true, "no successful receipt holding the Transfer"],
-      ] as const;
-      const failed = conditions.find(([pass]) => !pass);
-      ok = !failed;
-      detail = failed ? `the settlement is ${failed[1]}` : `${hash}: transferWithAuthorization of exactly the signed authorization, sent by the facilitator ${from}; its receipt a success, holding the Transfer of ${auth.value} base units to ${auth.to}`;
-    }
-    add("settlement", ok, detail);
+    const settled = sends.length === 1 ? await settlementCheck(calls, net.chainId, result.asset.address, auth, payload!.signature!, result.facilitator.address, result.settle.transaction) : { ok: false, detail: `${sends.length} transactions sent, not one` };
+    add("settlement", settled.ok, settled.detail);
   } else if (result.settle) {
     // A settlement can fail after it is sent (a reverted transaction): at most that one.
     add("not settled", result.verdict === "not-settled" && result.data === null && sends.length <= 1, `the facilitator did not settle: ${result.settle.errorReason ?? "no reason recorded"}`);
@@ -180,6 +153,39 @@ export async function verifyX402Proof(proof: ProofFile): Promise<Check[]> {
     add("data from Chain MCP", block && gas, block && gas ? `block ${data!.block!.number} and the gas price, each a recorded answer` : "the data released is not what Chain MCP answered");
   }
   return checks;
+}
+
+/**
+ * Whether `transaction`, a recorded send_raw_transaction, settled exactly `auth`: transferWithAuthorization
+ * of it (carrying `signature`), to the asset on this chain, signed by `facilitator`, its hash the one the
+ * facilitator answered, its last recorded receipt a success holding the Transfer.
+ */
+export async function settlementCheck(calls: readonly RecordedCall[], chainId: number, asset: Address, auth: Authorization, signature: Hex, facilitator: string | null, transaction: string): Promise<{ ok: boolean; detail: string }> {
+  const send = calls.find((c) => c.name === "send_raw_transaction" && typeof c.args.rawTransaction === "string" && same(keccak256(c.args.rawTransaction as Hex), transaction));
+  if (!send) return { ok: false, detail: `no recorded send_raw_transaction is ${transaction}` };
+  const raw = send.args.rawTransaction as Hex;
+  const tx = parseTransaction(raw);
+  const from = await recoverTransactionAddress({ serializedTransaction: raw as never });
+  const hash = keccak256(raw);
+  const receipt = calls.filter((c) => c.name === "get_transaction_receipt" && same(c.args.hash, hash) && c.payload !== null && !c.isError).at(-1)?.payload as { status?: string; logs?: { address: string; topics: Hex[]; data: Hex }[] } | undefined;
+  const transfer = receipt?.logs?.some((log) => {
+    if (!same(log.address, asset)) return false;
+    try {
+      const { args } = decodeEventLog({ abi: TRANSFER, data: log.data, topics: log.topics as [Hex, ...Hex[]] });
+      return same(args.from, auth.from) && same(args.to, auth.to) && args.value === BigInt(auth.value);
+    } catch {
+      return false;
+    }
+  });
+  const conditions = [
+    [tx.chainId === chainId && same(tx.to, asset) && (tx.value ?? 0n) === 0n, "not a call to the asset on this chain"],
+    [same(from, facilitator), `signed by ${from}, not the facilitator`],
+    [decodedAuthorization(tx.data ?? "0x", auth, signature), "not transferWithAuthorization of exactly the signed authorization"],
+    [same((send.payload as { txHash?: unknown }).txHash, hash), "its hash is not the one settled"],
+    [receipt?.status === "0x1" && transfer === true, "no successful receipt holding the Transfer"],
+  ] as const;
+  const failed = conditions.find(([pass]) => !pass);
+  return failed ? { ok: false, detail: `the settlement is ${failed[1]}` } : { ok: true, detail: `${hash}: transferWithAuthorization of exactly the signed authorization, sent by the facilitator ${from}; its receipt a success, holding the Transfer of ${auth.value} base units to ${auth.to}` };
 }
 
 /** Whether `data` is transferWithAuthorization of exactly `auth`, carrying `signature` (in either form). */

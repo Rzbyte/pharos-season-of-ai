@@ -23,6 +23,7 @@ import { ExactEvmScheme as ExactEvmClient } from "@x402/evm/exact/client";
 import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
 import type { LocalAccount } from "viem";
 import type { Address, Chain } from "../core/chain.js";
+import { AgentError } from "../core/errors.js";
 import type { Signer } from "../core/execute.js";
 import type { Network } from "../core/networks.js";
 import { x402Network, type X402Asset } from "./pharos.js";
@@ -70,6 +71,8 @@ export interface PaidRoute {
   /** In the asset's base units. */
   amount: string;
   description: string;
+  /** Throws a usage error for a request the route cannot answer: refused with 400, before any 402. */
+  check?: (request: Request) => void;
   data: (request: Request) => Promise<unknown>;
 }
 
@@ -100,6 +103,14 @@ export async function paidEndpoint(options: { chain: Chain; asset: X402Asset; pa
     if (!route || request.method !== "GET") {
       const free = request.method === "GET" ? options.free?.[url.pathname] : undefined;
       return free ? json(await free(request), 200) : json({ error: "Not found." }, 404);
+    }
+    if (route.check) {
+      try {
+        route.check(request);
+      } catch (error) {
+        if (error instanceof AgentError && error.kind === "usage") return json({ error: { kind: "usage", message: error.message } }, 400);
+        throw error;
+      }
     }
     const result = await http.processHTTPRequest(context);
     if (result.type === "payment-error") return json(result.response.body, result.response.status, result.response.headers);

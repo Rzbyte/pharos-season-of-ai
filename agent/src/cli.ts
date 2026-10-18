@@ -18,6 +18,7 @@
 //   pharos-agent invoice (FILE | "ethereum:…" | -) [--payees FILE] [--from 0x…] [--blocks N] [--execute]
 //   pharos-agent recurring (FILE | -) [--store FILE] [--since DAY] [--from 0x…] [--execute]
 //   pharos-agent x402 [run | serve | pay URL] [--price N] [--cap N] [--to 0x…] [--token T] [--execute]
+//   pharos-agent buy [--to 0x…] [--amount N] [--token T] [--from 0x…] [--budget N] [--api URL] [--execute]
 //   pharos-agent verify FILE...
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -94,8 +95,11 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import { getAddress, isAddress } from "viem";
 import { facilitatorRoutes, LocalFacilitatorClient, paidEndpoint, payingFetch, pharosFacilitator, serve as serveHttp } from "./x402/parties.js";
 import { readAsset, x402Network } from "./x402/pharos.js";
-import { chainData, runX402, type X402Run } from "./x402/run.js";
+import { runX402, type X402Run } from "./x402/run.js";
 import { verifyX402Proof } from "./x402/verify.js";
+import { buy, runBuyer, type BuyerRun } from "./buyer/run.js";
+import { verifyBuyerProof } from "./buyer/verify.js";
+import { productRoutes, transferIntent } from "./x402/products.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -307,8 +311,9 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       Exits with 9 when nothing was settled (always on Pharos Mainnet).
 
   pharos-agent x402 serve [options]                        the same API, served over HTTP
-      On 127.0.0.1 (--port, default 4020): GET /data (paid), GET / (free: the terms), and the
-      facilitator's POST /facilitator/verify, POST /facilitator/settle, GET /facilitator/supported.
+      On 127.0.0.1 (--port, default 4020): GET /data (paid), Task 21's GET /risk and GET /dryrun of a
+      transfer (paid, ?asset=…&from=…&to=…&amount=…), GET / (free: the terms), and the facilitator's
+      POST /facilitator/verify, POST /facilitator/settle, GET /facilitator/supported.
       Runs until stopped (Ctrl-C).
       --facilitator URL    verify and settle with this x402 facilitator instead of the built-in one
       --execute            Atlantic only: the built-in facilitator settles (FACILITATOR_PRIVATE_KEY, else
@@ -321,6 +326,23 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       atlantic-testnet): it signs a payment.
       --cap N              the most it pays a request (default 0.001)
       --token SYMBOL|0x…   the only asset it pays in (default: the official USDC)
+
+  pharos-agent buy [options]                               Task 21, X402 Agent Buyer
+      An agent with a job and a budget. The job: check a planned transfer before it is sent, and
+      prepare it. It buys what it needs by x402 from an API that sells Task 25's risk check (/risk)
+      and Task 08's dry run (/dryrun): it asks each price first (a 402 costs nothing), pays USDC only
+      within its budget, and uses what it bought. "Do not send" or "check first" ends the job without
+      buying the dry run; otherwise the dry run says whether the transfer would succeed, its cost,
+      and the transaction to sign. The API runs in this process unless --api names one; on Pharos
+      Mainnet nothing settles, so the first payment is refused and the job is not done.
+      --to 0x… --amount N --token SYMBOL --from 0x…   the transfer (default: 25 USDC, the example's)
+      --budget N           the USDC it may spend in all (default 0.01)
+      --api URL            buy from this x402 API instead (x402 serve, or any that sells /risk and /dryrun)
+      --vendor 0x…         who the API in this process is paid (default: a sample address)
+      --execute            Atlantic only: pay with PRIVATE_KEY (--from defaults to its address); the
+                           API in this process settles with FACILITATOR_PRIVATE_KEY (else PRIVATE_KEY)
+      --network ID, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+      Exits with 9 unless the transfer is ready to sign.
 
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist, gas plan, digest or
@@ -357,7 +379,7 @@ function parseFlags(argv: string[]): Flags {
     else if (arg === "--json") flags.json = true;
     else if (arg === "--submit") flags.submit = true;
     else if (arg === "--so-far") flags.soFar = true;
-    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods", "--contacts", "--payees", "--price", "--cap", "--port", "--facilitator"].includes(arg)) {
+    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods", "--contacts", "--payees", "--price", "--cap", "--port", "--facilitator", "--budget", "--vendor", "--api"].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new AgentError("usage", `${arg} needs a value.`);
       flags.values[arg.slice(2)] = value;
@@ -1709,13 +1731,17 @@ async function x402Serve(flags: Flags): Promise<number> {
     const client = builtIn ? new LocalFacilitatorClient(builtIn) : new HTTPFacilitatorClient({ url: v.facilitator! });
     const price = `${formatAmount(amount, asset.decimals, asset.decimals)} ${asset.symbol ?? "units"}`;
     let url = "";
+    // GET /data at --price, and Task 21's products (/risk, /dryrun) at their default prices.
+    const decimals = asset.decimals;
+    const products = productRoutes(chain, decimals, { data: terms.price });
+    const shownPrice = (raw: string) => `${formatAmount(BigInt(raw), decimals, decimals)} ${asset.symbol ?? "units"}`;
     const endpoint = await paidEndpoint({
       chain,
       asset,
       payTo: terms.payTo,
-      routes: [{ path: "/data", amount: amount.toString(), description: `Live ${net.name} data, read through Pharos Chain MCP: the newest block and the gas price`, data: () => chainData(chain) }],
+      routes: products,
       facilitator: client,
-      free: { "/": async () => ({ api: "Pharos X402 Paywalled API", x402: x402Network(net), paid: [{ method: "GET", path: "/data", price, amount: amount.toString(), asset: asset.address, payTo: terms.payTo, scheme: "exact" }], facilitator: v.facilitator ?? `${url}/facilitator`, settles: Boolean(v.facilitator || signer) }) },
+      free: { "/": async () => ({ api: "Pharos X402 Paywalled API", x402: x402Network(net), paid: products.map((r) => ({ method: "GET", path: r.path, price: shownPrice(r.amount), amount: r.amount, asset: asset.address, payTo: terms.payTo, scheme: "exact", description: r.description })), facilitator: v.facilitator ?? `${url}/facilitator`, settles: Boolean(v.facilitator || signer) }) },
     });
     const routes = builtIn ? facilitatorRoutes(builtIn) : null;
     let served = 0;
@@ -1730,6 +1756,7 @@ async function x402Serve(flags: Flags): Promise<number> {
     out();
     out(`  Serving      ${url} on ${net.name} (x402 network ${x402Network(net)})`);
     out(`  Paid         GET ${url}/data, ${price} a request (${amount} base units of ${asset.address}), paid to ${terms.payTo}`);
+    for (const r of products.filter((product) => product.path !== "/data")) out(`               GET ${url}${r.path}?asset=…&from=…&to=…&amount=…, ${shownPrice(r.amount)} a request`);
     out(`  Free         GET ${url}/ (the terms)`);
     out(`  Facilitator  ${v.facilitator ?? `${url}/facilitator (POST /verify, POST /settle, GET /supported)`}${builtIn ? (signer ? `, settles with ${signer.address}` : ", verifies only: nothing paid is served") : ""}`);
     if (!asset.eip3009) out(`  Note         ${asset.address} does not answer EIP-3009: the exact scheme cannot settle in it.`);
@@ -1796,10 +1823,72 @@ async function x402Pay(flags: Flags): Promise<number> {
   return response.status === 200 ? 0 : 9;
 }
 
+const BUYER_VERDICTS: Record<BuyerRun["verdict"], string> = { ready: "READY", "do-not-send": "DO NOT SEND", "check-first": "CHECK FIRST", "would-fail": "WOULD FAIL", "not-done": "NOT DONE" };
+
+function printBuyer(r: BuyerRun): void {
+  out("Pharos X402 Agent Buyer");
+  out();
+  out(`  Job          ${r.job.summary}`);
+  out(`  Budget       ${r.budget.shown}, paid by ${r.payer.key === "given" ? `PRIVATE_KEY's address, ${r.payer.address}` : `a key made for this run, holding nothing: ${r.payer.address}`}`);
+  out(`  API          ${r.api.where === "in-process" ? `in this process (its facilitator ${r.api.settles ? `settles with ${r.api.facilitator}` : "verifies only"}), paid to ${r.api.payTo}` : r.api.url}`);
+  out(`  Network      ${r.network.name} (chain ${r.network.chainId}), x402 network ${r.network.x402}`);
+  if (r.chainMcp) out(`  Chain MCP    ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out();
+  out("  Plan");
+  for (const [k, p] of r.plan.entries()) out(`  ${String(k + 1).padStart(3)}. ${p.path.padEnd(8)} ${(p.price?.shown ?? "no price").padEnd(12)} ${p.note}`);
+  out();
+  r.steps.filter((s) => s.source !== "the verdict").forEach((s, k) => out(`  ${String(k + 1).padStart(3)}. ${s.source}: ${s.text}`));
+  out(`  Ledger       ${r.ledger.committed.shown} signed for, ${r.ledger.settled.shown} settled, ${r.ledger.remaining.shown} left`);
+  if (r.tx) out(`  To sign      ${JSON.stringify(r.tx)}`);
+  out(`  Verdict      ${BUYER_VERDICTS[r.verdict]}: ${r.headline}`);
+  out(`  ${r.chainMcp ? `${r.toolCalls} Chain MCP calls (the API's and its facilitator's). ` : ""}${r.purchases.some((p) => p.settlement?.success) ? `Settled: ${r.purchases.filter((p) => p.settlement?.success).map((p) => p.settlement!.transaction).join(", ")}.` : "Nothing settled."}`);
+}
+
+async function buyCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  if (flags.positional.length > 1) throw new AgentError("usage", "buy takes options only.");
+  const net = network(v.network ?? "pharos-mainnet");
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (--network atlantic-testnet).");
+  if (v.api !== undefined && !/^https?:\/\/\S+$/.test(v.api)) throw new AgentError("usage", "--api must be an http(s) URL.");
+  if (v.api !== undefined && flags.proof) throw new AgentError("usage", "A proof records the API's Chain MCP calls, so it needs the API in this process: leave out --api.");
+  if (v.vendor !== undefined && (v.api !== undefined || !isAddress(v.vendor))) throw new AgentError("usage", v.api !== undefined ? "--vendor is for the API in this process, not one at --api." : "--vendor must be a 0x address (with a valid checksum).");
+  if (v.budget !== undefined && !/^\d+(\.\d+)?$/.test(v.budget)) throw new AgentError("usage", "--budget must be a number of USDC, like 0.01.");
+  const payer = flags.execute ? accountFromEnv() : undefined;
+  const job = { asset: v.token ?? "USDC", from: v.from ?? payer?.address ?? EXAMPLE_PAYER, to: v.to ?? EXAMPLE_RECIPIENT, amount: v.amount ?? "25" };
+  const intent = transferIntent(new URLSearchParams(job), net);
+  const budget = v.budget ?? "0.01";
+  if (v.api !== undefined) {
+    const usdc = net.tokens.find((t) => t.symbol === "USDC");
+    if (!usdc) throw new AgentError("usage", `No official USDC on ${net.name}.`);
+    const result = await buy({ net, fetcher: fetch, api: { url: v.api, where: "remote" }, job: intent, budget, asset: { address: getAddress(usdc.address), symbol: usdc.symbol, decimals: usdc.decimals }, payer });
+    const run: BuyerRun = { ...result, chainMcp: null, block: null, toolCalls: 0 };
+    if (flags.json) out(JSON.stringify(run, null, 2));
+    else printBuyer(run);
+    return run.verdict === "ready" ? 0 : 9;
+  }
+  const facilitator = flags.execute ? signerFromEnv(process.env, process.env.FACILITATOR_PRIVATE_KEY ? "FACILITATOR_PRIVATE_KEY" : "PRIVATE_KEY") : undefined;
+  const payTo = v.vendor !== undefined ? getAddress(v.vendor) : undefined;
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 240 });
+  try {
+    const result = await runBuyer({ chain: new Chain(mcp, net), job: intent, budget, payer, facilitator, payTo });
+    if (flags.proof) {
+      const proof = proofFile({ task: "21", capability: "x402-buyer", about: "One X402 Agent Buyer run: the job, the budget and the API's payee (input); the prices its 402s asked, the plan, every purchase with the authorization signed, the API's answer and its settlement, the ledger and the outcome (result); and every JSON-RPC message the API in this process and its facilitator exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { job, budget, ...(payTo ? { payTo } : {}) }, result });
+      await writeJson(flags.proof, proof);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printBuyer(result);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return result.verdict === "ready" ? 0 : 9;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof, "recurring-payments": verifyRecurringProof, "x402-payment": verifyX402Proof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof, "recurring-payments": verifyRecurringProof, "x402-payment": verifyX402Proof, "x402-buyer": verifyBuyerProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1851,6 +1940,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "invoice") return invoiceCommand(flags);
   if (command === "recurring") return recurringCommand(flags);
   if (command === "x402") return x402Command(flags);
+  if (command === "buy") return buyCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }
