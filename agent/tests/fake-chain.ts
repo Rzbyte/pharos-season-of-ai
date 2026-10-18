@@ -1,11 +1,12 @@
 // A deterministic JSON-RPC chain for tests: the upstream the official Chain MCP server talks to. It holds
 // native balances, nonces, contract code, ERC-20 tokens (balanceOf, decimals, paused, totalSupply,
-// transfer) and their past transfers (as eth_getLogs answers them), answers the JSON-RPC methods the
-// server uses, and applies signed transactions it is sent.
+// transfer; and, for an EIP-3009 token, version, authorizationState and transferWithAuthorization) and
+// their past transfers (as eth_getLogs answers them), answers the JSON-RPC methods the server uses, and
+// applies signed transactions it is sent.
 // Every value is made up; nothing here is or claims to be Pharos data.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { decodeFunctionData, encodeAbiParameters, encodeErrorResult, keccak256, parseAbi, parseTransaction, recoverTransactionAddress, type Hex } from "viem";
+import { decodeFunctionData, encodeAbiParameters, encodeErrorResult, keccak256, parseAbi, parseTransaction, recoverTransactionAddress, recoverTypedDataAddress, serializeSignature, type Hex } from "viem";
 
 export interface FakeToken {
   decimals: number;
@@ -18,6 +19,12 @@ export interface FakeToken {
   balances: Record<string, bigint>;
   /** owner → spender → amount. */
   allowances?: Record<string, Record<string, bigint>>;
+  /**
+   * EIP-3009, as Circle's USDC has it: version() answers this version, and transferWithAuthorization
+   * moves tokens on a signature (EIP-712, domain: name, version, chain ID, this address). The nonces
+   * used, as "authorizer:nonce". A token without it reverts those calls.
+   */
+  eip3009?: { version: string; used?: Record<string, boolean> };
 }
 
 /** Any other log already on the chain (an Approval, a Deposit…), at `block`: eth_getLogs answers it as is. */
@@ -105,7 +112,12 @@ const ERC20 = parseAbi([
   "function allowance(address owner, address spender) view returns (uint256)",
   "function symbol() view returns (string)",
   "function name() view returns (string)",
+  "function version() view returns (string)",
+  "function authorizationState(address authorizer, bytes32 nonce) view returns (bool)",
+  "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)",
+  "function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, bytes signature)",
 ]);
+const AUTHORIZATION = { TransferWithAuthorization: [{ name: "from", type: "address" }, { name: "to", type: "address" }, { name: "value", type: "uint256" }, { name: "validAfter", type: "uint256" }, { name: "validBefore", type: "uint256" }, { name: "nonce", type: "bytes32" }] } as const;
 const ERROR_ABI = parseAbi(["error Error(string)"]);
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
@@ -161,7 +173,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     }
     return found ? found[1] : state;
   };
-  const tokenCall = (world: World, to: string, data: Hex, from: string | undefined, apply: boolean): Hex => {
+  const tokenCall = async (world: World, to: string, data: Hex, from: string | undefined, apply: boolean): Promise<Hex> => {
     const token = world.tokens[to]!;
     let decoded;
     try {
@@ -198,6 +210,34 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
         }
         return word("bool", true);
       }
+      case "version":
+        if (!token.eip3009) throw new Revert("unknown function");
+        return word("string", token.eip3009.version);
+      case "authorizationState": {
+        if (!token.eip3009) throw new Revert("unknown function");
+        const [authorizer, nonce] = decoded.args as [string, Hex];
+        return word("bool", token.eip3009.used?.[`${lower(authorizer)}:${lower(nonce)}`] === true);
+      }
+      case "transferWithAuthorization": {
+        if (!token.eip3009) throw new Revert("unknown function");
+        if (token.paused) throw new Revert("Pausable: paused");
+        const args = decoded.args as readonly unknown[];
+        const [owner, recipient, amount, validAfter, validBefore, nonce] = args as [string, string, bigint, bigint, bigint, Hex];
+        const signature = args.length === 7 ? (args[6] as Hex) : serializeSignature({ v: BigInt(args[6] as number), r: args[7] as Hex, s: args[8] as Hex });
+        if (state.headTime <= validAfter) throw new Revert("FiatTokenV2: authorization is not yet valid");
+        if (state.headTime >= validBefore) throw new Revert("FiatTokenV2: authorization is expired");
+        const key = `${lower(owner)}:${lower(nonce)}`;
+        if (token.eip3009.used?.[key]) throw new Revert("FiatTokenV2: authorization is used or canceled");
+        const signer = await recoverTypedDataAddress({ domain: { name: token.name, version: token.eip3009.version, chainId: state.chainId, verifyingContract: to as Hex }, types: AUTHORIZATION, primaryType: "TransferWithAuthorization", message: { from: owner as Hex, to: recipient as Hex, value: amount, validAfter, validBefore, nonce }, signature }).catch(() => null);
+        if (!signer || lower(signer) !== lower(owner)) throw new Revert("FiatTokenV2: invalid signature");
+        if ((token.balances[lower(owner)] ?? 0n) < amount) throw new Revert("ERC20: transfer amount exceeds balance");
+        if (apply) {
+          token.eip3009.used = { ...(token.eip3009.used ?? {}), [key]: true };
+          token.balances[lower(owner)] = (token.balances[lower(owner)] ?? 0n) - amount;
+          token.balances[lower(recipient)] = (token.balances[lower(recipient)] ?? 0n) + amount;
+        }
+        return "0x";
+      }
       case "transfer": {
         if (token.paused) throw new Revert("Pausable: paused");
         const sender = lower(from ?? "0x0000000000000000000000000000000000000000");
@@ -212,7 +252,7 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       }
     }
   };
-  const execute = (world: World, tx: { from?: string; to?: string; data?: Hex; value?: string | bigint }, apply: boolean): Hex => {
+  const execute = async (world: World, tx: { from?: string; to?: string; data?: Hex; value?: string | bigint }, apply: boolean): Promise<Hex> => {
     const to = lower(tx.to);
     const value = tx.value === undefined ? 0n : BigInt(tx.value);
     const from = tx.from ? lower(tx.from) : undefined;
@@ -244,10 +284,10 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
     eth_getCode: ([address]) => state.code[lower(address)] ?? (state.tokens[lower(address)] ? "0x6080604052" : "0x"),
     eth_getStorageAt: () => word("uint256", 0n),
     eth_call: ([tx, tag]) => execute(worldAt(tag), tx as never, false),
-    eth_estimateGas: ([tx]) => {
+    eth_estimateGas: async ([tx]) => {
       const t = tx as { to?: string; data?: Hex };
-      execute(state, t, false);
-      return state.tokens[lower(t.to)] ? hex(t.data?.startsWith("0x095ea7b3") ? 46_500n : 51_234n) : hex(21_000n);
+      await execute(state, t, false);
+      return state.tokens[lower(t.to)] ? hex(t.data?.startsWith("0x095ea7b3") ? 46_500n : t.data?.startsWith("0xe3ee160e") || t.data?.startsWith("0xcf092995") ? 78_000n : 51_234n) : hex(21_000n);
     },
     eth_getLogs: ([filter]) => {
       const f = (filter ?? {}) as { address?: string | string[]; topics?: (string | string[] | null)[]; fromBlock?: string; toBlock?: string };
@@ -270,20 +310,20 @@ export async function startFakeChain(state: FakeChainState): Promise<FakeChain> 
       const from = lower(await recoverTransactionAddress({ serializedTransaction: serialized as never }));
       if (tx.chainId !== state.chainId) throw new RpcFailure(-32000, `invalid chain id ${tx.chainId}`);
       if (BigInt(tx.nonce ?? 0) !== (state.nonces[from] ?? 0n)) throw new RpcFailure(-32000, "nonce too low");
-      const gasUsed = state.tokens[lower(tx.to)] ? (tx.data?.startsWith("0x095ea7b3") ? 46_123n : 49_871n) : 21_000n;
+      const gasUsed = state.tokens[lower(tx.to)] ? (tx.data?.startsWith("0x095ea7b3") ? 46_123n : tx.data?.startsWith("0xe3ee160e") || tx.data?.startsWith("0xcf092995") ? 74_520n : 49_871n) : 21_000n;
       const fee = gasUsed * (state.baseFee ?? state.gasPrice);
       let status: "0x1" | "0x0" = "0x1";
       const logs: unknown[] = [];
       const applied: Omit<FakeTransfer, "block">[] = [];
       history.set(state.head, structuredClone({ native: state.native, nonces: state.nonces, tokens: state.tokens }));
       try {
-        execute(state, { from, to: tx.to ?? undefined, data: tx.data, value: tx.value }, true);
+        await execute(state, { from, to: tx.to ?? undefined, data: tx.data, value: tx.value }, true);
         if (state.tokens[lower(tx.to)] && tx.data) {
           const decoded = decodeFunctionData({ abi: ERC20, data: tx.data });
-          if (decoded.functionName === "transfer") {
-            const [recipient, amount] = decoded.args as [string, bigint];
-            logs.push({ address: lower(tx.to), topics: [TRANSFER_TOPIC, word("address", from), word("address", recipient)], data: word("uint256", amount), logIndex: "0x0" });
-            applied.push({ token: lower(tx.to), from, to: lower(recipient), amount });
+          if (decoded.functionName === "transfer" || decoded.functionName === "transferWithAuthorization") {
+            const [owner, recipient, amount] = decoded.functionName === "transfer" ? [from, ...(decoded.args as [string, bigint])] : (decoded.args as unknown as [string, string, bigint]);
+            logs.push({ address: lower(tx.to), topics: [TRANSFER_TOPIC, word("address", lower(owner)), word("address", lower(recipient))], data: word("uint256", amount), logIndex: "0x0" });
+            applied.push({ token: lower(tx.to), from: lower(owner), to: lower(recipient), amount });
           }
         }
       } catch (error) {

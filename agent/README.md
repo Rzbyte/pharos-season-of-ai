@@ -23,6 +23,7 @@ node dist/src/cli.js howto "How do I wrap 0.5 PROS into WPROS?"  # Task 29: the 
 node dist/src/cli.js pay "Pay alice 25 USDC" --contacts c.txt  # Task 17: a request in plain words, prepared
 node dist/src/cli.js invoice invoice.txt --payees p.txt  # Task 19: an invoice checked, its payment prepared
 node dist/src/cli.js recurring schedule.txt --store r.json  # Task 18: what a schedule owes, paid once
+node dist/src/cli.js x402                  # Task 20: a paid API, its facilitator and a paying client (x402)
 npm test                                 # every test, offline
 ```
 
@@ -34,7 +35,7 @@ npm test                                 # every test, offline
 | `src/core/chain.ts` | Typed wrappers for the official server's tools, each payload checked against the shape `vendor/pharos-mcp/src/server.ts` returns. Blocks are passed as 0x quantities. |
 | `src/core/networks.ts` | Pharos Mainnet and Atlantic: RPCs, chain IDs, explorers and token addresses from the [Pharos Skill Engine](https://github.com/PharosNetwork/pharos-skill-engine) (`a873387`), and the hosted Chain MCP. |
 | `src/core/abi.ts`, `amounts.ts` | Calls by signature (`"paused() returns (bool)"`) through viem; exact amounts in human units, with no floats. |
-| `src/core/execute.ts` | Signing and broadcasting, apart from everything else. The key comes from `PRIVATE_KEY`, signs, and goes nowhere: only the signed transaction leaves, through Chain MCP `send_raw_transaction`. Atlantic only. |
+| `src/core/execute.ts` | Signing and broadcasting, apart from everything else. The key comes from `PRIVATE_KEY`, signs, and goes nowhere: only the signed transaction leaves, through Chain MCP `send_raw_transaction` (or, for x402, the account that signs an authorization, which never gives out its key). Atlantic only. |
 | `src/core/simulate.ts` | A transaction simulated with `eth_call` at a pinned block (a revert is a result, with its reason), and priced with `estimate_gas` and the fee market by the formula `execute.ts` signs with. |
 | `src/core/proof.ts` | The proof format (`pharos-agent-proof/1`) and its replay: recorded answers are fed back through the same code, which must make exactly the recorded calls and produce exactly the recorded result. |
 | `src/guardian/` | Task 05, Threshold Guardian: config, deciding, the run, presets, the proof verifier. |
@@ -53,6 +54,7 @@ npm test                                 # every test, offline
 | `src/payment/` | Task 17, Natural-Language Payment Agent: the request read by a small grammar (verbs, amounts with their asset, recipients by address or an address book, "each" and "split", a note, a sender; any word not read refuses it), the flow (the sender's nonce, Task 08's dry run of each payment at one block, each asset's total against what the sender holds, the transactions to sign in nonce order with the Skill Engine's `cast send`, Atlantic sending in order), and the proof verifier. |
 | `src/recurring/` | Task 18, Recurring Payment Agent: the schedule read by a small grammar (daily, weekly, monthly, yearly, every N from a day, until a day) and its calendar of UTC due days, the store kept between runs (the start, each payment paid with its transaction, a pending one settled by its receipt), the run (what is owed by the block's day, the oldest taken within limits, Task 17's flow, Atlantic sending and recording), and the proof verifier and history check. |
 | `src/invoice/` | Task 19, Invoice-to-Payment Agent: EIP-681 payment links read and written, the invoice read by rules (labelled lines with or without a colon, line items, dates and terms, every figure checked against the others and the link, a currency, another network or a bad checksum refused), the run (your payees, the payer's last blocks of the token for a duplicate, a lookalike or transfers of nothing, Task 17's flow, held while anything calls for a check), and the proof verifier. |
+| `src/x402/` | Task 20, X402 Paywalled API, on the official x402 packages (`@x402/core`, `@x402/evm`, `@x402/fetch`) as the Pharos x402 skill sets them up: the asset read through Chain MCP (its EIP-712 name and version, EIP-3009 or not), x402's facilitator with a signer whose reads, simulation, send and receipt are Chain MCP calls (Multicall3 answered call by call), the paid endpoint as a `Request` to `Response` handler on x402's HTTP resource server, the paying client (x402's fetch, one asset, a cap a payment), the facilitator's HTTP routes, the run, and the proof verifier, which checks the payment's facts against the recorded answers. |
 | `src/support/` | Task 27, dApp Support Agent: revert data decoded in plain language (Error, Panic, OpenZeppelin 5 errors), the explanation of a transaction by hash (receipt, replay before its block, code, token balance and allowance, out of gas, earlier in its block) or by description (Task 08's dry run), and the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |
@@ -80,7 +82,10 @@ flags a mainnet proof that did not use the hosted endpoint.
 - the result recomputed by replay.
 
 Each capability adds its own checks. Tampering with any recorded answer, the decision, a block number
-or the server identity fails verification ([`tests/proof.test.ts`](tests/proof.test.ts)).
+or the server identity fails verification ([`tests/proof.test.ts`](tests/proof.test.ts)). An x402
+payment (Task 20) cannot be replayed whole: it signs a random nonce, at the time it ran, and on mainnet
+with a key made for the run. Its verifier replays the asset's reads and checks the payment's facts
+against the recorded answers instead: the terms, the signature, the simulation, the one settlement.
 
 ## Tests
 

@@ -74,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17 to 19, 22 to 29\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17 to 20, 22 to 29\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -574,6 +574,52 @@ describe("GET /api/agent?task=19", () => {
       [`task=19&invoice=${encodeURIComponent(`Total: 1 USDC\nPay to: ${STUDIO}\n${"x".repeat(2000)}`)}`, /at most 2,000 characters/],
       ["task=19&payees=Studio%3D0x12", /Studio's address must be 0x and 40 hex characters/],
       ["task=19&from=0x12", /from must be a 0x address/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=20", () => {
+  type Body = { result: { schema: string; verdict: string; reason: string | null; payTo: string; payer: { key: string }; facilitator: { address: string | null; settles: boolean }; endpoint: { price: { amount: string; shown: string } }; cap: { amount: string }; data: unknown; settle: unknown; response: { status: number }; required: { accepts: { network: string; asset: string; amount: string; payTo: string; extra: Record<string, unknown> }[] } | null }; inputs: Record<string, string>; calls: { tool: string }[] };
+  // For these, the chain's USDC is an EIP-3009 token, as Circle's is.
+  before(() => {
+    Object.assign(fake.state.tokens[USDC]!, { name: "USD Coin", symbol: "USDC", eip3009: { version: "2" } });
+  });
+  after(() => {
+    for (const key of ["name", "symbol", "eip3009"] as const) delete fake.state.tokens[USDC]![key];
+  });
+
+  test("GET /data's 402 terms, an authorization signed by a key made for the request, refused at verify: the data stays locked, nothing is sent; shared 15 s", async () => {
+    const response = await get("task=20");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 15);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.reason, body.result.payer.key, body.result.facilitator, body.result.data, body.result.settle, body.result.response.status], ["pharos-agent/x402-run/1", "refused", "the payer does not hold the amount", "new", { address: null, settles: false }, null, null, 402]);
+    const accepted = body.result.required!.accepts[0]!;
+    assert.deepEqual([accepted.network, accepted.asset, accepted.amount, accepted.payTo, accepted.extra], ["eip155:1672", "0xC879C018dB60520F4355C26eD1a6D572cdAC1815", "1000", "0xB2749BD12f19C24a2244176658F3dF3e48e79553", { name: "USD Coin", version: "2" }]);
+    assert.deepEqual(body.inputs, { price: "0.001" });
+    assert.deepEqual(body.calls.slice(0, 3).map((c) => c.tool), ["get_chain_info", "get_block_number", "get_block"]);
+    assert.ok(body.calls.some((c) => c.tool === "eth_call"));
+    assert.equal(body.calls.some((c) => c.tool === "send_raw_transaction"), false);
+  });
+
+  test("a price, a cap and a recipient of your own; refused before any call when one is wrong", async () => {
+    const capped = (await get(`task=20&price=0.01&cap=0.001&to=${STRANGER}`)).body as Body;
+    assert.deepEqual([capped.result.verdict, capped.result.reason, capped.result.payTo, capped.result.endpoint.price.shown, capped.result.cap.amount], ["not-paid", "the endpoint asks 0.01 USDC, more than the client's cap of 0.001 USDC a request", STRANGER, "0.01 USDC", "1000"]);
+    assert.deepEqual(capped.inputs, { price: "0.01", cap: "0.001", to: STRANGER });
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      ["task=20&price=abc", /price must be a number of USDC/],
+      ["task=20&price=0", /price must be more than zero/],
+      ["task=20&price=0.0000001", /more than 6 decimal places/],
+      ["task=20&price=2000000", /price is at most 1,000,000 USDC here/],
+      ["task=20&cap=-1", /cap must be a number of USDC/],
+      ["task=20&to=0x12", /to must be a 0x address/],
+      [`task=20&to=${USDC}`, /cannot be the token's own contract/],
     ] as const) {
       const bad = await get(query);
       assert.equal(bad.status, 400, query);

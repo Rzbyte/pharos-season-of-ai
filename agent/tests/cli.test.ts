@@ -1,7 +1,7 @@
 // The real pharos-agent binary, end to end: the guardian against the official Chain MCP server (its HTTP
 // mode, and over stdio with --execute) on a fake chain, the proof it writes, and `verify` on that proof.
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer, type IncomingMessage } from "node:http";
 import { createServer } from "node:net";
@@ -800,5 +800,117 @@ describe("pharos-agent recurring", () => {
     const day = await cli(["recurring", file, "--since", "1 Sept", "--rpc", "http://127.0.0.1:9"]);
     assert.equal(day.code, 2);
     assert.match(day.stderr, /--since must be a day as YYYY-MM-DD/);
+  });
+});
+
+describe("pharos-agent x402", () => {
+  // For these, the chain's USDC is an EIP-3009 token, as Circle's is.
+  before(() => {
+    Object.assign(fake.state.tokens[USDC]!, { name: "USD Coin", symbol: "USDC", eip3009: { version: "2" } });
+  });
+  after(() => {
+    for (const key of ["name", "symbol", "eip3009"] as const) delete fake.state.tokens[USDC]![key];
+  });
+  // The well-known Hardhat/Anvil test key #2, as the facilitator's: public, only ever used here on a fake chain.
+  const FACILITATOR_KEY = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+  const FACILITATOR = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
+  const TUSDC = "0xe0be08c77f415f577a1b3a9ad7a1df1479564ec8";
+  const RECIPIENT = "0xb2749bd12f19c24a2244176658f3df3e48e79553";
+  const atlanticChain = () => startFakeChain(defaultState({ chainId: 688689, headTime: BigInt(Math.floor(Date.now() / 1000)), native: { [FACILITATOR]: 10n ** 18n }, tokens: { [TUSDC]: { decimals: 6, name: "USD Coin", symbol: "USDC", eip3009: { version: "2" }, balances: { [KEY_ADDRESS]: 3_000_000n } } } }));
+
+  test("on mainnet: the 402 terms, a key made for the run signs, the facilitator refuses it; exit 9; the proof verifies but for its endpoint", async () => {
+    const proofPath = join(dir, "x402", "mainnet.json");
+    const run = await cli(["x402", "--rpc", fake.url, "--proof", proofPath]);
+    assert.equal(run.code, 9, run.stderr);
+    assert.match(run.stdout, /\n {2}Asset {8}USD Coin \(USDC\) at 0xC879C018dB60520F4355C26eD1a6D572cdAC1815, version 2, 6 decimals: EIP-3009\n {2}Endpoint {5}GET \/data, 0\.001 USDC a request, paid to 0xB2749BD12f19C24a2244176658F3dF3e48e79553\n {2}Client {7}a key made for this run, holding nothing: 0x[0-9a-fA-F]{40}; pays at most 0\.001 USDC a request\n {2}Facilitator {2}verifies only: it holds no key, so nothing can be sent\n/);
+    assert.match(run.stdout, /\n {4}4\. the facilitator · verify: Refused: the payer does not hold the amount \(invalid_exact_evm_insufficient_balance\)\.\n/);
+    assert.match(run.stdout, /\n {2}Verdict {6}REFUSED: The endpoint asked 0\.001 USDC; a key made for this run, holding nothing \(0x[0-9a-fA-F]{4}…[0-9a-fA-F]{4}\), signed for it, and the facilitator refused it on Pharos Mainnet: the payer does not hold the amount\. The data stayed locked\.\n {2}\d+ Chain MCP calls\. No transaction was sent\.\n$/);
+    const verified = await cli(["verify", proofPath]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /PASS {2}nothing sent: a facilitator without a key: no transaction sent/);
+  });
+
+  test("--execute on Atlantic: paid with PRIVATE_KEY, settled with FACILITATOR_PRIVATE_KEY through the official server run locally, the data received; the proof fully verifies", async () => {
+    const atlantic = await atlanticChain();
+    try {
+      const proofPath = join(dir, "x402", "atlantic.json");
+      const run = await cli(["x402", "--network", "atlantic-testnet", "--execute", "--price", "0.25", "--cap", "1", "--rpc", atlantic.url, "--proof", proofPath], { PRIVATE_KEY: KEY, FACILITATOR_PRIVATE_KEY: FACILITATOR_KEY });
+      assert.equal(run.code, 0, run.stderr + run.stdout);
+      assert.match(run.stdout, /\n {2}Client {7}PRIVATE_KEY's address, 0x70997970C51812dc3A010C7d01b50e0d17dc79C8; pays at most 1 USDC a request\n {2}Facilitator {2}settles with 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC\n/);
+      assert.match(run.stdout, /\n {2}Data {9}\{"network":"eip155:688689","chainId":688689,"block":\{"number":"5000000",/);
+      assert.match(run.stdout, /\n {2}Verdict {6}PAID: Paid and served: 0\.25 USDC from 0x7099…79C8 to 0xB274…9553, settled in 0x[0-9a-f]{64}, and the data released for it\.\n {2}\d+ Chain MCP calls\. One transaction sent, by the facilitator: 0x[0-9a-f]{64}\.\n$/);
+      assert.deepEqual([atlantic.state.tokens[TUSDC]!.balances[KEY_ADDRESS], atlantic.state.tokens[TUSDC]!.balances[RECIPIENT]], [2_750_000n, 250_000n]);
+      const proof = await readFile(proofPath, "utf8");
+      for (const key of [KEY, FACILITATOR_KEY]) assert.ok(!proof.toLowerCase().includes(key.slice(2)), "no key is in the proof");
+      const verified = await cli(["verify", proofPath]);
+      assert.equal(verified.code, 0, verified.stdout);
+      assert.match(verified.stdout, /PASS {2}settlement: 0x[0-9a-f]{64}: transferWithAuthorization of exactly the signed authorization, sent by the facilitator 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC; its receipt a success, holding the Transfer of 250000 base units to 0xB2749BD12f19C24a2244176658F3dF3e48e79553/);
+    } finally {
+      await atlantic.close();
+    }
+  });
+
+  test("serve and pay on Atlantic: a real HTTP API, 402 then paid with x402 pay, settled by the built-in facilitator; stopped cleanly", async () => {
+    const atlantic = await atlanticChain();
+    const child = spawn(process.execPath, [CLI, "x402", "serve", "--network", "atlantic-testnet", "--execute", "--price", "0.5", "--port", "0", "--rpc", atlantic.url], { env: { PATH: process.env.PATH ?? "", FACILITATOR_PRIVATE_KEY: FACILITATOR_KEY } });
+    let stdout = "";
+    let stderr = "";
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    const exited = new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+    try {
+      const url = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`no URL in time: ${stdout} ${stderr}`)), 30_000);
+        child.stdout.on("data", (chunk) => {
+          stdout += chunk;
+          // The banner's last line: everything before it is in.
+          const found = /Serving {6}(http:\/\/127\.0\.0\.1:\d+)[^]*Stop it {6}Ctrl-C\n/.exec(stdout);
+          if (found) {
+            clearTimeout(timer);
+            resolve(found[1]!);
+          }
+        });
+        void exited.then((code) => reject(new Error(`exited ${code}: ${stderr}`)));
+      });
+      assert.match(stdout, /\n {2}Facilitator {2}http:\/\/127\.0\.0\.1:\d+\/facilitator \(POST \/verify, POST \/settle, GET \/supported\), settles with 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC\n/);
+      const terms = (await (await fetch(`${url}/`)).json()) as { x402: string; paid: { path: string; amount: string; asset: string; payTo: string }[]; facilitator: string; settles: boolean };
+      assert.deepEqual([terms.x402, terms.paid[0]!.path, terms.paid[0]!.amount, terms.paid[0]!.payTo, terms.facilitator, terms.settles], ["eip155:688689", "/data", "500000", "0xB2749BD12f19C24a2244176658F3dF3e48e79553", `${url}/facilitator`, true]);
+      assert.equal((await fetch(`${url}/data`)).status, 402);
+      const supported = (await (await fetch(`${url}/facilitator/supported`)).json()) as { kinds: { network: string }[] };
+      assert.deepEqual(supported.kinds.map((k) => k.network), ["eip155:688689"]);
+      const capped = await cli(["x402", "pay", `${url}/data`, "--network", "atlantic-testnet"], { PRIVATE_KEY: KEY });
+      assert.equal(capped.code, 9);
+      assert.match(capped.stdout, /\n {2}Not paid {5}.*maxAmountPerPayment/);
+      const paid = await cli(["x402", "pay", `${url}/data`, "--network", "atlantic-testnet", "--cap", "1"], { PRIVATE_KEY: KEY });
+      assert.equal(paid.code, 0, paid.stdout + paid.stderr);
+      assert.match(paid.stdout, /\n {2}402 asked {4}500000 base units of 0xE0BE08c77f415F577A1B3A9aD7a1Df1479564ec8 to 0xB2749BD12f19C24a2244176658F3dF3e48e79553, on eip155:688689, by the exact scheme\n {2}Signed {7}an EIP-3009 authorization: 500000 base units to 0xB2749BD12f19C24a2244176658F3dF3e48e79553, valid until \S+\n {2}Settled {6}0x[0-9a-f]{64} on eip155:688689\n {2}Answer {7}200: \{"network":"eip155:688689"/);
+      assert.equal(atlantic.state.tokens[TUSDC]!.balances[RECIPIENT], 500_000n);
+      child.kill("SIGTERM");
+      assert.equal(await exited, 0);
+      assert.match(stderr, /Stopped: 1 paid request served, each settled, \d+ Chain MCP calls\./);
+    } finally {
+      child.kill("SIGKILL");
+      await atlantic.close();
+    }
+  });
+
+  test("refused before anything runs: --execute or pay off Atlantic, a bad recipient, price, token or subcommand", async () => {
+    for (const [args, pattern, env] of [
+      [["x402", "--execute"], /--execute is limited to the Atlantic testnet/, { PRIVATE_KEY: KEY }],
+      [["x402", "pay", "http://127.0.0.1:9/data"], /limited to the Atlantic testnet/, { PRIVATE_KEY: KEY }],
+      [["x402", "pay", "nowhere", "--network", "atlantic-testnet"], /x402 pay needs one http\(s\) URL/, { PRIVATE_KEY: KEY }],
+      [["x402", "pay", "http://127.0.0.1:9/data", "--network", "atlantic-testnet"], /Executing needs PRIVATE_KEY/, {}],
+      [["x402", "--to", "0x12"], /--to must be a 0x address/, {}],
+      [["x402", "--to", USDC], /--to is the asset's own contract/, {}],
+      [["x402", "--price", "abc"], /--price must be a number of the asset/, {}],
+      [["x402", "--token", "PEPE"], /"PEPE" is not an official Pharos Mainnet token/, {}],
+      [["x402", "mint"], /x402 takes run \(the default\), serve, or pay URL/, {}],
+      [["x402", "serve", "--cap", "1"], /--cap is the paying client's/, {}],
+      [["x402", "serve", "--port", "http"], /--port must be a port number/, {}],
+      [["x402", "serve", "--network", "atlantic-testnet", "--execute", "--facilitator", "http://127.0.0.1:9"], /--execute settles with the built-in facilitator/, { PRIVATE_KEY: KEY }],
+    ] as const) {
+      const run = await cli([...args, "--rpc", "http://127.0.0.1:9"], env);
+      assert.equal(run.code, 2, `${args.join(" ")}: ${run.stderr}`);
+      assert.match(run.stderr, pattern, args.join(" "));
+    }
   });
 });

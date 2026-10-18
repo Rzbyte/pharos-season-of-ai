@@ -35,7 +35,7 @@ import { explain } from "./support/explain.js";
 import { checkRisk, DEFAULT_BLOCKS } from "./risk/check.js";
 import { parsePeriod } from "./audit/period.js";
 import { auditAddress, parseAuditAddress } from "./audit/report.js";
-import { EXAMPLE_PAYER } from "./guardian/presets.js";
+import { EXAMPLE_PAYER, EXAMPLE_RECIPIENT } from "./guardian/presets.js";
 import { parseSubject, subjectName } from "./digest/config.js";
 import { runDigest } from "./digest/run.js";
 import { digestKey, emptyDigestStore } from "./digest/store.js";
@@ -49,6 +49,7 @@ import { parsePayees, payInvoice } from "./invoice/pay.js";
 import { readInvoice } from "./invoice/read.js";
 import { runRecurring } from "./recurring/run.js";
 import { readSchedule } from "./recurring/schedule.js";
+import { runX402 } from "./x402/run.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -641,6 +642,51 @@ async function recurringPayments(params: URLSearchParams, options: WebOptions): 
   }
 }
 
+export const DEFAULT_X402_PRICE = "0.001";
+export const WEB_MAX_PRICE = 1_000_000n;
+
+/**
+ * Task 20: x402 on Pharos Mainnet, live. The paid endpoint's 402 terms for GET /data in the official USDC,
+ * an EIP-3009 authorization signed for them by a key made for this request (it holds nothing, and is
+ * never kept), and the facilitator's verify through the hosted Chain MCP: the transfer simulated on chain,
+ * refused when the payer cannot pay, so the data stays locked. Nothing can be settled here: the page
+ * holds no key and the hosted Chain MCP is read-only. The CLI pays and settles on Atlantic.
+ */
+async function x402Payment(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const usdc = net.tokens.find((t) => t.symbol === "USDC")!;
+  const price = params.get("price")?.trim() || DEFAULT_X402_PRICE;
+  const cap = params.get("cap")?.trim() || undefined;
+  const toText = params.get("to")?.trim() || undefined;
+  let payTo = getAddress(EXAMPLE_RECIPIENT);
+  try {
+    for (const [what, value] of [["price", price], ["cap", cap]] as const) {
+      if (value === undefined) continue;
+      if (!/^\d+(\.\d+)?$/.test(value)) throw new AgentError("usage", `${what} must be a number of USDC, like 0.001.`);
+      const raw = parseAmount(value, usdc.decimals, what);
+      if (raw === 0n) throw new AgentError("usage", `${what} must be more than zero.`);
+      if (raw > WEB_MAX_PRICE * 10n ** BigInt(usdc.decimals)) throw new AgentError("usage", `${what} is at most ${WEB_MAX_PRICE.toLocaleString("en-US")} USDC here.`);
+    }
+    if (toText !== undefined) {
+      if (!isAddress(toText, { strict: false })) throw new AgentError("usage", "to must be a 0x address (40 hex characters).");
+      payTo = getAddress(toText);
+      if (payTo.toLowerCase() === usdc.address.toLowerCase() || /^0x0{40}$/.test(payTo)) throw new AgentError("usage", "to cannot be the token's own contract or the zero address: a payment there is lost.");
+    }
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // The asset's five reads, then the facilitator's: the payer's code, the simulation, four to diagnose a refusal.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runX402({ chain: new Chain(mcp, net), payTo, price, cap, now: options.now });
+    return { status: 200, body: { result, inputs: { price, ...(cap ? { cap } : {}), ...(toText ? { to: toText } : {}) }, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -660,6 +706,8 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await recurringPayments(url.searchParams, options);
       case "19":
         return await invoicePayment(url.searchParams, options);
+      case "20":
+        return await x402Payment(url.searchParams, options);
       case "22":
         return await alertBot(url.searchParams, options);
       case "23":
@@ -677,7 +725,7 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
       case "29":
         return await builder(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17 to 19, 22 to 29.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17 to 20, 22 to 29.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

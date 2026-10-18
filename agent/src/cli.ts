@@ -17,15 +17,16 @@
 //   pharos-agent pay "request" [--contacts FILE] [--from 0x…] [--execute]
 //   pharos-agent invoice (FILE | "ethereum:…" | -) [--payees FILE] [--from 0x…] [--blocks N] [--execute]
 //   pharos-agent recurring (FILE | -) [--store FILE] [--since DAY] [--from 0x…] [--execute]
+//   pharos-agent x402 [run | serve | pay URL] [--price N] [--cap N] [--to 0x…] [--token T] [--execute]
 //   pharos-agent verify FILE...
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatAmount, formatGwei } from "./core/amounts.js";
+import { formatAmount, formatGwei, parseAmount } from "./core/amounts.js";
 import { Chain } from "./core/chain.js";
 import { AGENT, ChainMcp, type ChainMcpEndpoint } from "./core/chain-mcp.js";
 import { AgentError, errorMessage } from "./core/errors.js";
-import { signerFromEnv, type Signer } from "./core/execute.js";
+import { accountFromEnv, signerFromEnv, type Signer } from "./core/execute.js";
 import { network, type Network } from "./core/networks.js";
 import { proofFile, type ProofFile } from "./core/proof.js";
 import { parseGuardianConfig } from "./guardian/config.js";
@@ -88,6 +89,13 @@ import { runRecurring, type RecurringRun } from "./recurring/run.js";
 import { readSchedule } from "./recurring/schedule.js";
 import { parseRecurringStore, type RecurringStore } from "./recurring/store.js";
 import { recurringHistoryCheck, verifyRecurringProof } from "./recurring/verify.js";
+import { decodePaymentRequiredHeader, decodePaymentResponseHeader, decodePaymentSignatureHeader } from "@x402/core/http";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import { getAddress, isAddress } from "viem";
+import { facilitatorRoutes, LocalFacilitatorClient, paidEndpoint, payingFetch, pharosFacilitator, serve as serveHttp } from "./x402/parties.js";
+import { readAsset, x402Network } from "./x402/pharos.js";
+import { chainData, runX402, type X402Run } from "./x402/run.js";
+import { verifyX402Proof } from "./x402/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -281,6 +289,39 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
                            recorded as paid
       --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent x402 [run] [options]                        Task 20, X402 Paywalled API
+      An API that charges per request with x402 on Pharos, built on the official x402 packages as the
+      Pharos skill sets them up. The paid endpoint, GET /data (live chain data through Chain MCP),
+      answers 402 with its terms; the client signs an EIP-3009 authorization for them, never above
+      its cap; the facilitator verifies it (the transfer simulated on chain), and settles it
+      (transferWithAuthorization sent through Chain MCP); the data is released only once settled. On
+      Pharos Mainnet the facilitator only verifies and the client pays with a key made for the run
+      that holds nothing, so the payment is refused and nothing is sent.
+      --price N            the price of GET /data in the asset (default 0.001)
+      --cap N              the most the client pays a request (default: the price)
+      --to 0x…             who is paid (default: the example recipient)
+      --token SYMBOL|0x…   the asset (default: the official USDC)
+      --execute            Atlantic only: the client pays with PRIVATE_KEY and the facilitator settles
+                           with FACILITATOR_PRIVATE_KEY (else PRIVATE_KEY), paying the gas in PHRS
+      --network ID, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+      Exits with 9 when nothing was settled (always on Pharos Mainnet).
+
+  pharos-agent x402 serve [options]                        the same API, served over HTTP
+      On 127.0.0.1 (--port, default 4020): GET /data (paid), GET / (free: the terms), and the
+      facilitator's POST /facilitator/verify, POST /facilitator/settle, GET /facilitator/supported.
+      Runs until stopped (Ctrl-C).
+      --facilitator URL    verify and settle with this x402 facilitator instead of the built-in one
+      --execute            Atlantic only: the built-in facilitator settles (FACILITATOR_PRIVATE_KEY, else
+                           PRIVATE_KEY); without it, it only verifies, and nothing paid is served
+      --price, --to, --token, --network, --verbose, --chain-mcp, --rpc   as above
+
+  pharos-agent x402 pay URL [options]                      the paying client, for any x402 endpoint
+      Asks URL; answered 402, pays it by x402's exact scheme with PRIVATE_KEY, at most --cap of the
+      asset a request, and prints the answer with its PAYMENT-RESPONSE. Atlantic only (--network
+      atlantic-testnet): it signs a payment.
+      --cap N              the most it pays a request (default 0.001)
+      --token SYMBOL|0x…   the only asset it pays in (default: the official USDC)
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist, gas plan, digest or
                               recurring schedule, in run order,
@@ -316,7 +357,7 @@ function parseFlags(argv: string[]): Flags {
     else if (arg === "--json") flags.json = true;
     else if (arg === "--submit") flags.submit = true;
     else if (arg === "--so-far") flags.soFar = true;
-    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods", "--contacts", "--payees"].includes(arg)) {
+    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods", "--contacts", "--payees", "--price", "--cap", "--port", "--facilitator"].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new AgentError("usage", `${arg} needs a value.`);
       flags.values[arg.slice(2)] = value;
@@ -1565,10 +1606,200 @@ async function recurringCommand(flags: Flags): Promise<number> {
   }
 }
 
+const X402_VERDICTS: Record<X402Run["verdict"], string> = { paid: "PAID", refused: "REFUSED", "not-settled": "NOT SETTLED", "not-paid": "NOT PAID" };
+
+/** The asset: an official token's symbol, or an address; absent, the network's official USDC. */
+function x402Asset(net: Network, value: string | undefined): `0x${string}` {
+  if (value === undefined) {
+    const usdc = net.tokens.find((t) => t.symbol === "USDC");
+    if (!usdc) throw new AgentError("usage", `No official USDC on ${net.name}: give --token.`);
+    return getAddress(usdc.address);
+  }
+  if (value.startsWith("0x")) {
+    if (!isAddress(value)) throw new AgentError("usage", "--token must be an official token's symbol or a 0x address (with a valid checksum).");
+    return getAddress(value);
+  }
+  const token = net.tokens.find((t) => t.symbol.toLowerCase() === value.toLowerCase());
+  if (!token) throw new AgentError("usage", `"${value}" is not an official ${net.name} token: give its address.`);
+  return getAddress(token.address);
+}
+
+/** The terms an endpoint is run with: the price, the cap, who is paid and the asset. */
+function x402Terms(flags: Flags, net: Network): { price: string; cap?: string; payTo: `0x${string}`; asset: `0x${string}`; given?: `0x${string}` } {
+  const v = flags.values;
+  const number = (value: string | undefined, what: string) => {
+    if (value !== undefined && !/^\d+(\.\d+)?$/.test(value)) throw new AgentError("usage", `${what} must be a number of the asset, like 0.001.`);
+    return value;
+  };
+  if (v.to !== undefined && !isAddress(v.to)) throw new AgentError("usage", "--to must be a 0x address (with a valid checksum).");
+  const asset = x402Asset(net, v.token);
+  const payTo = getAddress(v.to ?? EXAMPLE_RECIPIENT);
+  if (payTo === asset) throw new AgentError("usage", "--to is the asset's own contract: a payment to it would be lost.");
+  if (/^0x0{40}$/.test(payTo)) throw new AgentError("usage", "--to cannot be the zero address.");
+  return { price: number(v.price, "--price") ?? "0.001", cap: number(v.cap, "--cap"), payTo, asset, given: v.token === undefined ? undefined : asset };
+}
+
+function printX402(r: X402Run): void {
+  const n = (value: string | number) => BigInt(value).toLocaleString("en-US");
+  out("Pharos X402 Paywalled API");
+  out();
+  out(`  Network      ${r.network.name} (chain ${r.network.chainId}), x402 network ${r.network.x402}`);
+  out(`  Chain MCP    ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Block        ${n(r.block.number)} · ${r.block.timestamp}`);
+  out(`  Asset        ${r.asset.name ?? "no name()"} (${r.asset.symbol ?? "no symbol()"}) at ${r.asset.address}, ${r.asset.version ? `version ${r.asset.version}` : "no version()"}, ${r.asset.decimals} decimals: ${r.asset.eip3009 ? "EIP-3009" : "not EIP-3009"}`);
+  out(`  Endpoint     ${r.endpoint.method} ${r.endpoint.path}, ${r.endpoint.price.shown} a request, paid to ${r.payTo}`);
+  out(`  Client       ${r.payer.key === "given" ? `PRIVATE_KEY's address, ${r.payer.address}` : `a key made for this run, holding nothing: ${r.payer.address}`}; pays at most ${r.cap.shown} a request`);
+  out(`  Facilitator  ${r.facilitator.settles ? `settles with ${r.facilitator.address}` : "verifies only: it holds no key, so nothing can be sent"}`);
+  out();
+  r.steps.filter((s) => s.source !== "the verdict").forEach((s, k) => out(`  ${String(k + 1).padStart(3)}. ${s.source}: ${s.text}`));
+  if (r.data !== null) out(`  Data         ${JSON.stringify(r.data)}`);
+  out(`  Verdict      ${X402_VERDICTS[r.verdict]}: ${r.headline}`);
+  out(`  ${r.toolCalls} Chain MCP calls. ${r.settlement ? `One transaction sent, by the facilitator: ${r.settlement.tx}.` : "No transaction was sent."}`);
+}
+
+async function x402Command(flags: Flags): Promise<number> {
+  const sub = flags.positional[1] ?? "run";
+  if (sub === "serve") return x402Serve(flags);
+  if (sub === "pay") return x402Pay(flags);
+  if (sub !== "run" || flags.positional.length > 2) throw new AgentError("usage", 'x402 takes run (the default), serve, or pay URL.');
+  const net = network(flags.values.network ?? "pharos-mainnet");
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (--network atlantic-testnet).");
+  const terms = x402Terms(flags, net);
+  const payer = flags.execute ? accountFromEnv() : undefined;
+  const facilitator = flags.execute ? signerFromEnv(process.env, process.env.FACILITATOR_PRIVATE_KEY ? "FACILITATOR_PRIVATE_KEY" : "PRIVATE_KEY") : undefined;
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 80 });
+  try {
+    const result = await runX402({ chain: new Chain(mcp, net), payer, facilitator, payTo: terms.payTo, price: terms.price, cap: terms.cap, asset: terms.asset });
+    if (flags.proof) {
+      const proof = proofFile({ task: "20", capability: "x402-payment", about: "One X402 Paywalled API run: the price, the client's cap, who is paid and the asset (input); the asset as the chain reports it, the endpoint's 402 terms, the authorization the client signed, the facilitator's verify and settle, the settlement's receipt, what the client received and the verdict (result); and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { payTo: terms.payTo, price: terms.price, cap: terms.cap, asset: terms.given }, result });
+      await writeJson(flags.proof, proof);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printX402(result);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return result.verdict === "paid" ? 0 : 9;
+  } finally {
+    await mcp.close();
+  }
+}
+
+async function x402Serve(flags: Flags): Promise<number> {
+  const v = flags.values;
+  if (flags.positional.length > 2) throw new AgentError("usage", "x402 serve takes options only.");
+  const net = network(v.network ?? "pharos-mainnet");
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (--network atlantic-testnet).");
+  if (flags.execute && v.facilitator) throw new AgentError("usage", "--execute settles with the built-in facilitator; --facilitator names another one.");
+  if (v.facilitator !== undefined && !/^https?:\/\/\S+$/.test(v.facilitator)) throw new AgentError("usage", "--facilitator must be an http(s) URL.");
+  if (v.cap !== undefined) throw new AgentError("usage", "--cap is the paying client's: see x402 pay.");
+  const port = v.port === undefined ? 4020 : Number(v.port);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535 || !/^\d+$/.test(v.port ?? "0")) throw new AgentError("usage", "--port must be a port number.");
+  const terms = x402Terms(flags, net);
+  const signer = flags.execute ? signerFromEnv(process.env, process.env.FACILITATOR_PRIVATE_KEY ? "FACILITATOR_PRIVATE_KEY" : "PRIVATE_KEY") : null;
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 2_000 });
+  const chain = new Chain(mcp, net);
+  try {
+    await chain.expectChain();
+    const asset = await readAsset(chain, terms.asset, "latest");
+    if (asset.decimals === null) throw new AgentError("usage", `${terms.asset} answers no decimals(): it is not a token the endpoint can price in.`);
+    const amount = parseAmount(terms.price, asset.decimals, "--price");
+    if (amount === 0n) throw new AgentError("usage", "--price must be more than zero.");
+    // x402 answers a failed chain read as a failed check, so the operator is told what really happened.
+    const builtIn = v.facilitator ? null : pharosFacilitator(chain, signer, { onFault: (error, signed) => process.stderr.write(`Chain MCP failed during a payment${signed ? `, after the settlement ${signed} was signed (check its receipt)` : ", which x402 answers as refused"}: ${errorMessage(error)}\n`) });
+    const client = builtIn ? new LocalFacilitatorClient(builtIn) : new HTTPFacilitatorClient({ url: v.facilitator! });
+    const price = `${formatAmount(amount, asset.decimals, asset.decimals)} ${asset.symbol ?? "units"}`;
+    let url = "";
+    const endpoint = await paidEndpoint({
+      chain,
+      asset,
+      payTo: terms.payTo,
+      routes: [{ path: "/data", amount: amount.toString(), description: `Live ${net.name} data, read through Pharos Chain MCP: the newest block and the gas price`, data: () => chainData(chain) }],
+      facilitator: client,
+      free: { "/": async () => ({ api: "Pharos X402 Paywalled API", x402: x402Network(net), paid: [{ method: "GET", path: "/data", price, amount: amount.toString(), asset: asset.address, payTo: terms.payTo, scheme: "exact" }], facilitator: v.facilitator ?? `${url}/facilitator`, settles: Boolean(v.facilitator || signer) }) },
+    });
+    const routes = builtIn ? facilitatorRoutes(builtIn) : null;
+    let served = 0;
+    const server = await serveHttp(async (request) => {
+      if (routes && new URL(request.url).pathname.startsWith("/facilitator/")) return routes(request);
+      const response = await endpoint(request);
+      if (response.status === 200 && response.headers.has("payment-response")) served += 1;
+      return response;
+    }, port);
+    url = server.url;
+    out("Pharos X402 Paywalled API");
+    out();
+    out(`  Serving      ${url} on ${net.name} (x402 network ${x402Network(net)})`);
+    out(`  Paid         GET ${url}/data, ${price} a request (${amount} base units of ${asset.address}), paid to ${terms.payTo}`);
+    out(`  Free         GET ${url}/ (the terms)`);
+    out(`  Facilitator  ${v.facilitator ?? `${url}/facilitator (POST /verify, POST /settle, GET /supported)`}${builtIn ? (signer ? `, settles with ${signer.address}` : ", verifies only: nothing paid is served") : ""}`);
+    if (!asset.eip3009) out(`  Note         ${asset.address} does not answer EIP-3009: the exact scheme cannot settle in it.`);
+    out(`  Pay it       pharos-agent x402 pay ${url}/data --network atlantic-testnet`);
+    out("  Stop it      Ctrl-C");
+    await new Promise<void>((resolve) => {
+      process.once("SIGINT", resolve);
+      process.once("SIGTERM", resolve);
+    });
+    await server.close();
+    process.stderr.write(`Stopped: ${served} paid ${served === 1 ? "request" : "requests"} served, each settled, ${mcp.toolCalls} Chain MCP calls.\n`);
+    return 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
+async function x402Pay(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const target = flags.positional[2];
+  if (!target || flags.positional.length > 3 || !/^https?:\/\/\S+$/.test(target)) throw new AgentError("usage", "x402 pay needs one http(s) URL to ask.");
+  const net = network(v.network ?? "pharos-mainnet");
+  if (net.id !== "atlantic-testnet") throw new AgentError("usage", "x402 pay signs a payment, so it is limited to the Atlantic testnet (--network atlantic-testnet).");
+  if (v.cap !== undefined && !/^\d+(\.\d+)?$/.test(v.cap)) throw new AgentError("usage", "--cap must be a number of the asset, like 0.001.");
+  const asset = x402Asset(net, v.token);
+  const decimals = net.tokens.find((t) => t.address.toLowerCase() === asset.toLowerCase())?.decimals;
+  if (decimals === undefined) throw new AgentError("usage", "x402 pay pays in an official token only: give its symbol or address.");
+  const cap = parseAmount(v.cap ?? "0.001", decimals, "--cap");
+  const account = accountFromEnv();
+  const seen: { status: number; required: string | null; signature: string | null; paymentResponse: string | null }[] = [];
+  const recording: typeof fetch = async (input, init) => {
+    const request = new Request(input as never, init);
+    const response = await fetch(request);
+    seen.push({ status: response.status, required: response.headers.get("payment-required"), signature: request.headers.get("payment-signature"), paymentResponse: response.headers.get("payment-response") });
+    return response;
+  };
+  out("Pharos X402 client");
+  out();
+  out(`  Asking       GET ${target}`);
+  out(`  Paying with  ${account.address}, at most ${formatAmount(cap, decimals, decimals)} of ${asset} a request, on ${x402Network(net)}`);
+  let response: Response;
+  try {
+    response = await payingFetch(account, net, asset, cap.toString(), recording)(target);
+  } catch (error) {
+    out(`  Not paid     ${errorMessage(error)}`);
+    return 9;
+  }
+  const required = seen.find((s) => s.required)?.required;
+  const accepted = required ? decodePaymentRequiredHeader(required).accepts?.[0] : undefined;
+  if (accepted) out(`  402 asked    ${accepted.amount} base units of ${accepted.asset} to ${accepted.payTo}, on ${accepted.network}, by the ${accepted.scheme} scheme`);
+  const signature = seen.find((s) => s.signature)?.signature;
+  const auth = signature ? (decodePaymentSignatureHeader(signature).payload as { authorization?: { value: string; to: string; validBefore: string } }).authorization : undefined;
+  if (auth) out(`  Signed       an EIP-3009 authorization: ${auth.value} base units to ${auth.to}, valid until ${new Date(Number(auth.validBefore) * 1000).toISOString()}`);
+  const settled = seen.at(-1)?.paymentResponse;
+  if (settled) {
+    const r = decodePaymentResponseHeader(settled) as { success?: boolean; transaction?: string; network?: string };
+    out(`  Settled      ${r.success ? `${r.transaction} on ${r.network}` : "no"}`);
+  }
+  const last = seen.at(-1);
+  const refused = response.status === 402 && last?.signature && last.required ? decodePaymentRequiredHeader(last.required).error : undefined;
+  if (refused) out(`  Refused      ${refused}`);
+  const body = await response.text();
+  out(`  Answer       ${response.status}${body ? `: ${body.length > 2_000 ? `${body.slice(0, 2_000)}…` : body}` : ""}`);
+  return response.status === 200 ? 0 : 9;
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof, "recurring-payments": verifyRecurringProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof, "recurring-payments": verifyRecurringProof, "x402-payment": verifyX402Proof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1619,6 +1850,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "pay") return payCommand(flags);
   if (command === "invoice") return invoiceCommand(flags);
   if (command === "recurring") return recurringCommand(flags);
+  if (command === "x402") return x402Command(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

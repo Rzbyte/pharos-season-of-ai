@@ -1,7 +1,8 @@
 // Signing and broadcasting, kept apart from everything else. The key is read from the environment here,
 // used only to sign, and never logged, stored, sent or put in a result: only the signed transaction leaves
 // this module, through Chain MCP send_raw_transaction (the official server, run locally with broadcasting
-// on; the hosted endpoint is read-only). Execution is limited to the Atlantic testnet.
+// on; the hosted endpoint is read-only), or, for x402 (Task 20), the account that signs an authorization,
+// which never gives out its key. Execution is limited to the Atlantic testnet.
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import type { Address, Chain, Hex, Receipt } from "./chain.js";
 import { AgentError } from "./errors.js";
@@ -11,13 +12,21 @@ export interface Signer {
   sign(tx: { chainId: number; nonce: number; to: Address; data?: Hex; value?: bigint; gas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }): Promise<Hex>;
 }
 
-/** A signer from PRIVATE_KEY (0x + 64 hex). The account object never leaves this closure. */
-export function signerFromEnv(env: NodeJS.ProcessEnv = process.env): Signer {
-  const key = env.PRIVATE_KEY?.trim();
-  if (!key) throw new AgentError("usage", "Executing needs PRIVATE_KEY in the environment (a funded Atlantic testnet key).", "export PRIVATE_KEY=0x... (never commit it)");
+/**
+ * The account of a key in the environment (PRIVATE_KEY unless named), for what signs more than a
+ * transaction (x402's EIP-712 authorization). The key itself stays inside the account.
+ */
+export function accountFromEnv(env: NodeJS.ProcessEnv = process.env, name = "PRIVATE_KEY"): PrivateKeyAccount {
+  const key = env[name]?.trim();
+  if (!key) throw new AgentError("usage", `Executing needs ${name} in the environment (a funded Atlantic testnet key).`, `export ${name}=0x... (never commit it)`);
   const hex = key.startsWith("0x") ? key : `0x${key}`;
-  if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new AgentError("usage", "PRIVATE_KEY must be 32 bytes of hex.");
-  const account: PrivateKeyAccount = privateKeyToAccount(hex as Hex);
+  if (!/^0x[0-9a-fA-F]{64}$/.test(hex)) throw new AgentError("usage", `${name} must be 32 bytes of hex.`);
+  return privateKeyToAccount(hex as Hex);
+}
+
+/** A signer from PRIVATE_KEY (0x + 64 hex), or the key named. The account object never leaves this closure. */
+export function signerFromEnv(env: NodeJS.ProcessEnv = process.env, name = "PRIVATE_KEY"): Signer {
+  const account: PrivateKeyAccount = accountFromEnv(env, name);
   return {
     address: account.address,
     sign: (tx) => account.signTransaction({ type: "eip1559", chainId: tx.chainId, nonce: tx.nonce, to: tx.to, data: tx.data, value: tx.value ?? 0n, gas: tx.gas, maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas }),
