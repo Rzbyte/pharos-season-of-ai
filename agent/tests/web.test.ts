@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { after, before, describe, test } from "node:test";
-import { DEFAULT_CONTACTS, DEFAULT_HOW_TO, DEFAULT_INVOICE, DEFAULT_PAYEES, DEFAULT_PAYMENT, DEFAULT_QUESTION, handle } from "../src/web.js";
+import { DEFAULT_CONTACTS, DEFAULT_HOW_TO, DEFAULT_INVOICE, DEFAULT_PAYEES, DEFAULT_PAYMENT, DEFAULT_QUESTION, DEFAULT_SCHEDULE, handle } from "../src/web.js";
 import { defaultState, startFakeChain, type FakeChain } from "./fake-chain.js";
 import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
@@ -74,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17, 19, 22 to 29\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17 to 19, 22 to 29\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -580,5 +580,42 @@ describe("GET /api/agent?task=19", () => {
       assert.match(message(bad), pattern, query);
     }
     assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=18", () => {
+  type Body = { result: { schema: string; verdict: string; today: string; since: string; sinceFrom: string; payer: { address: string; from: string }; owed: { id: string }[]; due: string[]; later: number; payments: { memo: string; tx: { nonce: number } | null }[]; items: { id: string; next: string | null }[]; store: unknown }; inputs: Record<string, string>; calls: { tool: string }[] };
+
+  test("the example schedule this month: what fell due since the 1st, oldest first, prepared; nothing kept; shared 15 s", async () => {
+    const response = await get("task=18");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 15);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.today, body.result.since, body.result.sinceFrom, body.result.payer.from, body.result.store], ["pharos-agent/recurring-run/1", "ready", "2026-09-21", "2026-09-01", "month", "example", null]);
+    assert.deepEqual(body.result.due, ["rent@2026-09-01", "design-tool@2026-09-07", "design-tool@2026-09-14", "payroll@2026-09-15", "design-tool@2026-09-21"]);
+    assert.deepEqual(body.result.items.map((i) => [i.id, i.next]), [["rent", "2026-10-01"], ["payroll", "2026-10-15"], ["design-tool", "2026-09-28"]]);
+    assert.deepEqual(body.inputs, { schedule: DEFAULT_SCHEDULE });
+    assert.equal(body.calls.some((c) => c.tool === "send_raw_transaction"), false);
+  });
+
+  test("a schedule of your own from a day given, at most 6 a run; refused before any call when a line is not read", async () => {
+    const mine = (await get(`task=18&schedule=${encodeURIComponent(`Tool: 1 USDC to ${PAYER}, daily`)}&since=2026-09-10&from=${STRANGER}`)).body as Body;
+    assert.deepEqual([mine.result.verdict, mine.result.sinceFrom, mine.result.owed.length, mine.result.due.length, mine.result.later, mine.result.payer], ["would-fail", "input", 12, 3, 9, { address: STRANGER, from: "input" }]);
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      [`task=18&schedule=${encodeURIComponent("Rent: 25 USDC to 0x12, monthly on the 1st")}`, /is not an address: 0x and 40 hex characters/],
+      [`task=18&schedule=${encodeURIComponent(`Rent: 25 USDC to ${PAYER}, sometimes`)}`, /"sometimes" is not a rule the agent reads/],
+      [`task=18&schedule=${encodeURIComponent(Array.from({ length: 9 }, (_, k) => `P${k}: 1 USDC to ${PAYER}, daily`).join("\n"))}`, /at most 8 payments here/],
+      ["task=18&since=yesterday", /since must be a day as YYYY-MM-DD/],
+      ["task=18&from=0x12", /from must be a 0x address/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+    const late = await get("task=18&since=2025-01-01");
+    assert.equal(late.status, 400);
+    assert.match(message(late), /Without a store, a run counts from a day in the last year/);
   });
 });

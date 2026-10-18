@@ -47,6 +47,8 @@ import { preparePayments } from "./payment/flow.js";
 import { parseContacts, parseRequest } from "./payment/request.js";
 import { parsePayees, payInvoice } from "./invoice/pay.js";
 import { readInvoice } from "./invoice/read.js";
+import { runRecurring } from "./recurring/run.js";
+import { readSchedule } from "./recurring/schedule.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -602,6 +604,43 @@ async function invoicePayment(params: URLSearchParams, options: WebOptions): Pro
   }
 }
 
+/** The example schedule: rent and a tool to the agent's example recipient, payroll to a sample address from Task 23. */
+export const DEFAULT_SCHEDULE = `Rent: 25 USDC to 0xB2749BD12f19C24a2244176658F3dF3e48e79553, monthly on the 1st
+Payroll: 10 USDC to 0x1F3546a29EeC2102c8d52E21a45114124014c85C, monthly on the 15th
+Design tool: 2 USDC to 0xB2749BD12f19C24a2244176658F3dF3e48e79553, weekly on Monday`;
+export const WEB_MAX_SCHEDULE = 8;
+export const WEB_MAX_RECURRING = 6;
+
+/**
+ * Task 18: a schedule of repeating payments on Pharos Mainnet, from the first of the block's month (or a
+ * day given): what fell due by the block's day, the oldest taken (at most 3 of one payment, 6 in all),
+ * prepared as Task 17's flow. The page keeps nothing between runs and sends nothing: nothing it shows is
+ * recorded as paid. The CLI's store does that, and sends on Atlantic.
+ */
+async function recurringPayments(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const schedule = params.get("schedule") ?? DEFAULT_SCHEDULE;
+  const since = params.get("since")?.trim() || undefined;
+  const fromText = params.get("from")?.trim() || undefined;
+  try {
+    readSchedule(schedule, net, WEB_MAX_SCHEDULE);
+    if (since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new AgentError("usage", "since must be a day as YYYY-MM-DD.");
+    if (fromText !== undefined && !isAddress(fromText, { strict: false })) throw new AgentError("usage", "from must be a 0x address (40 hex characters).");
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // Six payments of about ten reads each, the nonce and the block fit in eighty.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 80, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await runRecurring(schedule, { chain: new Chain(mcp, net), from: fromText ? getAddress(fromText) : undefined, since, sinceDefault: "month", maxItems: WEB_MAX_SCHEDULE, maxPayments: WEB_MAX_RECURRING, now: options.now });
+    return { status: 200, body: { result, inputs: { schedule, ...(since ? { since } : {}), ...(fromText ? { from: fromText } : {}) }, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -617,6 +656,8 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await docsChain(url.searchParams, options);
       case "17":
         return await paymentFlow(url.searchParams, options);
+      case "18":
+        return await recurringPayments(url.searchParams, options);
       case "19":
         return await invoicePayment(url.searchParams, options);
       case "22":
@@ -636,7 +677,7 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
       case "29":
         return await builder(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17, 19, 22 to 29.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17 to 19, 22 to 29.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

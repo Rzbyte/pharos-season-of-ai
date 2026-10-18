@@ -761,3 +761,44 @@ describe("pharos-agent invoice", () => {
     assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
   });
 });
+
+describe("pharos-agent recurring", () => {
+  const SCHEDULE = "Rent: 25 USDC to 0xB2749BD12f19C24a2244176658F3dF3e48e79553, monthly on the 1st\nTool: 2 USDC to 0xB2749BD12f19C24a2244176658F3dF3e48e79553, weekly on Monday\n";
+
+  test("a schedule with a store, run twice: what is owed, prepared; the store kept; the two proofs verify as one history", async () => {
+    const file = join(dir, "schedule.txt");
+    await writeFile(file, SCHEDULE);
+    const store = join(dir, "recurring", "proof", "store.json");
+    const proofs = [1, 2].map((k) => join(dir, "recurring", "proof", `run-${k}.json`));
+    const first = await cli(["recurring", file, "--store", store, "--since", "2026-09-01", "--rpc", fake.url, "--proof", proofs[0]!]);
+    assert.equal(first.code, 0, first.stderr);
+    assert.match(first.stdout, /\n {2}Counting {5}from 2026-09-01 \(given\)\n/);
+    assert.match(first.stdout, /\n {2}Owed {9}\d+, oldest first; this run takes \d+\n {4}1\. Rent, due 2026-09-01 \(\d+ days late\): 25 USDC to 0xB2749BD12f19C24a2244176658F3dF3e48e79553\n/);
+    assert.match(first.stdout, /\n {2}Store {8}.*store\.json: 0 recorded as paid\n/);
+    const kept = JSON.parse(await readFile(store, "utf8"));
+    assert.deepEqual([kept.schema, kept.since, kept.paid], ["pharos-agent/recurring-store/1", "2026-09-01", []]);
+    const second = await cli(["recurring", file, "--store", store, "--rpc", fake.url, "--proof", proofs[1]!]);
+    assert.equal(second.code, 0, second.stderr);
+    assert.match(second.stdout, /\n {2}Counting {5}from 2026-09-01 \(the store's start\)\n/);
+    const verified = await cli(["verify", ...proofs]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint", "  FAIL  hosted endpoint"]);
+    assert.match(verified.stdout, /PASS {2}one history: 2 runs, each from the store the last one left; 0 payments recorded, each once/);
+  });
+
+  test("a line not read, --execute without a store or on mainnet, a bad day: refused before anything runs", async () => {
+    const file = join(dir, "bad-schedule.txt");
+    await writeFile(file, "Rent: 25 USDC to 0xB2749BD12f19C24a2244176658F3dF3e48e79553, now and then\n");
+    const bad = await cli(["recurring", file, "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(bad.code, 2);
+    assert.match(bad.stderr, /"now and then" is not a rule the agent reads/);
+    const unkept = await cli(["recurring", file, "--network", "atlantic-testnet", "--execute", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(unkept.code, 2);
+    assert.match(unkept.stderr, /--execute needs --store FILE/);
+    const mainnet = await cli(["recurring", file, "--store", join(dir, "s.json"), "--execute", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(mainnet.code, 2);
+    assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
+    const day = await cli(["recurring", file, "--since", "1 Sept", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(day.code, 2);
+    assert.match(day.stderr, /--since must be a day as YYYY-MM-DD/);
+  });
+});

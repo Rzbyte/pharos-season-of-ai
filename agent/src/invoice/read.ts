@@ -175,7 +175,7 @@ function isoDate(y: number, m: number, d: number, written: string): string {
 const monthOf = (word: string) => (word.length >= 3 ? MONTHS.findIndex((name) => name.startsWith(word.toLowerCase().replace(/\.$/, ""))) + 1 : 0);
 
 /** A date as YYYY-MM-DD, or null when `text` is not one. Refuses a numeric date that reads both ways. */
-function dateIn(text: string): string | null {
+export function dateIn(text: string): string | null {
   const t = text
     .trim()
     .replace(/^(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+/i, "")

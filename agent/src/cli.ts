@@ -16,6 +16,7 @@
 //   pharos-agent howto "question" [--from --to --amount --token] [--execute]
 //   pharos-agent pay "request" [--contacts FILE] [--from 0x…] [--execute]
 //   pharos-agent invoice (FILE | "ethereum:…" | -) [--payees FILE] [--from 0x…] [--blocks N] [--execute]
+//   pharos-agent recurring (FILE | -) [--store FILE] [--since DAY] [--from 0x…] [--execute]
 //   pharos-agent verify FILE...
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -83,6 +84,10 @@ import { verifyPaymentProof } from "./payment/verify.js";
 import { DEFAULT_BLOCKS as INVOICE_BLOCKS, parsePayees, payInvoice, plainPayees, type InvoicePayment } from "./invoice/pay.js";
 import { readInvoice } from "./invoice/read.js";
 import { verifyInvoiceProof } from "./invoice/verify.js";
+import { runRecurring, type RecurringRun } from "./recurring/run.js";
+import { readSchedule } from "./recurring/schedule.js";
+import { parseRecurringStore, type RecurringStore } from "./recurring/store.js";
+import { recurringHistoryCheck, verifyRecurringProof } from "./recurring/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -261,8 +266,24 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
       --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
       Exits with 9 when the payment is held for a check.
 
+  pharos-agent recurring (FILE | -) [options]              Task 18, Recurring Payment Agent
+      A schedule of repeating payments, one a line: "Rent: 25 USDC to 0x…, monthly on the 1st". Daily
+      or every N days, weekly or every N weeks on a weekday, monthly or every N months on a day (past a
+      month's end, its last day), yearly on a month and day; each with "from" and "until" days. Each
+      run works out what fell due by the block's UTC day and is not paid, takes the oldest (at most 3
+      of one payment, 10 in all), and prepares them as Task 17's flow. With --store, what is paid is
+      kept: a missed run is caught up and nothing is paid twice. Run it from cron.
+      --store FILE         keep what is paid between runs (created on the first run; needed to send)
+      --since DAY          the first day counted, YYYY-MM-DD, when starting (default: the block's day)
+      --from 0x…           the payer (else the store's, else the example's on mainnet)
+      --execute            Atlantic only, with --store: send them in order, signed with PRIVATE_KEY
+                           (--from defaults to its address), each checked against its receipt and
+                           recorded as paid
+      --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
-                              proofs of one watcher, alert bot, watchlist or gas plan, in run order,
+                              proofs of one watcher, alert bot, watchlist, gas plan, digest or
+                              recurring schedule, in run order,
                               are also checked as one history
 
 Mainnet runs use the hosted Chain MCP (https://mcp.pharos.xyz/mcp, read-only). Atlantic runs start
@@ -1462,10 +1483,92 @@ async function invoiceCommand(flags: Flags): Promise<number> {
   }
 }
 
+const RECURRING_VERDICTS: Record<RecurringRun["verdict"], string> = { "nothing-due": "NOTHING DUE", ready: "READY", short: "SHORT", "would-fail": "WOULD FAIL", sent: "SENT", "partly-sent": "PARTLY SENT" };
+
+function printRecurring(r: RecurringRun, storePath: string | undefined): void {
+  const n = (value: string | number) => BigInt(value).toLocaleString("en-US");
+  out("Pharos Recurring Payment Agent");
+  out();
+  out(`  Schedule     ${r.items.length} ${r.items.length === 1 ? "payment" : "payments"}: ${r.items.map((i) => `${i.name}, ${i.amount} ${i.asset} ${i.every}`).join("; ")}`);
+  out(`  Network      ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP    ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Block        ${n(r.block.number)} · ${r.block.timestamp} (day ${r.today})`);
+  out(`  Payer        ${r.payer.address} (${{ input: "given", store: "the store's", example: "the example's" }[r.payer.from]})${r.nonce !== null ? `, next nonce ${r.nonce}` : ""}`);
+  out(`  Counting     from ${r.since} (${{ store: "the store's start", input: "given", month: "the first of the month", today: "today" }[r.sinceFrom]})`);
+  out();
+  out(`  Owed         ${r.owed.length === 0 ? "nothing" : `${r.owed.length}, oldest first; this run takes ${r.due.length}`}`);
+  r.payments.forEach((p, k) => {
+    const o = r.owed.find((owed) => owed.id === r.due[k])!;
+    out(`  ${String(k + 1).padStart(3)}. ${p.memo} (${o.late === 0 ? "today" : `${o.late} ${o.late === 1 ? "day" : "days"} late`}): ${p.amount} ${p.asset} to ${p.to.address}`);
+    out(`       ${p.dryRun.verdict === "would-succeed" ? "would succeed" : p.dryRun.verdict === "would-revert" ? "would revert" : "cannot pay"}${p.dryRun.gas ? `, ${n(p.dryRun.gas.gas)} gas` : ""}${p.tx ? `, nonce ${p.tx.nonce}` : ""}${p.dryRun.reason ? `: ${p.dryRun.reason}` : ""}`);
+    out(`       ${p.command}`);
+    if (p.submission) out(`       sent: ${p.submission.txHash}, ${p.submission.status}${p.submission.status === "success" ? `, receipt ${p.submission.matched ? "matches" : "does not match"}` : ""}`);
+  });
+  if (r.later) out(`  Waiting      ${r.later} more for the next run`);
+  out(`  Next         ${r.items.filter((i) => i.next).map((i) => `${i.name} on ${i.next}`).join(", ") || "none: every payment has ended"}`);
+  if (r.store) out(`  Store        ${storePath}: ${r.store.paid.length} recorded as paid${r.store.paid.some((p) => p.status === "pending") ? `, ${r.store.paid.filter((p) => p.status === "pending").length} pending` : ""}`);
+  out(`  Verdict      ${RECURRING_VERDICTS[r.verdict]}: ${r.headline}`);
+  const sent = r.payments.filter((p) => p.submission);
+  out(`  ${r.toolCalls} Chain MCP calls. ${sent.length ? `Signed here and sent: ${sent.map((p) => p.submission!.txHash).join(", ")}.` : "Nothing was signed or sent."}`);
+}
+
+async function recurringCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  const source = flags.positional[1];
+  if (!source || flags.positional.length > 2) throw new AgentError("usage", 'recurring needs one schedule: a file of its lines, or "-" for standard input.');
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (--network atlantic-testnet).");
+  if (flags.execute && !flags.store) throw new AgentError("usage", "--execute needs --store FILE: what is paid is recorded there, so nothing is paid twice.");
+  if (v.since !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(v.since)) throw new AgentError("usage", "--since must be a day as YYYY-MM-DD.");
+  const text = await readText(source, "The schedule");
+  const signer = flags.execute ? signerFromEnv() : undefined;
+  if (v.from !== undefined && !/^0x[0-9a-fA-F]{40}$/.test(v.from)) throw new AgentError("usage", "--from must be a 0x address (40 hex characters).");
+  const from = (v.from as `0x${string}` | undefined) ?? signer?.address;
+  // The schedule and the store are read whole before anything starts.
+  readSchedule(text, net);
+  let store: RecurringStore | null = null;
+  if (flags.store) {
+    let saved: string | null = null;
+    try {
+      saved = await readFile(flags.store, "utf8");
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw new AgentError("usage", `The store ${flags.store} cannot be read: ${errorMessage(error)}`);
+    }
+    if (saved !== null) {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(saved);
+      } catch (error) {
+        throw new AgentError("usage", `The store ${flags.store} is not valid JSON: ${errorMessage(error)}`);
+      }
+      store = parseRecurringStore(raw, net.id, from);
+    }
+  }
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 240 });
+  try {
+    const result = await runRecurring(text, { chain: new Chain(mcp, net), store, keep: Boolean(flags.store), from, since: v.since, block: flags.block, signer });
+    if (flags.proof) {
+      const proof = proofFile({ task: "18", capability: "recurring-payments", about: "One Recurring Payment Agent run: the schedule, the store it started from, the payer and the first day counted (input); every payment owed by the block's day, the ones this run took, each dry-run, the transactions to sign, the Skill Engine's commands, each send on Atlantic, the store it left and the verdict (result); and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>, or several runs in order as one history.", mcp, network: net, startedAt: started, input: { schedule: text, store, keep: Boolean(flags.store), from, since: v.since }, result });
+      await writeJson(flags.proof, proof);
+    }
+    if (flags.store && result.store) {
+      await writeJson(`${flags.store}.tmp`, result.store);
+      await rename(`${flags.store}.tmp`, flags.store);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printRecurring(result, flags.store);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return result.verdict === "partly-sent" || result.payments.some((p) => p.submission && !p.submission.matched) ? 8 : 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof, "recurring-payments": verifyRecurringProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1481,7 +1584,7 @@ async function verify(flags: Flags): Promise<number> {
     proofs.push(proof);
   }
   // Several runs of one watcher or bot, in order: one history, each run from the store the last one left.
-  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck, "whale-watcher": whaleHistoryCheck, "gas-optimizer": gasHistoryCheck, digest: digestHistoryCheck };
+  const histories: Record<string, (proofs: readonly ProofFile[]) => { name: string; ok: boolean; detail: string }> = { "trend-watcher": historyCheck, "alert-bot": alertHistoryCheck, "whale-watcher": whaleHistoryCheck, "gas-optimizer": gasHistoryCheck, digest: digestHistoryCheck, "recurring-payments": recurringHistoryCheck };
   const historyOf = histories[proofs[0]?.capability ?? ""];
   if (proofs.length > 1 && historyOf && proofs.every((p) => p.capability === proofs[0]!.capability)) {
     const history = historyOf(proofs);
@@ -1515,6 +1618,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "howto") return howToCommand(flags);
   if (command === "pay") return payCommand(flags);
   if (command === "invoice") return invoiceCommand(flags);
+  if (command === "recurring") return recurringCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }
