@@ -1,0 +1,82 @@
+/* Task 18 workspace: the Recurring Payment Agent. The run panel and proof are shared by the agent pages
+   (agent.css); this adds the schedule box above them (the schedule, the first day counted, the payer),
+   the payments due as cards (each with its due day, dry run, nonce and cast command), the totals against
+   what the payer holds, the schedule with each payment's next day, the transactions to sign, and the
+   trail of steps, each with its source. */
+@layer task {
+  .ask { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); max-width: 46rem; }
+  .ask .field-hint { margin-top: 0; }
+  .ask .field-label:not(:first-child) { margin: 0; }
+  .ask textarea.input { width: 100%; min-height: 4.5rem; padding: 10px 12px; resize: vertical; line-height: 1.5; }
+  /* The schedule keeps a payment a line, scrolling sideways where the screen is narrow. */
+  .ask #f-schedule { min-height: 7rem; font-family: var(--mono); font-size: var(--fs-small); white-space: pre; overflow-x: auto; }
+  .ask #f-from, .ask #f-since { width: 100%; }
+  .ask-row { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+  @media (min-width: 720px) {
+    .ask-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: var(--space-2) var(--space-4); }
+  }
+  .ask-cell { display: grid; gap: var(--space-2); align-content: start; min-width: 0; }
+  .ask-go { display: flex; }
+  .optional { margin-left: var(--space-1); color: var(--text-3); font-weight: 400; }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .examples-label { margin-right: var(--space-1); }
+
+  .block { display: grid; gap: var(--space-2); margin-top: var(--space-3); min-width: 0; }
+
+  /* The payments: amount and recipient, the dry run's facts, a note, the cast command. */
+  .payments { display: grid; gap: var(--space-3); counter-reset: payment; }
+  .payment { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-3) 0 var(--space-3) var(--space-3); border-left: 2px solid var(--success); counter-increment: payment; }
+  .payment[data-state="fail"] { border-left-color: var(--error); }
+  .payment-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); margin: 0; font-size: var(--fs-small); color: var(--text-2); }
+  .payment-head::before { content: counter(payment) "."; margin-right: calc(var(--space-1) * -1); color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); }
+  .payment-name { color: var(--text); font-weight: 600; }
+  .payment-due { color: var(--text-3); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+  .payment-what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-1); margin: 0; font-size: var(--fs-small); color: var(--text-2); }
+  .payment-amount { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .payment-meta { margin: 0; color: var(--text-3); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  .waiting { margin: var(--space-2) 0 0; color: var(--text-2); font-size: var(--fs-meta); }
+  .cmd-fold { display: grid; gap: var(--space-1); min-width: 0; }
+  .cmd-summary { display: inline-flex; align-items: center; gap: var(--space-1); justify-self: start; min-height: 32px; cursor: pointer; list-style: none; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); }
+  .cmd-summary::-webkit-details-marker { display: none; }
+  .cmd-summary:hover { color: var(--text); }
+  .cmd-chev { width: 12px; height: 12px; }
+  .cmd-fold[open] .cmd-chev { transform: rotate(180deg); }
+
+  /* The schedule: each payment, how often, what it owes and when it falls due next. */
+  .items { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+  .item { display: grid; gap: 2px; padding: var(--space-2) 0; border-bottom: 1px solid var(--line); min-width: 0; }
+  .item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); margin: 0; font-size: var(--fs-small); color: var(--text-2); }
+  .item-name { color: var(--text); font-weight: 600; }
+  .item-amount { color: var(--text); font-variant-numeric: tabular-nums; }
+  .item-every { color: var(--text-2); }
+  .item-meta { margin: 0; color: var(--text-3); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  .copyable { display: grid; gap: var(--space-1); justify-items: start; min-width: 0; }
+  .copyable .cmd { justify-self: stretch; }
+
+  /* The totals: a mark (enough, or not), the asset, in all against what the sender holds. */
+  .totals { border-top: 1px solid var(--line); }
+  .total { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+  .total-mark { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; color: var(--on-brand); background: var(--success); }
+  .total[data-state="short"] .total-mark { background: var(--warning); }
+  .total-mark svg { width: 12px; height: 12px; }
+  .total-main { display: grid; gap: 2px; min-width: 0; }
+  .total-label { font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .total-figures { font-size: var(--fs-meta); color: var(--text-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+  .sign-meta { max-width: 68ch; color: var(--text-2); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  #sign-json { max-height: 18rem; overflow: auto; }
+
+  /* The trail, in a fold: open beside the flow on a wide screen, closed under it on a phone. */
+  .trail-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--target); cursor: pointer; list-style: none; }
+  .trail-summary::-webkit-details-marker { display: none; }
+  .trail-summary:hover .chev { color: var(--text); }
+  .trail-box[open] .trail-summary .chev svg { transform: rotate(180deg); }
+  .trail-box:not([open]) { border-bottom: 1px solid var(--line); }
+  .trail { border-top: 1px solid var(--line); counter-reset: step; }
+  .trail-step { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: 2px var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); counter-increment: step; }
+  .trail-step::before { content: counter(step); grid-row: 1 / span 2; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); line-height: 1.7; text-align: right; font-variant-numeric: tabular-nums; }
+  .trail-text, .trail-source { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+  .trail-text { font-size: var(--fs-small); color: var(--text-2); }
+  .trail-source { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  #main .trail-source, #main #f-schedule, #main .payment-head::before { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+}

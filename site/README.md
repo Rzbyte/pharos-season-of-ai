@@ -15,6 +15,7 @@ One Vercel project, one domain: the repository root (`vercel.json`, `package.jso
 | `/tasks/11` | `tasks/11-policy-gatekeeper/public/index.html` |
 | `/tasks/13` | `tasks/13-docs-chain-agent/public/index.html` |
 | `/tasks/17` | `tasks/17-natural-language-payment/public/index.html` |
+| `/tasks/18` | `tasks/18-recurring-payment/public/index.html` |
 | `/tasks/19` | `tasks/19-invoice-to-payment/public/index.html` |
 | `/tasks/22` | `tasks/22-on-chain-alert-bot/public/index.html` |
 | `/tasks/23` | `tasks/23-whale-watching-agent/public/index.html` |

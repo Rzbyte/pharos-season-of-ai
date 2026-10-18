@@ -40,7 +40,7 @@ export const TASKS = Object.freeze([
   task("15", "Yield Optimizer"),
   task("16", "Liquidation Watchdog"),
   task("17", "Natural-Language Payment Agent", { verb: "Pay", tool: "Chain MCP", status: "built", purpose: "A payment request in plain words, prepared as a flow: each payment dry-run, ready to sign." }),
-  task("18", "Recurring Payment Agent"),
+  task("18", "Recurring Payment Agent", { verb: "Schedule", tool: "Chain MCP", status: "built", purpose: "Repeating payments on a schedule: what fell due, caught up and prepared to sign, each paid once." }),
   task("19", "Invoice-to-Payment Agent", { verb: "Pay", tool: "Chain MCP", status: "built", purpose: "An invoice or payment link read, every figure and the payee checked, then the payment prepared to sign." }),
   // 20 and 21 are the two x402 tasks the official map inserted here; the tasks that were 20 to 28 are now
   // 22 to 30.
