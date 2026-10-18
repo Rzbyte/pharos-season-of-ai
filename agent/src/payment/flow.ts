@@ -10,7 +10,7 @@
 //   4. Prepared: each payment as the transaction a wallet signs (its nonce in order, its gas and fee
 //      caps), and as the Pharos Skill Engine's cast command. On Atlantic, with a key, they are sent in
 //      order, each checked against its receipt; the first that does not go through stops the rest.
-import type { Address, Chain, Hex } from "../core/chain.js";
+import type { Address, BlockHeader, Chain, Hex } from "../core/chain.js";
 import { formatAmount } from "../core/amounts.js";
 import { AgentError } from "../core/errors.js";
 import type { Signer } from "../core/execute.js";
@@ -18,7 +18,7 @@ import type { Intent } from "../dryrun/intent.js";
 import { runDryRun, submitDryRun, type DryRun, type DryRunOptions, type Submission } from "../dryrun/run.js";
 import { EXAMPLE } from "../builder/action.js";
 import { SKILL_ENGINE, TEMPLATES } from "../builder/skill.js";
-import { parseRequest, type Contacts, type RequestedPayment } from "./request.js";
+import { parseRequest, type Contacts, type PaymentRequest, type RequestedPayment } from "./request.js";
 
 export interface PlannedPayment {
   n: number;
@@ -74,6 +74,12 @@ export interface FlowOptions {
   now?: () => Date;
 }
 
+/** For an agent that reads its payments itself (Task 19): the block it has pinned, and no "the request" step. */
+export interface PreparedFlowOptions extends Omit<FlowOptions, "contacts" | "maxPayments"> {
+  at?: { header: BlockHeader; source: "latest" | "requested" };
+  requestStep?: boolean;
+}
+
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 const group = (n: number | bigint) => n.toLocaleString("en-US");
 
@@ -81,29 +87,34 @@ const group = (n: number | bigint) => n.toLocaleString("en-US");
 const who = (p: { to: RequestedPayment["to"] }) => (p.to.name ? `${p.to.name} (${short(p.to.address)})` : short(p.to.address));
 
 export async function preparePayments(request: string, options: FlowOptions): Promise<PaymentFlow> {
+  // The request is read whole before anything is asked of the chain.
+  const asked = parseRequest(request, options.contacts ?? {}, options.chain.network, options.maxPayments ?? 10);
+  return prepareFlow(asked, request.trim(), options);
+}
+
+/** The flow of payments already read: `request` is what they were read from. */
+export async function prepareFlow(asked: PaymentRequest, request: string, options: PreparedFlowOptions): Promise<PaymentFlow> {
   const { chain } = options;
   const net = chain.network;
-  // The request is read whole before anything is asked of the chain.
-  const asked = parseRequest(request, options.contacts ?? {}, net, options.maxPayments ?? 10);
   const senderFrom = options.from ? "input" : asked.from ? "request" : net.id === "pharos-mainnet" ? "example" : null;
   const sender = options.from ?? asked.from ?? (net.id === "pharos-mainnet" ? EXAMPLE.account : null);
   if (!sender || !senderFrom) throw new AgentError("usage", 'Name the sender: "from 0x…" in the request, or as an input (on Atlantic there is no example to fall back on).');
   const evaluatedAt = (options.now ?? (() => new Date()))().toISOString();
-  await chain.expectChain();
-  const head = await chain.block(options.block ?? (await chain.blockNumber()));
-  const source = options.block === undefined ? ("latest" as const) : ("requested" as const);
+  if (!options.at) await chain.expectChain();
+  const head = options.at?.header ?? (await chain.block(options.block ?? (await chain.blockNumber())));
+  const source = options.at?.source ?? (options.block === undefined ? ("latest" as const) : ("requested" as const));
   const steps: PaymentFlow["steps"] = [];
   const asset = (p: RequestedPayment) => p.token?.symbol ?? net.nativeSymbol;
-  steps.push({ source: "the request", text: `Read as ${asked.payments.length === 1 ? "one payment" : `${asked.payments.length} payments`} from ${short(sender)} (${senderFrom === "input" ? "given" : senderFrom === "request" ? "the request's" : "the example's"}): ${asked.payments.map((p) => `${p.amount} ${asset(p)} to ${who(p)}`).join("; ")}.` });
+  if (options.requestStep !== false) steps.push({ source: "the request", text: `Read as ${asked.payments.length === 1 ? "one payment" : `${asked.payments.length} payments`} from ${short(sender)} (${senderFrom === "input" ? "given" : senderFrom === "request" ? "the request's" : "the example's"}): ${asked.payments.map((p) => `${p.amount} ${asset(p)} to ${who(p)}`).join("; ")}.` });
 
   // The nonce, then each payment's dry run, all at the one block.
   const nonce = Number(await chain.nonce(sender, head.number));
-  steps.push({ source: "Chain MCP · get_transaction_count", text: `${short(sender)}'s next nonce is ${nonce}: the payments take ${asked.payments.length === 1 ? nonce : `${nonce} to ${nonce + asked.payments.length - 1}`}, in order.` });
+  steps.push({ source: "Chain MCP · get_transaction_count", text: `${short(sender)}'s next nonce is ${nonce}: ${asked.payments.length === 1 ? `the payment takes it.` : `the payments take ${nonce} to ${nonce + asked.payments.length - 1}, in order.`}` });
   const payments: PlannedPayment[] = [];
   for (const [k, p] of asked.payments.entries()) {
     const intent: Intent = p.token ? { kind: "erc20-transfer", token: p.token.address, from: sender, to: p.to.address, amount: p.amount } : { kind: "native-transfer", from: sender, to: p.to.address, amount: p.amount };
     const run = await runDryRun(intent, { chain, at: { header: head, source } });
-    steps.push({ source: "Chain MCP · eth_call · estimate_gas", text: `Payment ${k + 1}: ${run.headline}` });
+    steps.push({ source: "Chain MCP · eth_call · estimate_gas", text: asked.payments.length === 1 ? run.headline : `Payment ${k + 1}: ${run.headline}` });
     const gas = run.gas;
     const command = p.token ? `cast send ${p.token.address} "transfer(address,uint256)" ${p.to.address} ${p.raw} --private-key $PRIVATE_KEY --rpc-url ${net.rpcUrl}` : `cast send ${p.to.address} --value ${p.amount}ether --private-key $PRIVATE_KEY --rpc-url ${net.rpcUrl}`;
     payments.push({
@@ -148,7 +159,8 @@ export async function preparePayments(request: string, options: FlowOptions): Pr
   const shortfalls = totals.filter((t) => !t.covered);
   const gasWords = `up to ${formatAmount(maxFees, 18, 8)} ${net.nativeSymbol} of gas`;
   for (const t of totals) {
-    const what = t.token !== null ? `${t.shown} in all` : t.raw === "0" ? `${gasWords} for the ${payments.length === 1 ? "payment" : "payments"}` : `${t.shown} in all, and ${gasWords}`;
+    const all = payments.length === 1 ? "" : " in all";
+    const what = t.token !== null ? `${t.shown}${all}` : t.raw === "0" ? `${gasWords} for the ${payments.length === 1 ? "payment" : "payments"}` : `${t.shown}${all}, and ${gasWords}`;
     steps.push({ source: "the flow", text: `${t.asset}: ${what}; ${short(sender)} holds ${t.holdsShown}${t.covered ? "" : ", not enough"}.` });
   }
 
@@ -163,7 +175,7 @@ export async function preparePayments(request: string, options: FlowOptions): Pr
       sent += 1;
     }
   }
-  steps.push({ source: `Skill Engine · ${TEMPLATES.contractWrite.reference.split("#")[0]}`, text: `Each payment's cast send, from the Skill Engine's templates for ${net.id === "pharos-mainnet" ? "mainnet" : "atlantic-testnet"}, in order. The agent runs none of them.` });
+  steps.push({ source: `Skill Engine · ${TEMPLATES.contractWrite.reference.split("#")[0]}`, text: payments.length === 1 ? `The payment's cast send, from the Skill Engine's templates for ${net.id === "pharos-mainnet" ? "mainnet" : "atlantic-testnet"}. The agent does not run it.` : `Each payment's cast send, from the Skill Engine's templates for ${net.id === "pharos-mainnet" ? "mainnet" : "atlantic-testnet"}, in order. The agent runs none of them.` });
 
   const all = payments.length === 1 ? "The payment" : `The ${payments.length} payments`;
   const totalWords = totals.filter((t) => t.raw !== "0").map((t) => t.shown).join(" and ");
@@ -177,12 +189,12 @@ export async function preparePayments(request: string, options: FlowOptions): Pr
         : verdict === "would-fail"
           ? `Payment ${failing!.n} (${failing!.amount} ${failing!.asset} to ${who(failing!)}) would not go through: ${failing!.dryRun.reason ?? "it fails."} ${notSent}`
           : verdict === "short"
-            ? `${all} need ${shortfalls.map((t) => t.needsShown).join(" and ")}, but ${short(sender)} holds ${shortfalls.map((t) => t.holdsShown).join(" and ")}. ${notSent}`
+            ? `${all} ${payments.length === 1 ? "needs" : "need"} ${shortfalls.map((t) => t.needsShown).join(" and ")}, but ${short(sender)} holds ${shortfalls.map((t) => t.holdsShown).join(" and ")}. ${notSent}`
             : `${all}, ${totalWords} in all, ready: each dry-runs at block ${group(head.number)}, for about ${fees!.expectedShown} in gas together. ${notSent}`;
   steps.push({ source: "the verdict", text: headline });
   return {
     schema: "pharos-agent/payment-flow/1",
-    request: request.trim(),
+    request,
     network: { id: net.id, name: net.name, chainId: net.chainId },
     chainMcp: { where: chain.mcp.where, server: chain.mcp.server ? `${chain.mcp.server.name} ${chain.mcp.server.version}` : null },
     block: { number: head.number.toString(), hash: head.hash, timestamp: new Date(Number(head.timestamp) * 1000).toISOString(), source },

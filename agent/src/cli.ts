@@ -15,6 +15,7 @@
 //   pharos-agent ask "question" [--network ID] [--docs-mcp URL]
 //   pharos-agent howto "question" [--from --to --amount --token] [--execute]
 //   pharos-agent pay "request" [--contacts FILE] [--from 0x…] [--execute]
+//   pharos-agent invoice (FILE | "ethereum:…" | -) [--payees FILE] [--from 0x…] [--blocks N] [--execute]
 //   pharos-agent verify FILE...
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -79,6 +80,9 @@ import { verifyHowToProof } from "./builder/verify.js";
 import { preparePayments, type PaymentFlow } from "./payment/flow.js";
 import { parseContacts, parseRequest } from "./payment/request.js";
 import { verifyPaymentProof } from "./payment/verify.js";
+import { DEFAULT_BLOCKS as INVOICE_BLOCKS, parsePayees, payInvoice, plainPayees, type InvoicePayment } from "./invoice/pay.js";
+import { readInvoice } from "./invoice/read.js";
+import { verifyInvoiceProof } from "./invoice/verify.js";
 
 const out = (text = "") => process.stdout.write(`${text}\n`);
 
@@ -241,6 +245,22 @@ const HELP = `pharos-agent ${AGENT.version}: the Pharos Agent Lab agent
                            stops the rest
       --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
 
+  pharos-agent invoice (FILE | "ethereum:…" | -) [options]  Task 19, Invoice-to-Payment Agent
+      An invoice (a text file of its lines, "-" for standard input, or an EIP-681 payment link),
+      read into the payment it asks for. Every figure must agree with the others (the lines, the
+      subtotal, tax, total, what was paid, the amount due, the payment link), or it is refused,
+      saying which disagree. The payee is checked against your payees, and the payer's transfers of
+      the token over the last blocks for an earlier payment, a lookalike address and transfers of
+      nothing. The payment is then prepared as Task 17's flow: the dry run, the transaction to sign,
+      the Skill Engine's cast send, and the same payment as an EIP-681 link.
+      --payees FILE        your payees: lines "Example Studio = 0x…", or JSON {"Example Studio": "0x…"}
+      --from 0x…           the payer (else the invoice's bill-to address, else the example's on mainnet)
+      --blocks N           blocks of the payer's history to read (default 2,000, at most 10,000)
+      --execute            Atlantic only: sign with PRIVATE_KEY (--from defaults to its address) and send,
+                           only when nothing calls for a check first; checked against its receipt
+      --network ID, --block, --json, --proof, --verbose, --chain-mcp, --rpc   as above
+      Exits with 9 when the payment is held for a check.
+
   pharos-agent verify FILE... check proofs offline by replaying their recorded responses; several
                               proofs of one watcher, alert bot, watchlist or gas plan, in run order,
                               are also checked as one history
@@ -275,7 +295,7 @@ function parseFlags(argv: string[]): Flags {
     else if (arg === "--json") flags.json = true;
     else if (arg === "--submit") flags.submit = true;
     else if (arg === "--so-far") flags.soFar = true;
-    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods", "--contacts"].includes(arg)) {
+    else if (["--from", "--to", "--token", "--amount", "--spender", "--signature", "--args", "--value", "--network", "--blocks", "--hours", "--since", "--until", "--from-block", "--to-block", "--every", "--periods", "--contacts", "--payees"].includes(arg)) {
       const value = argv[++i];
       if (value === undefined) throw new AgentError("usage", `${arg} needs a value.`);
       flags.values[arg.slice(2)] = value;
@@ -1355,10 +1375,97 @@ async function payCommand(flags: Flags): Promise<number> {
   }
 }
 
+const INVOICE_VERDICTS: Record<InvoicePayment["verdict"], string> = { ready: "READY", "check-first": "CHECK FIRST", short: "SHORT", "would-fail": "WOULD FAIL", sent: "SENT", "not-sent": "NOT SENT" };
+const MARKS: Record<InvoicePayment["checks"][number]["state"], string> = { ok: "ok  ", info: "info", warn: "warn", fail: "fail" };
+
+function printInvoicePayment(r: InvoicePayment): void {
+  const n = (value: string | number) => BigInt(value).toLocaleString("en-US");
+  const inv = r.invoice;
+  const p = r.payment;
+  out("Pharos Invoice-to-Payment Agent");
+  out();
+  out(`  Invoice      ${inv.number ?? "(no number)"}${inv.issuer ? ` from ${inv.issuer}` : ""}${inv.billTo ? `, billed to ${inv.billTo}` : ""}`);
+  out(`  Amount due   ${p.amount} ${p.asset}${r.due.date ? `, ${r.due.words} (${r.due.date})` : ""}`);
+  const book = r.payee.book;
+  const said = book.status === "matches" || book.status === "listed" ? `${book.name} in your payees` : book.status === "other-name" ? `${book.name} in your payees, not ${inv.issuer ?? inv.payee.name}` : book.status === "differs" ? `not the address your payees give ${book.name}` : "not in your payees";
+  out(`  Pay to       ${r.payee.address} (${said})`);
+  out(`  Network      ${r.network.name} (chain ${r.network.chainId})`);
+  out(`  Chain MCP    ${r.chainMcp.where}${r.chainMcp.server ? ` (${r.chainMcp.server})` : ""}`);
+  out(`  Block        ${n(r.block.number)} · ${r.block.timestamp}`);
+  out(`  Payer        ${r.payer.address} (${{ input: "given", invoice: "the invoice's bill-to", example: "the example's" }[r.payer.from]}), next nonce ${r.nonce}`);
+  out();
+  r.checks.forEach((c, k) => out(`  ${k === 0 ? "Checks      " : "            "} ${MARKS[c.state]}  ${c.title}: ${c.detail}`));
+  out();
+  out(`  Payment      ${p.dryRun.verdict === "would-succeed" ? "would succeed" : p.dryRun.verdict === "would-revert" ? "would revert" : "cannot pay"}${p.dryRun.gas ? `, ${n(p.dryRun.gas.gas)} gas` : ""}${p.tx ? `, nonce ${p.tx.nonce}` : ""}`);
+  out(`               ${p.command}`);
+  out(`  Link         ${r.link}`);
+  if (p.submission) out(`  Sent         ${p.submission.txHash}, ${p.submission.status}${p.submission.status === "success" ? `, receipt ${p.submission.matched ? "matches" : "does not match"}` : ""}`);
+  if (inv.notRead.length) out(`  Not read     ${inv.notRead.join(" · ")}`);
+  out(`  Verdict      ${INVOICE_VERDICTS[r.verdict]}: ${r.headline}`);
+  out(`  ${r.toolCalls} Chain MCP calls. ${p.submission ? `Signed here and sent: ${p.submission.txHash}.` : "Nothing was signed or sent."}`);
+}
+
+async function readText(path: string, what: string): Promise<string> {
+  try {
+    return path === "-" ? await new Promise<string>((resolve, reject) => {
+      let text = "";
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", (chunk) => (text += chunk));
+      process.stdin.on("end", () => resolve(text));
+      process.stdin.on("error", reject);
+    }) : await readFile(path, "utf8");
+  } catch (error) {
+    throw new AgentError("usage", `${what} ${path} cannot be read: ${errorMessage(error)}`);
+  }
+}
+
+/** The CLI reads invoices longer than the page does. */
+const CLI_MAX_INVOICE = 12_000;
+
+async function invoiceCommand(flags: Flags): Promise<number> {
+  const v = flags.values;
+  const net = network(v.network ?? "pharos-mainnet");
+  const source = flags.positional[1];
+  if (!source || flags.positional.length > 2) throw new AgentError("usage", 'invoice needs one invoice: a file of its lines, "-" for standard input, or a payment link in quotes ("ethereum:…").');
+  if (flags.execute && net.id !== "atlantic-testnet") throw new AgentError("usage", "--execute is limited to the Atlantic testnet (--network atlantic-testnet).");
+  const text = /^ethereum:/i.test(source) ? source : await readText(source, "The invoice");
+  let payeesInput: unknown = undefined;
+  if (v.payees) {
+    const book = await readText(v.payees, "The payees file");
+    try {
+      payeesInput = book.trim().startsWith("{") ? (JSON.parse(book) as unknown) : book;
+    } catch (error) {
+      throw new AgentError("usage", `The payees file ${v.payees} is not valid JSON: ${errorMessage(error)}`);
+    }
+  }
+  const payees = parsePayees(payeesInput);
+  const blocks = v.blocks === undefined ? INVOICE_BLOCKS : Number(v.blocks);
+  const signer = flags.execute ? signerFromEnv() : undefined;
+  if (v.from !== undefined && !/^0x[0-9a-fA-F]{40}$/.test(v.from)) throw new AgentError("usage", "--from must be a 0x address (40 hex characters).");
+  const from = (v.from as `0x${string}` | undefined) ?? signer?.address;
+  // The invoice is read whole before anything starts.
+  readInvoice(text, net, CLI_MAX_INVOICE);
+  const started = new Date();
+  const mcp = await ChainMcp.connect(endpointFor(net, flags), { trace: flags.verbose ? (line) => process.stderr.write(`  ${line}\n`) : undefined, budget: 80 });
+  try {
+    const result = await payInvoice(text, { chain: new Chain(mcp, net), payees, from, block: flags.block, blocks, signer, maxInvoice: CLI_MAX_INVOICE });
+    if (flags.proof) {
+      const proof = proofFile({ task: "19", capability: "invoice-payment", about: "One Invoice-to-Payment Agent run: the invoice, your payees, the payer and the blocks of history given (input); the invoice as read, every check, the payment prepared (its dry run, the transaction to sign, the Skill Engine's command, its EIP-681 link) and the verdict, with the send on Atlantic (result); and every JSON-RPC message exchanged with the Pharos Chain MCP server, in order. Check it with: pharos-agent verify <this file>.", mcp, network: net, startedAt: started, input: { invoice: text, payees: plainPayees(payees), from, blocks, maxInvoice: CLI_MAX_INVOICE }, result });
+      await writeJson(flags.proof, proof);
+    }
+    if (flags.json) out(JSON.stringify(result, null, 2));
+    else printInvoicePayment(result);
+    if (flags.proof) process.stderr.write(`Proof saved to ${flags.proof}\n`);
+    return result.verdict === "check-first" ? 9 : result.verdict === "not-sent" || (result.payment.submission && !result.payment.submission.matched) ? 8 : 0;
+  } finally {
+    await mcp.close();
+  }
+}
+
 async function verify(flags: Flags): Promise<number> {
   const paths = flags.positional.slice(1);
   if (!paths.length) throw new AgentError("usage", "verify needs a proof file.");
-  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof };
+  const verifiers: Record<string, (proof: ProofFile) => Promise<{ name: string; ok: boolean; detail: string }[]>> = { "threshold-guardian": verifyGuardianProof, "dry-run-executor": verifyDryRunProof, "policy-gatekeeper": verifyGateProof, "trend-watcher": verifyTrendProof, "alert-bot": verifyAlertProof, "whale-watcher": verifyWhaleProof, "gas-optimizer": verifyGasProof, "dapp-support": verifyExplanationProof, "risk-checker": verifyRiskProof, "audit-log": verifyAuditProof, digest: verifyDigestProof, "docs-chain": verifyDocsChainProof, "how-to": verifyHowToProof, "payment-flow": verifyPaymentProof, "invoice-payment": verifyInvoiceProof };
   const proofs: ProofFile[] = [];
   let failed = 0;
   let total = 0;
@@ -1407,6 +1514,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "ask") return askCommand(flags);
   if (command === "howto") return howToCommand(flags);
   if (command === "pay") return payCommand(flags);
+  if (command === "invoice") return invoiceCommand(flags);
   if (command === "verify") return verify(flags);
   throw new AgentError("usage", `Unknown command "${command}". See pharos-agent --help.`);
 }

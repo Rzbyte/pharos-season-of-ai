@@ -723,3 +723,41 @@ describe("pharos-agent pay", () => {
     assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
   });
 });
+
+describe("pharos-agent invoice", () => {
+  const STUDIO = "0xB2749BD12f19C24a2244176658F3dF3e48e79553";
+  const INVOICE = `Invoice: INV-7\nFrom: Example Studio\nDesign work 15.00 USDC\nHosting 5.00 USDC\nTotal: 20 USDC\nPay to: ${STUDIO}\nThank you!\n`;
+
+  test("an invoice file and your payees: the checks, the payment and its link; the proof verifies but for its endpoint", async () => {
+    const file = join(dir, "invoice.txt");
+    const book = join(dir, "payees.txt");
+    await writeFile(file, INVOICE);
+    await writeFile(book, `Example Studio = ${STUDIO}\n`);
+    const proof = join(dir, "invoice", "proof", "invoice.json");
+    const run = await cli(["invoice", file, "--payees", book, "--rpc", fake.url, "--proof", proof]);
+    assert.equal(run.code, 0, run.stderr);
+    assert.match(run.stdout, /\n {2}Invoice {6}INV-7 from Example Studio\n {2}Amount due {3}20 USDC\n {2}Pay to {7}0xB2749BD12f19C24a2244176658F3dF3e48e79553 \(Example Studio in your payees\)\n/);
+    assert.match(run.stdout, /\n {2}Checks {7}ok {4}The figures add up: The 2 lines add up to the total, 20 USDC\.\n/);
+    assert.match(run.stdout, /\n {2}Link {9}ethereum:0xC879C018dB60520F4355C26eD1a6D572cdAC1815@1672\/transfer\?address=0xB2749BD12f19C24a2244176658F3dF3e48e79553&uint256=20000000\n/);
+    assert.match(run.stdout, /\n {2}Not read {5}Thank you!\n {2}Verdict {6}READY: Invoice INV-7 from Example Studio: 20 USDC to 0xB274…9553, ready to sign\./);
+    const verified = await cli(["verify", proof]);
+    assert.deepEqual(verified.stdout.split("\n").filter((line) => line.startsWith("  FAIL")).map((line) => line.split(":")[0]), ["  FAIL  hosted endpoint"]);
+  });
+
+  test("a new payee is held: exit 9; a payment link as the argument; an invoice that does not add up is refused before anything runs", async () => {
+    const held = await cli(["invoice", `ethereum:${STUDIO}@1672?value=1e16`, "--rpc", fake.url]);
+    assert.equal(held.code, 9, held.stderr);
+    assert.match(held.stdout, /\n {2}Verdict {6}CHECK FIRST: Check first: a new payee\. The invoice asks for 0\.01 PROS to 0xB2749BD12f19C24a2244176658F3dF3e48e79553\./);
+    const file = join(dir, "wrong.txt");
+    await writeFile(file, INVOICE.replace("Total: 20 USDC", "Total: 25 USDC"));
+    const wrong = await cli(["invoice", file, "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(wrong.code, 2);
+    assert.match(wrong.stderr, /The 2 lines add up to 20 USDC, but the total says 25 USDC\./);
+    const missing = await cli(["invoice", join(dir, "nowhere.txt"), "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(missing.code, 2);
+    assert.match(missing.stderr, /The invoice .*nowhere\.txt cannot be read/);
+    const mainnet = await cli(["invoice", `ethereum:${STUDIO}@1672?value=1e16`, "--execute", "--rpc", "http://127.0.0.1:9"]);
+    assert.equal(mainnet.code, 2);
+    assert.match(mainnet.stderr, /--execute is limited to the Atlantic testnet/);
+  });
+});

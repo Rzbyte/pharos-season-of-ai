@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { after, before, describe, test } from "node:test";
-import { DEFAULT_CONTACTS, DEFAULT_HOW_TO, DEFAULT_PAYMENT, DEFAULT_QUESTION, handle } from "../src/web.js";
+import { DEFAULT_CONTACTS, DEFAULT_HOW_TO, DEFAULT_INVOICE, DEFAULT_PAYEES, DEFAULT_PAYMENT, DEFAULT_QUESTION, handle } from "../src/web.js";
 import { defaultState, startFakeChain, type FakeChain } from "./fake-chain.js";
 import { startFakeDocs, type FakeDocs } from "./fake-docs.js";
 
@@ -74,7 +74,7 @@ describe("GET /api/agent?task=11", () => {
       ["task=11&amount=max", /Only an approval can be unlimited/],
       ["task=11&from=0x123", /The sender must be a 0x address/],
       ["task=08&to=nope", /The recipient must be a 0x address/],
-      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17, 22 to 29\./],
+      ["task=99", /Unknown task\. Use \?task=05, 08, 09, 11, 13, 17, 19, 22 to 29\./],
     ];
     for (const [query, error] of cases) {
       const response = await get(query);
@@ -539,6 +539,41 @@ describe("GET /api/agent?task=17", () => {
       [`task=17&request=${encodeURIComponent(Array.from({ length: 6 }, () => "pay alice 1 USDC").join(" and "))}`, /at most 5 payments/],
       ["task=17&contacts=alice%3D0x12", /alice's address must be 0x and 40 hex characters/],
       ["task=17&from=0x12", /from must be a 0x address/],
+    ] as const) {
+      const bad = await get(query);
+      assert.equal(bad.status, 400, query);
+      assert.match(message(bad), pattern, query);
+    }
+    assert.equal(fake.requests.length, before, "nothing reached the chain");
+  });
+});
+
+describe("GET /api/agent?task=19", () => {
+  type Body = { result: { schema: string; verdict: string; payer: { address: string; from: string }; payee: { book: { status: string } }; invoice: { number: string; due: { amount: string } }; due: { date: string; words: string }; checks: { id: string; state: string }[]; payment: { asset: string; tx: { nonce: number } | null }; link: string }; inputs: Record<string, string>; calls: { tool: string }[] };
+  const STUDIO = "0xB2749BD12f19C24a2244176658F3dF3e48e79553";
+
+  test("the example invoice and payees: read, checked, the payer's history read, prepared with its link; shared 15 s", async () => {
+    const response = await get("task=19");
+    assert.equal(response.status, 200);
+    assert.equal(response.maxAge, 15);
+    const body = response.body as Body;
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.payer.from, body.result.payee.book.status, body.result.invoice.number, body.result.invoice.due.amount], ["pharos-agent/invoice-payment/1", "ready", "example", "matches", "INV-1042", "20"]);
+    assert.deepEqual(body.result.due, { date: "2026-11-14", days: 54, words: "due in 54 days" });
+    assert.equal(body.result.link, `ethereum:0xC879C018dB60520F4355C26eD1a6D572cdAC1815@1672/transfer?address=${STUDIO}&uint256=20000000`);
+    assert.deepEqual(body.inputs, { invoice: DEFAULT_INVOICE, payees: DEFAULT_PAYEES });
+    assert.deepEqual([body.calls.filter((c) => c.tool === "get_logs").length, body.calls.some((c) => c.tool === "send_raw_transaction")], [2, false]);
+  });
+
+  test("an invoice of your own, paid from your address; refused before any call when it does not add up", async () => {
+    const mine = (await get(`task=19&invoice=${encodeURIComponent(`ethereum:${USDC}@1672/transfer?address=${STUDIO}&uint256=5e6`)}&from=${STRANGER}`)).body as Body;
+    assert.deepEqual([mine.result.verdict, mine.result.payer, mine.result.payee.book.status, mine.result.payment.tx], ["would-fail", { address: STRANGER, from: "input" }, "listed", null]);
+    const before = fake.requests.length;
+    for (const [query, pattern] of [
+      [`task=19&invoice=${encodeURIComponent(`Design 15.00 USDC\nTotal: 25 USDC\nPay to: ${STUDIO}`)}`, /The line is 15 USDC, but the total says 25 USDC\./],
+      [`task=19&invoice=${encodeURIComponent(`Total: $20\nPay to: ${STUDIO}`)}`, /a currency, not an asset on Pharos/],
+      [`task=19&invoice=${encodeURIComponent(`Total: 1 USDC\nPay to: ${STUDIO}\n${"x".repeat(2000)}`)}`, /at most 2,000 characters/],
+      ["task=19&payees=Studio%3D0x12", /Studio's address must be 0x and 40 hex characters/],
+      ["task=19&from=0x12", /from must be a 0x address/],
     ] as const) {
       const bad = await get(query);
       assert.equal(bad.status, 400, query);

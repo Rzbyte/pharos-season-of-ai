@@ -45,6 +45,8 @@ import { parseAction, type ActionInputs } from "./builder/action.js";
 import { howTo } from "./builder/run.js";
 import { preparePayments } from "./payment/flow.js";
 import { parseContacts, parseRequest } from "./payment/request.js";
+import { parsePayees, payInvoice } from "./invoice/pay.js";
+import { readInvoice } from "./invoice/read.js";
 
 export interface WebOptions {
   /** The Chain MCP endpoint; only tests change it. */
@@ -550,6 +552,56 @@ async function paymentFlow(params: URLSearchParams, options: WebOptions): Promis
   }
 }
 
+/** The example invoice: from a sample studio, paid at the agent's example recipient (Tasks 05, 08, 11, 17). */
+export const DEFAULT_INVOICE = `Invoice: INV-1042
+From: Example Studio
+Bill to: Example Shop
+Issued: 2026-10-15
+Terms: Net 30
+
+Design work (10 h)        15.00 USDC
+Hosting, October           5.00 USDC
+
+Subtotal: 20 USDC
+Total: 20 USDC
+Amount due: 20 USDC
+
+Pay to: 0xB2749BD12f19C24a2244176658F3dF3e48e79553
+Network: Pharos Mainnet`;
+export const DEFAULT_PAYEES = "Example Studio = 0xB2749BD12f19C24a2244176658F3dF3e48e79553";
+export const WEB_MAX_INVOICE = 2000;
+
+/**
+ * Task 19: an invoice (or a payment link) read into the payment it asks for, every figure checked, the
+ * payee against your payees and the payer's last 2,000 blocks of the token, then prepared on Pharos
+ * Mainnet as Task 17's flow, with its EIP-681 link. Nothing is sent: the page holds no key and the hosted
+ * Chain MCP is read-only.
+ */
+async function invoicePayment(params: URLSearchParams, options: WebOptions): Promise<WebResponse> {
+  const net = NETWORKS["pharos-mainnet"];
+  const invoice = params.get("invoice") ?? DEFAULT_INVOICE;
+  const payeesText = params.get("payees") ?? DEFAULT_PAYEES;
+  const fromText = params.get("from")?.trim() || undefined;
+  let payees;
+  try {
+    payees = parsePayees(payeesText);
+    if (fromText !== undefined && !isAddress(fromText, { strict: false })) throw new AgentError("usage", "from must be a 0x address (40 hex characters).");
+    readInvoice(invoice, net, WEB_MAX_INVOICE);
+  } catch (error) {
+    if (error instanceof AgentError) return usage(error.message);
+    throw error;
+  }
+  const recorder = new Recorder();
+  // Two pages of the payer's transfers, the nonce and one dry run: about sixteen reads.
+  const mcp = await ChainMcp.connect({ kind: "hosted", url: options.chainMcpUrl ?? HOSTED_CHAIN_MCP }, { recorder, budget: 40, timeoutMs: options.timeoutMs ?? 20_000 });
+  try {
+    const result = await payInvoice(invoice, { chain: new Chain(mcp, net), payees, from: fromText ? getAddress(fromText) : undefined, maxInvoice: WEB_MAX_INVOICE, now: options.now });
+    return { status: 200, body: { result, inputs: { invoice, payees: payeesText, ...(fromText ? { from: fromText } : {}) }, calls: callLines(recorder.messages) }, maxAge: 15 };
+  } finally {
+    await mcp.close();
+  }
+}
+
 export async function handle(url: URL, options: WebOptions = {}): Promise<WebResponse> {
   try {
     switch (url.searchParams.get("task")) {
@@ -565,6 +617,8 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
         return await docsChain(url.searchParams, options);
       case "17":
         return await paymentFlow(url.searchParams, options);
+      case "19":
+        return await invoicePayment(url.searchParams, options);
       case "22":
         return await alertBot(url.searchParams, options);
       case "23":
@@ -582,7 +636,7 @@ export async function handle(url: URL, options: WebOptions = {}): Promise<WebRes
       case "29":
         return await builder(url.searchParams, options);
       default:
-        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17, 22 to 29.");
+        return usage("Unknown task. Use ?task=05, 08, 09, 11, 13, 17, 19, 22 to 29.");
     }
   } catch (error) {
     if (error instanceof AgentError) {

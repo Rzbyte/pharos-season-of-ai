@@ -73,7 +73,7 @@ export const MAX_BLOCKS = 10_000;
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 const addressOf = (topic: string) => getAddress(`0x${topic.slice(-40)}`);
 /** Address poisoning copies the first and last characters of an address its victim uses. */
-const looksLike = (a: string, b: string) => a.toLowerCase() !== b.toLowerCase() && a.slice(2, 6).toLowerCase() === b.slice(2, 6).toLowerCase() && a.slice(-4).toLowerCase() === b.slice(-4).toLowerCase();
+export const looksLike = (a: string, b: string) => a.toLowerCase() !== b.toLowerCase() && a.slice(2, 6).toLowerCase() === b.slice(2, 6).toLowerCase() && a.slice(-4).toLowerCase() === b.slice(-4).toLowerCase();
 const RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1, info: 0 };
 
 export async function checkRisk(intent: Intent, options: RiskOptions): Promise<RiskReport> {
