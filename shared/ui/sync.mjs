@@ -24,6 +24,7 @@ export const TARGETS = [
   "tasks/05-threshold-guardian/public",
   "tasks/08-dry-run-executor/public",
   "tasks/09-trend-watcher/public",
+  "tasks/10-batch-executor/public",
   "tasks/11-policy-gatekeeper/public",
   "tasks/13-docs-chain-agent/public",
   "tasks/17-natural-language-payment/public",

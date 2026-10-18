@@ -32,7 +32,7 @@ export const TASKS = Object.freeze([
   task("07", "Arbitrage Scanner"),
   task("08", "Dry-Run Executor", { verb: "Simulate", tool: "Chain MCP", status: "built", purpose: "What a transaction would do and cost, simulated at one block before anything is sent." }),
   task("09", "Trend Watcher", { verb: "Track", tool: "Chain MCP", status: "built", purpose: "One balance observed run after run, acting once when the observations show a trend." }),
-  task("10", "Batch Executor"),
+  task("10", "Batch Executor", { verb: "Bundle", tool: "Chain MCP", status: "built", purpose: "Independent actions bundled into one flow: shown independent, dry-run at one block, one nonce sequence." }),
   task("11", "Policy Gatekeeper", { verb: "Gate", tool: "Chain MCP", status: "built", purpose: "A payment checked against a written policy at one block: limits, allowlists, hours." }),
   task("12", "Skill + Chain MCP Flow"),
   task("13", "Docs MCP + Chain MCP Agent", { verb: "Ask", tool: "Docs + Chain MCP", status: "built", purpose: "A question answered from the official docs, then checked and called on chain." }),

@@ -1,0 +1,62 @@
+/* Task 10 workspace: the Batch Executor. The run panel and proof are shared by the agent pages
+   (agent.css); this adds the batch box above them (the batch, the sender, merging), the plan as a list
+   of transactions (each with its lines, dry run, nonce and state), the independence checks, what
+   bundling saves, the values checked after a send, the transactions to sign, and the trail of steps,
+   each with its source. */
+@layer task {
+  .ask { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); max-width: 46rem; }
+  .ask .field-hint { margin-top: 0; }
+  .ask .field-label:not(:first-child) { margin: 0; }
+  .ask textarea.input { width: 100%; min-height: 4.5rem; padding: 10px 12px; resize: vertical; line-height: 1.5; }
+  /* The batch keeps an action a line, scrolling sideways where the screen is narrow. */
+  .ask #f-batch { min-height: 7.5rem; font-family: var(--mono); font-size: var(--fs-small); white-space: pre; overflow-x: auto; }
+  .ask #f-from, .ask #f-merge { width: 100%; }
+  .ask-row { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+  @media (min-width: 720px) {
+    .ask-row { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--space-2) var(--space-4); }
+  }
+  .ask-cell { display: grid; gap: var(--space-2); align-content: start; min-width: 0; }
+  .ask-go { display: flex; }
+  .optional { margin-left: var(--space-1); color: var(--text-3); font-weight: 400; }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .examples-label { margin-right: var(--space-1); }
+
+  .block { display: grid; gap: var(--space-2); margin-top: var(--space-3); min-width: 0; }
+
+  /* The plan: each transaction, its lines, its dry run and nonce; the left rule says how it stands. */
+  .items { display: grid; gap: var(--space-2); }
+  .item { display: grid; gap: 2px; min-width: 0; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-left: 2px solid var(--line-strong); }
+  .item[data-state="planned"], .item[data-state="sent"] { border-left-color: var(--success); }
+  .item[data-state="left-out"], .item[data-state="failed"] { border-left-color: var(--error); }
+  .item[data-state="dependent"] { border-left-color: var(--warning); }
+  .item-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); margin: 0; font-size: var(--fs-small); color: var(--text-2); }
+  .item-n { color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+  .item-name { color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+  .item-lines { color: var(--text-3); font-size: var(--fs-meta); }
+  .item-status { margin-left: auto; font-size: var(--fs-meta); color: var(--text-3); }
+  .item[data-state="planned"] .item-status, .item[data-state="sent"] .item-status { color: var(--success); }
+  .item[data-state="left-out"] .item-status, .item[data-state="failed"] .item-status { color: var(--error); }
+  .item[data-state="dependent"] .item-status { color: var(--warning); }
+  .item-meta { margin: 0; color: var(--text-3); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  .item .note { margin: var(--space-1) 0 0; }
+
+  #savings > div { grid-template-columns: 7rem minmax(0, 1fr); }
+  .rows dd .sub { font-weight: 400; }
+
+  .sign-meta { max-width: 68ch; color: var(--text-2); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  #sign-json { max-height: 16rem; overflow: auto; }
+
+  /* The trail, in a fold: open beside the plan on a wide screen, closed under it on a phone. */
+  .trail-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--target); cursor: pointer; list-style: none; }
+  .trail-summary::-webkit-details-marker { display: none; }
+  .trail-summary:hover .chev { color: var(--text); }
+  .trail-box[open] .trail-summary .chev svg { transform: rotate(180deg); }
+  .trail-box:not([open]) { border-bottom: 1px solid var(--line); }
+  .trail { border-top: 1px solid var(--line); counter-reset: step; }
+  .trail-step { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: 2px var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); counter-increment: step; }
+  .trail-step::before { content: counter(step); grid-row: 1 / span 2; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); line-height: 1.7; text-align: right; font-variant-numeric: tabular-nums; }
+  .trail-text, .trail-source { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+  .trail-text { font-size: var(--fs-small); color: var(--text-2); }
+  .trail-source { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  #main .trail-source, #main .item-n, #main #f-batch { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+}
