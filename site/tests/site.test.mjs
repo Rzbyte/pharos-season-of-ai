@@ -17,7 +17,7 @@ import { createSiteServer } from "../serve.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const at = (path) => pathToFileURL(join(REPO, path)).href;
-const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/09": "09 · Trend Watcher", "/tasks/11": "11 · Policy Gatekeeper", "/tasks/13": "13 · Docs MCP + Chain MCP Agent", "/tasks/17": "17 · Natural-Language Payment Agent", "/tasks/18": "18 · Recurring Payment Agent", "/tasks/19": "19 · Invoice-to-Payment Agent", "/tasks/20": "20 · X402 Paywalled API", "/tasks/22": "22 · On-Chain Alert Bot", "/tasks/23": "23 · Whale-Watching Agent", "/tasks/24": "24 · Gas Fee Optimizer", "/tasks/25": "25 · Wallet Risk Checker", "/tasks/26": "26 · Audit-Log Agent", "/tasks/27": "27 · dApp Support Agent", "/tasks/28": "28 · Weekly Digest Agent", "/tasks/29": "29 · Doc-Grounded Builder Agent" };
+const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/09": "09 · Trend Watcher", "/tasks/11": "11 · Policy Gatekeeper", "/tasks/13": "13 · Docs MCP + Chain MCP Agent", "/tasks/17": "17 · Natural-Language Payment Agent", "/tasks/18": "18 · Recurring Payment Agent", "/tasks/19": "19 · Invoice-to-Payment Agent", "/tasks/20": "20 · X402 Paywalled API", "/tasks/21": "21 · X402 Agent Buyer", "/tasks/22": "22 · On-Chain Alert Bot", "/tasks/23": "23 · Whale-Watching Agent", "/tasks/24": "24 · Gas Fee Optimizer", "/tasks/25": "25 · Wallet Risk Checker", "/tasks/26": "26 · Audit-Log Agent", "/tasks/27": "27 · dApp Support Agent", "/tasks/28": "28 · Weekly Digest Agent", "/tasks/29": "29 · Doc-Grounded Builder Agent" };
 
 let out;
 let site;
@@ -167,7 +167,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 61, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 63, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
@@ -177,11 +177,11 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/18", "/tasks/19", "/tasks/20", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/18", "/tasks/19", "/tasks/20", "/tasks/21", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
-    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/18", "/tasks/19", "/tasks/20", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
+    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/18", "/tasks/19", "/tasks/20", "/tasks/21", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
   });
 });
 
@@ -456,7 +456,7 @@ describe("the site in a browser", { skip }, () => {
       menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/18", "/tasks/19", "/tasks/20", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29", "/"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/18", "/tasks/19", "/tasks/20", "/tasks/21", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
@@ -482,7 +482,7 @@ describe("the site in a browser", { skip }, () => {
     await page.waitForURL(`${base}/tasks/09`);
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/11`);
-    // 12, 14 to 16 and 21 are still planned: from 11 the arrow goes to 13, then 17 to 20, then 22.
+    // 12 and 14 to 16 are still planned: from 11 the arrow goes to 13, then 17 to 29.
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/13`);
     await page.click('[data-task-step="next"]');
@@ -494,8 +494,10 @@ describe("the site in a browser", { skip }, () => {
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/20`);
     await page.click('[data-task-step="next"]');
+    await page.waitForURL(`${base}/tasks/21`);
+    await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/22`);
-    assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/20");
+    assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/21");
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/23`);
     await page.click('[data-task-step="next"]');
@@ -544,9 +546,10 @@ describe("the site in a browser", { skip }, () => {
     await page.context().close();
   });
 
-  test("Tasks 05, 08, 09, 11, 13, 17 to 20 and 22 to 29 at /tasks/NN run the agent through /api/agent on this domain", async () => {
-    // This chain's USDC answers no version(), so Task 20's client has no EIP-712 domain to sign: "Not paid".
-    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/09", "watch", /^Watching$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/], ["/tasks/13", "answer", /^Confirmed$/], ["/tasks/17", "answer", /^Ready$/], ["/tasks/18", "answer", /^(Ready|Nothing due)$/], ["/tasks/19", "answer", /^Ready$/], ["/tasks/20", "answer", /^Not paid$/], ["/tasks/22", "watch", /^Watching$/], ["/tasks/23", "watch", /^Watching$/], ["/tasks/24", "gas", /^Send now$/], ["/tasks/25", "check", /^Check first$/], ["/tasks/26", "report", /^(Quiet|Active)$/], ["/tasks/27", "answer", /^Would fail$/], ["/tasks/28", "digest", /^Quiet$/], ["/tasks/29", "answer", /^Ready$/]]) {
+  test("Tasks 05, 08, 09, 11, 13 and 17 to 29 at /tasks/NN run the agent through /api/agent on this domain", async () => {
+    // This chain's USDC answers no version(), so Task 20's client has no EIP-712 domain to sign: "Not paid",
+    // and Task 21's buyer cannot pay for its first answer: "Not done".
+    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/09", "watch", /^Watching$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/], ["/tasks/13", "answer", /^Confirmed$/], ["/tasks/17", "answer", /^Ready$/], ["/tasks/18", "answer", /^(Ready|Nothing due)$/], ["/tasks/19", "answer", /^Ready$/], ["/tasks/20", "answer", /^Not paid$/], ["/tasks/21", "answer", /^Not done$/], ["/tasks/22", "watch", /^Watching$/], ["/tasks/23", "watch", /^Watching$/], ["/tasks/24", "gas", /^Send now$/], ["/tasks/25", "check", /^Check first$/], ["/tasks/26", "report", /^(Quiet|Active)$/], ["/tasks/27", "answer", /^Would fail$/], ["/tasks/28", "digest", /^Quiet$/], ["/tasks/29", "answer", /^Ready$/]]) {
       const before = apiHits.filter((name) => name === "agent").length;
       const { page, problems } = await open(path);
       await page.waitForFunction((id) => document.getElementById(id).getAttribute("aria-busy") === "false", panel, { timeout: 15_000 });

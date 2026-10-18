@@ -24,6 +24,7 @@ node dist/src/cli.js pay "Pay alice 25 USDC" --contacts c.txt  # Task 17: a requ
 node dist/src/cli.js invoice invoice.txt --payees p.txt  # Task 19: an invoice checked, its payment prepared
 node dist/src/cli.js recurring schedule.txt --store r.json  # Task 18: what a schedule owes, paid once
 node dist/src/cli.js x402                  # Task 20: a paid API, its facilitator and a paying client (x402)
+node dist/src/cli.js buy                   # Task 21: an agent buying what its job needs with x402, within a budget
 npm test                                 # every test, offline
 ```
 
@@ -54,7 +55,8 @@ npm test                                 # every test, offline
 | `src/payment/` | Task 17, Natural-Language Payment Agent: the request read by a small grammar (verbs, amounts with their asset, recipients by address or an address book, "each" and "split", a note, a sender; any word not read refuses it), the flow (the sender's nonce, Task 08's dry run of each payment at one block, each asset's total against what the sender holds, the transactions to sign in nonce order with the Skill Engine's `cast send`, Atlantic sending in order), and the proof verifier. |
 | `src/recurring/` | Task 18, Recurring Payment Agent: the schedule read by a small grammar (daily, weekly, monthly, yearly, every N from a day, until a day) and its calendar of UTC due days, the store kept between runs (the start, each payment paid with its transaction, a pending one settled by its receipt), the run (what is owed by the block's day, the oldest taken within limits, Task 17's flow, Atlantic sending and recording), and the proof verifier and history check. |
 | `src/invoice/` | Task 19, Invoice-to-Payment Agent: EIP-681 payment links read and written, the invoice read by rules (labelled lines with or without a colon, line items, dates and terms, every figure checked against the others and the link, a currency, another network or a bad checksum refused), the run (your payees, the payer's last blocks of the token for a duplicate, a lookalike or transfers of nothing, Task 17's flow, held while anything calls for a check), and the proof verifier. |
-| `src/x402/` | Task 20, X402 Paywalled API, on the official x402 packages (`@x402/core`, `@x402/evm`, `@x402/fetch`) as the Pharos x402 skill sets them up: the asset read through Chain MCP (its EIP-712 name and version, EIP-3009 or not), x402's facilitator with a signer whose reads, simulation, send and receipt are Chain MCP calls (Multicall3 answered call by call), the paid endpoint as a `Request` to `Response` handler on x402's HTTP resource server, the paying client (x402's fetch, one asset, a cap a payment), the facilitator's HTTP routes, the run, and the proof verifier, which checks the payment's facts against the recorded answers. |
+| `src/x402/` | Task 20, X402 Paywalled API, on the official x402 packages (`@x402/core`, `@x402/evm`, `@x402/fetch`) as the Pharos x402 skill sets them up: the asset read through Chain MCP (its EIP-712 name and version, EIP-3009 or not), x402's facilitator with a signer whose reads, simulation, send and receipt are Chain MCP calls (Multicall3 answered call by call), the paid endpoint as a `Request` to `Response` handler on x402's HTTP resource server, the paying client (x402's fetch, one asset, a cap a payment), the facilitator's HTTP routes, the run, and the proof verifier, which checks the payment's facts against the recorded answers. Since Task 21 the API sells three products (`products.ts`: the chain data, Task 25's risk check and Task 08's dry run of a transfer, a request it cannot answer refused with 400 before any 402), served by one handler with a free listing of them (`api.ts`). |
+| `src/buyer/` | Task 21, X402 Agent Buyer: the job (a planned transfer to check and prepare) and its budget in USDC, each price asked for free (the 402), the plan within the budget, each purchase made with x402's client (spend controls capping a payment at what is left, a hook refusing a price other than the 402's), the outcome from what was bought (do not send, check first, would fail, ready with the transaction to sign, or not done and why), the ledger, and the proof verifier, which recomputes every answer bought from its own recorded calls. |
 | `src/support/` | Task 27, dApp Support Agent: revert data decoded in plain language (Error, Panic, OpenZeppelin 5 errors), the explanation of a transaction by hash (receipt, replay before its block, code, token balance and allowance, out of gas, earlier in its block) or by description (Task 08's dry run), and the proof verifier. |
 | `src/web.ts`, `api/agent.js` | One serverless function for every task: `GET /api/agent?task=NN`. |
 | `vendor/pharos-mcp/` | The official Chain MCP server, unmodified ([PROVENANCE.md](vendor/pharos-mcp/PROVENANCE.md)). |
@@ -83,9 +85,10 @@ flags a mainnet proof that did not use the hosted endpoint.
 
 Each capability adds its own checks. Tampering with any recorded answer, the decision, a block number
 or the server identity fails verification ([`tests/proof.test.ts`](tests/proof.test.ts)). An x402
-payment (Task 20) cannot be replayed whole: it signs a random nonce, at the time it ran, and on mainnet
-with a key made for the run. Its verifier replays the asset's reads and checks the payment's facts
-against the recorded answers instead: the terms, the signature, the simulation, the one settlement.
+payment (Tasks 20 and 21) cannot be replayed whole: it signs a random nonce, at the time it ran, and on
+mainnet with a key made for the run. Its verifier replays the asset's reads and checks the payment's
+facts against the recorded answers instead: the terms, the signature, the simulation, the settlement.
+Task 21's also recomputes each answer bought from its own recorded calls, and the outcome from them.
 
 ## Tests
 

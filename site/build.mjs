@@ -36,6 +36,7 @@ export const TASK_DIRS = Object.freeze({
   "18": "tasks/18-recurring-payment",
   "19": "tasks/19-invoice-to-payment",
   "20": "tasks/20-x402-paywalled-api",
+  "21": "tasks/21-x402-agent-buyer",
   "22": "tasks/22-on-chain-alert-bot",
   "23": "tasks/23-whale-watching-agent",
   "24": "tasks/24-gas-fee-optimizer",

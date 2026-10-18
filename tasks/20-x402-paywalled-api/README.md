@@ -81,7 +81,10 @@ PRIVATE_KEY=0x... node dist/src/cli.js x402 pay http://127.0.0.1:4020/data --net
 ```
 
 `x402 serve` answers `GET /data` (paid), `GET /` (free: the terms) and the facilitator's routes under
-`/facilitator/`. With `--facilitator URL` it verifies and settles with another x402 facilitator instead.
+`/facilitator/`. It also sells what [Task 21](../21-x402-agent-buyer)'s buyer buys: `GET /risk` and
+`GET /dryrun` of a transfer (`?asset=USDC&from=0x…&to=0x…&amount=25`), Task 25's risk check and Task 08's
+dry run, at 0.005 and 0.003 USDC; a transfer it cannot answer is refused with 400 before any 402. With
+`--facilitator URL` it verifies and settles with another x402 facilitator instead.
 `x402 pay` works against any x402 endpoint on Atlantic: it pays only the asset given (default the
 official USDC), at most `--cap` (default 0.001) a request, and prints the 402's terms, the authorization,
 the settlement and the answer. Options: `--price`, `--cap`, `--to` (who is paid; default the example
@@ -181,6 +184,7 @@ in both themes.
   (ERC-1271, or ERC-6492 before it is deployed) is not accepted.
 - **Settling is Atlantic's.** On Pharos Mainnet the facilitator only verifies (the hosted Chain MCP is
   read-only), so nothing is paid there and no data is released. The page never settles.
-- **One paid route.** `GET /data`, at one price. The facilitator pays the gas of each settlement.
+- **One price a route.** `GET /data` at its price (and, served, Task 21's `/risk` and `/dryrun` at
+  theirs). The facilitator pays the gas of each settlement.
 - **A payment is valid for 300 s.** x402's default for the `exact` scheme; the facilitator checks the
   window against its clock, and the token against the block's.
