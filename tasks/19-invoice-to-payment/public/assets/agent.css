@@ -1,0 +1,82 @@
+/* The agent pages (Task 05 onward), on top of lab.css: one panel holds the run (its status and the one
+   control, the block it read, the result, and a side column once there is room), a form in a disclosure
+   changes it, and the proof disclosure lists the Chain MCP calls, the JSON and the CLI. Check rows show
+   a guardian's conditions and a gatekeeper's rules. A page adds its own result styles in the task layer. */
+@layer primitives {
+  /* Geist Mono's contextual alternates join a space and "--" ("verify --proof" reads "verify--proof"):
+     off for code, commands and call lists. */
+  #main :is(pre, code, .calls, .check-evidence) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+
+  .run { display: grid; gap: var(--space-3); }
+  .run-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .run-head .status { min-width: 0; font-size: 1rem; }
+  .run-head .status-word { font-size: var(--fs-h2); }
+  .run-head .btn { flex: none; }
+  .run .note { margin-top: 0; }
+  /* The request in words, under the status: "Send 25 USDC from 0x912c…f647 to 0xB274…9553". */
+  .tx { color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+  .run a.short { color: var(--text); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .run a.short:hover { text-decoration-color: var(--text-3); }
+  /* Narrow panels keep the control beside the status; the detail drops to its own line. */
+  @container panel (max-width: 419px) {
+    .run-head { align-items: flex-start; }
+    .run-head .status { flex-direction: column; align-items: flex-start; gap: 0; }
+    .run-head .status-dot { display: none; }
+    .run-head .status-detail::before { content: none; }
+  }
+
+  /* The result, and the side column beside it once there is room for both. */
+  .run-body { display: grid; gap: var(--space-4); min-width: 0; }
+  .run-main { display: grid; gap: var(--space-3); min-width: 0; align-content: start; }
+  .run-side { display: grid; gap: var(--space-2); padding-top: var(--space-2); min-width: 0; }
+  .run-side .rows > div { grid-template-columns: 6rem minmax(0, 1fr); }
+  .run-side .short { font-size: var(--fs-small); }
+  .run-side .sub { margin-top: 2px; }
+  @media (min-width: 1000px) {
+    .run-body:has(> .run-side:not([hidden])) { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); column-gap: var(--space-8); align-items: start; }
+    .run-body:has(> .run-side:not([hidden])) > .run-side { padding-top: 0; }
+    .run-body:not(:has(> .run-side:not([hidden]))) > .run-main { max-width: 46rem; }
+  }
+
+  /* Check rows: a mark, then the label, then what was seen against what is needed, and its source. */
+  .checks { border-top: 1px solid var(--line); }
+  .checks:empty { display: none; }
+  .check { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 0 var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+  .check-mark { display: grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; color: var(--on-brand); background: var(--tone, var(--text-3)); }
+  .check-mark svg { width: 12px; height: 12px; }
+  .check[data-state="pass"] { --tone: var(--success); }
+  .check[data-state="fail"] { --tone: var(--error); }
+  .check[data-state="unknown"] { --tone: var(--warning); }
+  .check-main { display: grid; gap: 2px; min-width: 0; }
+  .check-label { font-size: var(--fs-small); font-weight: 600; color: var(--text); }
+  .check-evidence { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); font-size: var(--fs-meta); color: var(--text-3); }
+  .check-seen { font-family: var(--mono); font-size: var(--fs-label); color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .check[data-state="fail"] .check-seen { color: var(--error); font-weight: 600; }
+  .check-need { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-2); }
+  .check-tool { margin-left: auto; font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  .check-note, .check-error { flex-basis: 100%; color: var(--text-2); overflow-wrap: anywhere; }
+
+  /* The form: full-width fields, short ones two to a row. */
+  .inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-3); max-width: 46rem; }
+  .inputs-field { grid-column: 1 / -1; min-width: 0; }
+  .inputs-field.inputs-short { grid-column: auto; }
+  .inputs .input { width: 100%; }
+  .inputs-go { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+  .inputs-note { max-width: 62ch; color: var(--text-3); font-size: var(--fs-meta); }
+  @media (max-width: 339px) { .inputs-field.inputs-short { grid-column: 1 / -1; } }
+  /* A collapsed disclosure's summary of the inputs needs a wide row; phones keep just the title. */
+  @media (max-width: 519px) { .change-meta { display: none; } }
+
+  /* Proof: the calls of the latest run, the raw result, the CLI. */
+  .calls { display: grid; gap: 0; border-top: 1px solid var(--line); counter-reset: call; }
+  .calls > li { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: var(--space-2); padding: 6px 0; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: var(--fs-label); color: var(--text-2); counter-increment: call; }
+  .call-body { min-width: 0; overflow-wrap: anywhere; }
+  .calls > li::before { content: counter(call); color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums; }
+  .calls > li.calls-empty { display: block; font-family: var(--sans); font-size: var(--fs-meta); color: var(--text-3); }
+  .calls > li.calls-empty::before { content: none; }
+  .calls .call-tool { color: var(--text); font-weight: 600; }
+  .calls .call-failed { color: var(--error); }
+  .sub-meta { margin-left: var(--space-2); color: var(--text-3); font-weight: 400; }
+  .json, .cmd { margin: 0; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); font-family: var(--mono); font-size: var(--fs-label); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+  .cmd code { font-size: inherit; }
+}

@@ -27,6 +27,7 @@ export const TARGETS = [
   "tasks/11-policy-gatekeeper/public",
   "tasks/13-docs-chain-agent/public",
   "tasks/17-natural-language-payment/public",
+  "tasks/19-invoice-to-payment/public",
   "tasks/22-on-chain-alert-bot/public",
   "tasks/23-whale-watching-agent/public",
   "tasks/24-gas-fee-optimizer/public",

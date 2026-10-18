@@ -1,0 +1,90 @@
+/* Task 19 workspace: the Invoice-to-Payment Agent. The run panel and proof are shared by the agent pages
+   (agent.css); this adds the invoice box above them (the invoice, the payer, your payees), the invoice as
+   read (its facts, lines and the lines it did not read), the checks (fine, check first, fails, for
+   information), the payment with its cast command, what to sign with the payment link, and the trail of
+   steps, each with its source. */
+@layer task {
+  .ask { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); max-width: 46rem; }
+  .ask .field-hint { margin-top: 0; }
+  .ask .field-label:not(:first-child) { margin: 0; }
+  .ask textarea.input { width: 100%; min-height: 4.5rem; padding: 10px 12px; resize: vertical; line-height: 1.5; }
+  /* An invoice keeps its own lines and columns, scrolling sideways where the screen is narrow. */
+  .ask #f-invoice { min-height: 11rem; font-family: var(--mono); font-size: var(--fs-small); white-space: pre; overflow-x: auto; tab-size: 4; }
+  .ask #f-from { width: 100%; }
+  .ask #f-payees { min-height: 4rem; font-size: var(--fs-small); white-space: pre; overflow-x: auto; }
+  .ask-row { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+  /* Side by side where there is room: the payer, then your payees, so the invoice keeps the height. */
+  @media (min-width: 720px) {
+    .ask-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: var(--space-2) var(--space-4); }
+  }
+  .ask-cell { display: grid; gap: var(--space-2); align-content: start; min-width: 0; }
+  .ask-go { display: flex; }
+  .optional { margin-left: var(--space-1); color: var(--text-3); font-weight: 400; }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .examples-label { margin-right: var(--space-1); }
+
+  .block { display: grid; gap: var(--space-2); margin-top: var(--space-4); min-width: 0; }
+
+  /* The invoice as read: a term and its value a row, the lines with their amounts to the right. */
+  .facts { margin: 0; border-top: 1px solid var(--line); }
+  .fact { display: grid; grid-template-columns: minmax(6.5rem, 9rem) minmax(0, 1fr); gap: var(--space-1) var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+  .fact-term { color: var(--text-3); font-size: var(--fs-meta); line-height: 1.6; }
+  .fact-value { margin: 0; min-width: 0; color: var(--text-2); font-size: var(--fs-small); overflow-wrap: anywhere; }
+  .fact-amount { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fact-payee { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
+  /* A payee shown in full (one that calls for a check) breaks anywhere rather than run off a phone. */
+  .fact-payee .short, .payment-head .short { min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
+  .fact-book { color: var(--text-3); font-size: var(--fs-meta); }
+  .fact-book.is-off { color: var(--warning); font-weight: 600; }
+  .fact-link { font-family: var(--mono); font-size: var(--fs-label); overflow-wrap: anywhere; word-break: break-all; }
+  .lines { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+  .line { display: flex; justify-content: space-between; gap: var(--space-3); }
+  .line-text { min-width: 0; }
+  .line-amount { flex: none; color: var(--text); font-variant-numeric: tabular-nums; }
+  .unread { display: grid; gap: var(--space-1); margin-top: var(--space-2); }
+  .unread-title { margin: 0; color: var(--text-3); font-size: var(--fs-meta); font-weight: 600; }
+  .unread-lines { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); }
+  .unread-lines li { overflow-wrap: anywhere; }
+
+  /* The checks: a mark (fine, check first, fails, for information), what it found and where from. */
+  .checks { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+  .check[data-state="ok"] { --tone: var(--success); }
+  .check[data-state="warn"] { --tone: var(--warning); }
+  .check[data-state="fail"] { --tone: var(--error); }
+  .check[data-state="info"] { --tone: var(--text-3); }
+  .check[data-state="warn"] .check-label { color: var(--warning); }
+  .check .check-note { flex-basis: 100%; }
+
+  /* The payment: amount and payee, the dry run's facts, a note, the cast command. */
+  .payment { display: grid; gap: var(--space-1); min-width: 0; padding: var(--space-1) 0 var(--space-1) var(--space-3); border-left: 2px solid var(--success); }
+  .payment[data-state="fail"] { border-left-color: var(--error); }
+  .payment-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-1); margin: 0; font-size: var(--fs-small); color: var(--text-2); }
+  .payment-amount { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .payment-name { color: var(--text); font-weight: 600; }
+  .payment-meta { margin: 0; color: var(--text-3); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  .payment-memo { margin: 0; color: var(--text-2); font-size: var(--fs-meta); }
+  .copyable { display: grid; gap: var(--space-1); justify-items: start; min-width: 0; }
+  .copyable .cmd { justify-self: stretch; }
+
+  .sign-meta { max-width: 68ch; margin: 0; color: var(--text-2); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  #sign-json { max-height: 18rem; overflow: auto; }
+  #link { white-space: pre-wrap; word-break: break-all; }
+
+  /* The trail, in a fold: open beside the payment on a wide screen, closed under it on a phone. */
+  .trail-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--target); cursor: pointer; list-style: none; }
+  .trail-summary::-webkit-details-marker { display: none; }
+  .trail-summary:hover .chev { color: var(--text); }
+  .trail-box[open] .trail-summary .chev svg { transform: rotate(180deg); }
+  .trail-box:not([open]) { border-bottom: 1px solid var(--line); }
+  .trail { border-top: 1px solid var(--line); counter-reset: step; }
+  .trail-step { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: 2px var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); counter-increment: step; }
+  .trail-step::before { content: counter(step); grid-row: 1 / span 2; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); line-height: 1.7; text-align: right; font-variant-numeric: tabular-nums; }
+  .trail-text, .trail-source { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+  .trail-text { font-size: var(--fs-small); color: var(--text-2); }
+  .trail-source { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  #main :is(.trail-source, .unread-lines, .fact-link, #f-invoice) { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+
+  @media (max-width: 420px) {
+    .fact { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  }
+}

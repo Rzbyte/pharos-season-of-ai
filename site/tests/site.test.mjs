@@ -17,7 +17,7 @@ import { createSiteServer } from "../serve.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const at = (path) => pathToFileURL(join(REPO, path)).href;
-const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/09": "09 · Trend Watcher", "/tasks/11": "11 · Policy Gatekeeper", "/tasks/13": "13 · Docs MCP + Chain MCP Agent", "/tasks/17": "17 · Natural-Language Payment Agent", "/tasks/22": "22 · On-Chain Alert Bot", "/tasks/23": "23 · Whale-Watching Agent", "/tasks/24": "24 · Gas Fee Optimizer", "/tasks/25": "25 · Wallet Risk Checker", "/tasks/26": "26 · Audit-Log Agent", "/tasks/27": "27 · dApp Support Agent", "/tasks/28": "28 · Weekly Digest Agent", "/tasks/29": "29 · Doc-Grounded Builder Agent" };
+const ROUTES = { "/": "Pharos Agent Lab", "/tasks/01": "01 · Contract State", "/tasks/02": "02 · Event Monitor", "/tasks/03": "03 · Docs Onboarding", "/tasks/04": "04 · Docs Search", "/tasks/05": "05 · Threshold Guardian", "/tasks/08": "08 · Dry-Run Executor", "/tasks/09": "09 · Trend Watcher", "/tasks/11": "11 · Policy Gatekeeper", "/tasks/13": "13 · Docs MCP + Chain MCP Agent", "/tasks/17": "17 · Natural-Language Payment Agent", "/tasks/19": "19 · Invoice-to-Payment Agent", "/tasks/22": "22 · On-Chain Alert Bot", "/tasks/23": "23 · Whale-Watching Agent", "/tasks/24": "24 · Gas Fee Optimizer", "/tasks/25": "25 · Wallet Risk Checker", "/tasks/26": "26 · Audit-Log Agent", "/tasks/27": "27 · dApp Support Agent", "/tasks/28": "28 · Weekly Digest Agent", "/tasks/29": "29 · Doc-Grounded Builder Agent" };
 
 let out;
 let site;
@@ -167,7 +167,7 @@ describe("routes", () => {
     const css = await (await get("/assets/lab.css")).text();
     for (const [, ref] of css.matchAll(/url\("(\/assets\/[^"]+)"\)/g)) wanted.add(ref);
     for (const name of await readdir(join(out, "assets"))) if (name.endsWith(".js")) wanted.add(`/assets/${name}`);
-    assert.equal(wanted.size, 55, "every page asset, font and module, each once");
+    assert.equal(wanted.size, 57, "every page asset, font and module, each once");
     for (const ref of wanted) {
       const response = await get(ref);
       assert.equal(response.status, 200, ref);
@@ -177,11 +177,11 @@ describe("routes", () => {
 
   test("navigation is same-domain: the landing opens /tasks/NN, no page links a standalone deployment", async () => {
     const landing = await (await get("/")).text();
-    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
+    assert.deepEqual([...landing.matchAll(/class="row-title" href="([^"]+)"/g)].map(([, href]) => href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/19", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
     for (const path of Object.keys(ROUTES)) assert.doesNotMatch(await (await get(path)).text(), /vercel\.app/, path);
     const { TASKS, LAB } = await import(at("shared/ui/tasks.js"));
     assert.equal(LAB.home, "/");
-    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
+    assert.deepEqual(TASKS.filter((task) => task.href).map((task) => task.href), ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/19", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29"]);
   });
 });
 
@@ -361,6 +361,17 @@ describe("APIs on the one domain", () => {
     assert.match((await bad.json()).error.message, /Who is "carol"/);
   });
 
+  test("Task 19: /api/agent?task=19 reads an invoice, checks it and its payee, and prepares the payment through Chain MCP", async () => {
+    const response = await get("/api/agent?task=19");
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "public, s-maxage=15, stale-while-revalidate=15");
+    const body = await response.json();
+    assert.deepEqual([body.result.schema, body.result.verdict, body.result.invoice.number, body.result.payee.book.status], ["pharos-agent/invoice-payment/1", "ready", "INV-1042", "matches"]);
+    const bad = await get(`/api/agent?task=19&invoice=${encodeURIComponent("Total: $20\nPay to: 0xB2749BD12f19C24a2244176658F3dF3e48e79553")}`);
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error.message, /a currency, not an asset on Pharos/);
+  });
+
   test("Task 29: /api/agent?task=29 asks the Developer Docs MCP how, then dry-runs it through Chain MCP with the Skill Engine's commands", async () => {
     const response = await get("/api/agent?task=29");
     assert.equal(response.status, 200);
@@ -434,7 +445,7 @@ describe("the site in a browser", { skip }, () => {
       menu: [...document.querySelectorAll("#task-menu a")].map((a) => a.getAttribute("href")),
       outside: [...document.querySelectorAll("a[href*='vercel.app']")].length,
     }));
-    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29", "/"], outside: 0 });
+    assert.deepEqual(links, { home: "/", previous: "/tasks/01", next: "/tasks/03", menu: ["/tasks/01", "/tasks/02", "/tasks/03", "/tasks/04", "/tasks/05", "/tasks/08", "/tasks/09", "/tasks/11", "/tasks/13", "/tasks/17", "/tasks/19", "/tasks/22", "/tasks/23", "/tasks/24", "/tasks/25", "/tasks/26", "/tasks/27", "/tasks/28", "/tasks/29", "/"], outside: 0 });
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/03`);
     assert.match(await page.title(), /^03 · Docs Onboarding/);
@@ -460,14 +471,16 @@ describe("the site in a browser", { skip }, () => {
     await page.waitForURL(`${base}/tasks/09`);
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/11`);
-    // 12, 14 to 16 and 18 to 21 are still planned: from 11 the arrow goes to 13, then 17, then 22.
+    // 12, 14 to 16, 18, 20 and 21 are still planned: from 11 the arrow goes to 13, then 17, 19 and 22.
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/13`);
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/17`);
     await page.click('[data-task-step="next"]');
+    await page.waitForURL(`${base}/tasks/19`);
+    await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/22`);
-    assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/17");
+    assert.equal(await page.locator('[data-task-step="previous"]').getAttribute("href"), "/tasks/19");
     await page.click('[data-task-step="next"]');
     await page.waitForURL(`${base}/tasks/23`);
     await page.click('[data-task-step="next"]');
@@ -516,8 +529,8 @@ describe("the site in a browser", { skip }, () => {
     await page.context().close();
   });
 
-  test("Tasks 05, 08, 09, 11, 13, 17 and 22 to 29 at /tasks/NN run the agent through /api/agent on this domain", async () => {
-    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/09", "watch", /^Watching$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/], ["/tasks/13", "answer", /^Confirmed$/], ["/tasks/17", "answer", /^Ready$/], ["/tasks/22", "watch", /^Watching$/], ["/tasks/23", "watch", /^Watching$/], ["/tasks/24", "gas", /^Send now$/], ["/tasks/25", "check", /^Check first$/], ["/tasks/26", "report", /^(Quiet|Active)$/], ["/tasks/27", "answer", /^Would fail$/], ["/tasks/28", "digest", /^Quiet$/], ["/tasks/29", "answer", /^Ready$/]]) {
+  test("Tasks 05, 08, 09, 11, 13, 17, 19 and 22 to 29 at /tasks/NN run the agent through /api/agent on this domain", async () => {
+    for (const [path, panel, word] of [["/tasks/05", "guard", /^Fire$/], ["/tasks/08", "run", /^Would succeed$/], ["/tasks/09", "watch", /^Watching$/], ["/tasks/11", "gate", /^(Allowed|Denied)$/], ["/tasks/13", "answer", /^Confirmed$/], ["/tasks/17", "answer", /^Ready$/], ["/tasks/19", "answer", /^Ready$/], ["/tasks/22", "watch", /^Watching$/], ["/tasks/23", "watch", /^Watching$/], ["/tasks/24", "gas", /^Send now$/], ["/tasks/25", "check", /^Check first$/], ["/tasks/26", "report", /^(Quiet|Active)$/], ["/tasks/27", "answer", /^Would fail$/], ["/tasks/28", "digest", /^Quiet$/], ["/tasks/29", "answer", /^Ready$/]]) {
       const before = apiHits.filter((name) => name === "agent").length;
       const { page, problems } = await open(path);
       await page.waitForFunction((id) => document.getElementById(id).getAttribute("aria-busy") === "false", panel, { timeout: 15_000 });
