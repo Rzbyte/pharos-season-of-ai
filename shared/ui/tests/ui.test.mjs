@@ -37,9 +37,9 @@ describe("helpers", () => {
     assert.equal(neighbours(TASKS, "99").index, -1);
   });
 
-  test("the manifest: 01 to 05, 08, 09, 11, 13, 17 to 19 and 22 to 29 built at /tasks/NN, legacy addresses only as fallbacks", () => {
+  test("the manifest: 01 to 05, 08, 09, 11, 13, 17 to 20 and 22 to 29 built at /tasks/NN, legacy addresses only as fallbacks", () => {
     assert.equal(TASKS.length, LAB.total);
-    assert.equal(BUILT, 20);
+    assert.equal(BUILT, 21);
     assert.equal(LAB.home, "/");
     for (const task of TASKS) {
       assert.equal(task.href, task.status === "built" ? route(task.n) : null, task.n);
@@ -68,7 +68,7 @@ describe("the official task map", () => {
     assert.deepEqual(TASKS.slice(21).map((task) => [task.n, task.official]), LEGACY_MAP.slice(19).map((title, index) => [String(index + 22), title]));
     assert.equal(TASKS.find((task) => task.n === "30").tool, "Composition", "a task keeps its metadata when it moves");
     assert.deepEqual(TASKS.slice(19, 21).map((task) => [task.n, task.official, task.title]), [["20", "X402 Paywalled API", "X402 Paywalled API"], ["21", "X402 Agent Buyer", "X402 Agent Buyer"]]);
-    for (const task of TASKS.slice(19, 21)) assert.deepEqual([task.status, task.href, task.legacy, task.tool], ["planned", null, null, null], task.n);
+    assert.deepEqual(TASKS.slice(19, 21).map((task) => [task.n, task.status, task.href, task.legacy, task.tool]), [["20", "built", "/tasks/20", null, "x402 + Chain MCP"], ["21", "planned", null, null, null]]);
     assert.ok(TASKS.every((task) => typeof task.official === "string" && task.official.length > 0), "every task has its official title");
   });
 
@@ -86,6 +86,7 @@ describe("the official task map", () => {
       ["17", "Natural-Language Payment Agent", "/tasks/17", null],
       ["18", "Recurring Payment Agent", "/tasks/18", null],
       ["19", "Invoice-to-Payment Agent", "/tasks/19", null],
+      ["20", "X402 Paywalled API", "/tasks/20", null],
       ["22", "On-Chain Alert Bot", "/tasks/22", null],
       ["23", "Whale-Watching Agent", "/tasks/23", null],
       ["24", "Gas Fee Optimizer", "/tasks/24", null],
@@ -95,7 +96,7 @@ describe("the official task map", () => {
       ["28", "Weekly Digest Agent", "/tasks/28", null],
       ["29", "Doc-Grounded Builder Agent", "/tasks/29", null],
     ]);
-    for (const task of TASKS.filter((entry) => !["01", "02", "03", "04", "05", "08", "09", "11", "13", "17", "18", "19", "22", "23", "24", "25", "26", "27", "28", "29"].includes(entry.n))) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
+    for (const task of TASKS.filter((entry) => !["01", "02", "03", "04", "05", "08", "09", "11", "13", "17", "18", "19", "20", "22", "23", "24", "25", "26", "27", "28", "29"].includes(entry.n))) assert.deepEqual([task.status, task.href, task.legacy], ["planned", null, null], task.n);
   });
 
   test("moving through the map: 04 then 05, 19 then the x402 tasks then 22, and 30 is the last", () => {
@@ -149,7 +150,7 @@ describe("sync", () => {
   });
 
   test("the agent page layer goes to the agent pages (05 onward) only; the lab and Tasks 01 to 04 do without it", () => {
-    assert.deepEqual(AGENT_TARGETS, ["tasks/05-threshold-guardian/public", "tasks/08-dry-run-executor/public", "tasks/09-trend-watcher/public", "tasks/11-policy-gatekeeper/public", "tasks/13-docs-chain-agent/public", "tasks/17-natural-language-payment/public", "tasks/18-recurring-payment/public", "tasks/19-invoice-to-payment/public", "tasks/22-on-chain-alert-bot/public", "tasks/23-whale-watching-agent/public", "tasks/24-gas-fee-optimizer/public", "tasks/25-wallet-risk-checker/public", "tasks/26-audit-log-agent/public", "tasks/27-dapp-support-agent/public", "tasks/28-weekly-digest-agent/public", "tasks/29-doc-grounded-builder/public"]);
+    assert.deepEqual(AGENT_TARGETS, ["tasks/05-threshold-guardian/public", "tasks/08-dry-run-executor/public", "tasks/09-trend-watcher/public", "tasks/11-policy-gatekeeper/public", "tasks/13-docs-chain-agent/public", "tasks/17-natural-language-payment/public", "tasks/18-recurring-payment/public", "tasks/19-invoice-to-payment/public", "tasks/20-x402-paywalled-api/public", "tasks/22-on-chain-alert-bot/public", "tasks/23-whale-watching-agent/public", "tasks/24-gas-fee-optimizer/public", "tasks/25-wallet-risk-checker/public", "tasks/26-audit-log-agent/public", "tasks/27-dapp-support-agent/public", "tasks/28-weekly-digest-agent/public", "tasks/29-doc-grounded-builder/public"]);
     for (const target of TARGETS) {
       const has = (name) => {
         try {
@@ -237,6 +238,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["17 Natural-Language Payment Agent Pay", "/tasks/17", null],
         ["18 Recurring Payment Agent Schedule", "/tasks/18", null],
         ["19 Invoice-to-Payment Agent Pay", "/tasks/19", null],
+        ["20 X402 Paywalled API Charge", "/tasks/20", null],
         ["22 On-Chain Alert Bot Alert", "/tasks/22", null],
         ["23 Whale-Watching Agent Track", "/tasks/23", null],
         ["24 Gas Fee Optimizer Time", "/tasks/24", null],
@@ -275,6 +277,7 @@ describe("task navigation in a browser", { skip }, () => {
         ["17 Natural-Language Payment Agent Pay, not linked from here", null, null],
         ["18 Recurring Payment Agent Schedule, not linked from here", null, null],
         ["19 Invoice-to-Payment Agent Pay, not linked from here", null, null],
+        ["20 X402 Paywalled API Charge, not linked from here", null, null],
         ["22 On-Chain Alert Bot Alert, not linked from here", null, null],
         ["23 Whale-Watching Agent Track, not linked from here", null, null],
         ["24 Gas Fee Optimizer Time, not linked from here", null, null],
@@ -294,7 +297,7 @@ describe("task navigation in a browser", { skip }, () => {
     assert.deepEqual([dryRun.previous, dryRun.next], [["A", "/tasks/05", "Previous task: 05 Threshold Guardian"], ["A", "/tasks/09", null, 0]]);
     const trend = await render("/tasks/09", "09");
     assert.deepEqual([trend.previous, trend.next], [["A", "/tasks/08", "Previous task: 08 Dry-Run Executor"], ["A", "/tasks/11", null, 0]]);
-    // From 11 the next built task is 13, then 17 to 19 and 22: the planned 12, 14 to 16, 20 and 21 are skipped.
+    // From 11 the next built task is 13, then 17 to 20 and 22: the planned 12, 14 to 16 and 21 are skipped.
     const gate = await render("/tasks/11", "11");
     assert.deepEqual([gate.previous, gate.next], [["A", "/tasks/09", "Previous task: 09 Trend Watcher"], ["A", "/tasks/13", null, 0]]);
     assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 13 Docs MCP + Chain MCP Agent");
@@ -307,10 +310,13 @@ describe("task navigation in a browser", { skip }, () => {
     const recurring = await render("/tasks/18", "18");
     assert.deepEqual([recurring.previous, recurring.next], [["A", "/tasks/17", "Previous task: 17 Natural-Language Payment Agent"], ["A", "/tasks/19", null, 0]]);
     const invoice = await render("/tasks/19", "19");
-    assert.deepEqual([invoice.previous, invoice.next], [["A", "/tasks/18", "Previous task: 18 Recurring Payment Agent"], ["A", "/tasks/22", null, 0]]);
+    assert.deepEqual([invoice.previous, invoice.next], [["A", "/tasks/18", "Previous task: 18 Recurring Payment Agent"], ["A", "/tasks/20", null, 0]]);
+    assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 20 X402 Paywalled API");
+    const x402 = await render("/tasks/20", "20");
+    assert.deepEqual([x402.previous, x402.next], [["A", "/tasks/19", "Previous task: 19 Invoice-to-Payment Agent"], ["A", "/tasks/22", null, 0]]);
     assert.equal(await page.getAttribute('[data-task-step="next"]', "aria-label"), "Next task: 22 On-Chain Alert Bot");
     const alerts = await render("/tasks/22", "22");
-    assert.deepEqual([alerts.previous, alerts.next], [["A", "/tasks/19", "Previous task: 19 Invoice-to-Payment Agent"], ["A", "/tasks/23", null, 0]]);
+    assert.deepEqual([alerts.previous, alerts.next], [["A", "/tasks/20", "Previous task: 20 X402 Paywalled API"], ["A", "/tasks/23", null, 0]]);
     const whales = await render("/tasks/23", "23");
     assert.deepEqual([whales.previous, whales.next], [["A", "/tasks/22", "Previous task: 22 On-Chain Alert Bot"], ["A", "/tasks/24", null, 0]]);
     const gas = await render("/tasks/24", "24");

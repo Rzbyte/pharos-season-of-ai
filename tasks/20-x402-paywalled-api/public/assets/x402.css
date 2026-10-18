@@ -1,0 +1,53 @@
+/* Task 20 workspace: the X402 Paywalled API. The run panel and proof are shared by the agent pages
+   (agent.css); this adds the request box above them (the price, the client's cap, who is paid), the
+   exchange as four stages (the endpoint's 402 terms, the client's authorization, the facilitator's
+   verify and settle, the data), the asset as the chain reports it, and the trail of steps, each with
+   its source. */
+@layer task {
+  .ask { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); max-width: 46rem; }
+  .ask .field-hint { margin-top: 0; }
+  .ask .input { width: 100%; }
+  .ask-row { display: grid; gap: var(--space-3) var(--space-4); }
+  @media (min-width: 560px) {
+    .ask-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ask-wide { grid-column: 1 / -1; }
+  }
+  .ask-cell { display: grid; gap: var(--space-2); align-content: start; min-width: 0; }
+  .ask-go { display: flex; }
+  .optional { margin-left: var(--space-1); color: var(--text-3); font-weight: 400; }
+  .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--text-3); font-size: var(--fs-meta); }
+  .examples-label { margin-right: var(--space-1); }
+
+  .block { display: grid; gap: var(--space-2); margin-top: var(--space-3); min-width: 0; }
+
+  /* The exchange: a stage a party, its facts as rows; the left rule says how it went. */
+  .stages { display: grid; gap: var(--space-3); counter-reset: stage; }
+  .stage { display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-2) 0 var(--space-2) var(--space-3); border-left: 2px solid var(--success); counter-increment: stage; }
+  .stage[data-state="fail"] { border-left-color: var(--warning); }
+  .stage[data-state="skip"] { border-left-color: var(--line-strong); }
+  .stage-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); margin: 0; font-size: var(--fs-small); }
+  .stage-head::before { content: counter(stage) "."; margin-right: calc(var(--space-1) * -1); color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); }
+  .stage-party { color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: .04em; }
+  .stage-title { color: var(--text); font-weight: 600; }
+  .stage .rows > div { grid-template-columns: 5rem minmax(0, 1fr); }
+  .stage .rows dd .sub { font-weight: 400; }
+  .stage .note { margin: 0; }
+  .data-json { max-height: 16rem; overflow: auto; }
+
+  .sign-meta { max-width: 68ch; color: var(--text-2); font-size: var(--fs-meta); overflow-wrap: anywhere; }
+  #asset > div { grid-template-columns: 6rem minmax(0, 1fr); }
+
+  /* The trail, in a fold: open beside the exchange on a wide screen, closed under it on a phone. */
+  .trail-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--target); cursor: pointer; list-style: none; }
+  .trail-summary::-webkit-details-marker { display: none; }
+  .trail-summary:hover .chev { color: var(--text); }
+  .trail-box[open] .trail-summary .chev svg { transform: rotate(180deg); }
+  .trail-box:not([open]) { border-bottom: 1px solid var(--line); }
+  .trail { border-top: 1px solid var(--line); counter-reset: step; }
+  .trail-step { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: 2px var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); counter-increment: step; }
+  .trail-step::before { content: counter(step); grid-row: 1 / span 2; color: var(--text-3); font-family: var(--mono); font-size: var(--fs-label); line-height: 1.7; text-align: right; font-variant-numeric: tabular-nums; }
+  .trail-text, .trail-source { grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+  .trail-text { font-size: var(--fs-small); color: var(--text-2); }
+  .trail-source { font-family: var(--mono); font-size: var(--fs-label); color: var(--text-3); }
+  #main .trail-source, #main .stage-party, #main .stage-head::before { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+}

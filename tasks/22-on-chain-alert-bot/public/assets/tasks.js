@@ -44,7 +44,7 @@ export const TASKS = Object.freeze([
   task("19", "Invoice-to-Payment Agent", { verb: "Pay", tool: "Chain MCP", status: "built", purpose: "An invoice or payment link read, every figure and the payee checked, then the payment prepared to sign." }),
   // 20 and 21 are the two x402 tasks the official map inserted here; the tasks that were 20 to 28 are now
   // 22 to 30.
-  task("20", "X402 Paywalled API"),
+  task("20", "X402 Paywalled API", { verb: "Charge", tool: "x402 + Chain MCP", status: "built", purpose: "An API that charges per request with x402: its 402 terms, a signed payment, checked and settled on chain." }),
   task("21", "X402 Agent Buyer"),
   task("22", "On-Chain Alert Bot", { verb: "Alert", tool: "Chain MCP", status: "built", purpose: "Large transfers and on-chain conditions watched run after run, each alerted once." }),
   task("23", "Whale-Watching Agent", { verb: "Track", tool: "Chain MCP", status: "built", purpose: "Chosen addresses followed run after run: holdings, changes and the significant moves." }),

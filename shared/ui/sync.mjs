@@ -29,6 +29,7 @@ export const TARGETS = [
   "tasks/17-natural-language-payment/public",
   "tasks/18-recurring-payment/public",
   "tasks/19-invoice-to-payment/public",
+  "tasks/20-x402-paywalled-api/public",
   "tasks/22-on-chain-alert-bot/public",
   "tasks/23-whale-watching-agent/public",
   "tasks/24-gas-fee-optimizer/public",
